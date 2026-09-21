@@ -1,0 +1,538 @@
+const initSqlJs = require('sql.js');
+const path = require('path');
+const fs = require('fs');
+
+const dataDir = path.join(__dirname, '..', 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const dbPath = path.join(dataDir, 'crastur.db');
+
+let rawDb = null;
+let saveScheduled = false;
+let isReady = false;
+let readyResolvers = [];
+
+function whenReady() {
+  if (isReady) return Promise.resolve();
+  return new Promise(resolve => readyResolvers.push(resolve));
+}
+
+function persistDB() {
+  if (!rawDb) return;
+  try {
+    const data = rawDb.export();
+    fs.writeFileSync(dbPath, Buffer.from(data));
+  } catch (e) {
+    console.error('[DB] Error guardando archivo crastur.db:', e.message);
+  }
+}
+
+function scheduleSave() {
+  if (saveScheduled) return;
+  saveScheduled = true;
+  setTimeout(() => {
+    saveScheduled = false;
+    persistDB();
+  }, 100);
+}
+
+// Wrapper compatible con la API de better-sqlite3
+const db = {
+  pragma: () => {},
+  exec: (sql) => {
+    if (!rawDb) throw new Error('Base de datos no inicializada');
+    const res = rawDb.exec(sql);
+    scheduleSave();
+    return res;
+  },
+  prepare: (sql) => {
+    return {
+      run: (...params) => {
+        if (!rawDb) throw new Error('Base de datos no inicializada');
+        const flat = params.flat();
+        rawDb.run(sql, flat);
+        scheduleSave();
+        const lastId = rawDb.exec('SELECT last_insert_rowid() as id');
+        return { lastInsertRowid: lastId[0]?.values[0]?.[0] || 0 };
+      },
+      get: (...params) => {
+        if (!rawDb) throw new Error('Base de datos no inicializada');
+        const flat = params.flat();
+        const stmt = rawDb.prepare(sql);
+        stmt.bind(flat);
+        if (stmt.step()) {
+          const row = stmt.getAsObject();
+          stmt.free();
+          return row;
+        }
+        stmt.free();
+        return undefined;
+      },
+      all: (...params) => {
+        if (!rawDb) throw new Error('Base de datos no inicializada');
+        const flat = params.flat();
+        const stmt = rawDb.prepare(sql);
+        stmt.bind(flat);
+        const results = [];
+        while (stmt.step()) {
+          results.push(stmt.getAsObject());
+        }
+        stmt.free();
+        return results;
+      }
+    };
+  }
+};
+
+const backupDir = path.join(dataDir, 'backups');
+if (!fs.existsSync(backupDir)) {
+  fs.mkdirSync(backupDir, { recursive: true });
+}
+
+const latestBackupPath = path.join(backupDir, 'crastur_backup.db');
+
+/**
+ * Guarda un backup diario con fecha y elimina backups con más de 7 días.
+ */
+function performDailyBackup() {
+  if (!rawDb) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const dailyBackupPath = path.join(backupDir, `crastur_backup_${today}.db`);
+    if (!fs.existsSync(dailyBackupPath)) {
+      const backupData = rawDb.export();
+      fs.writeFileSync(dailyBackupPath, Buffer.from(backupData));
+      console.log(`[DB Backup] Respaldo diario creado: crastur_backup_${today}.db`);
+    }
+
+    // Eliminar backups de más de 7 días
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.match(/^crastur_backup_\d{4}-\d{2}-\d{2}\.db$/))
+      .sort(); // orden cronológico
+    if (files.length > 7) {
+      const toDelete = files.slice(0, files.length - 7);
+      toDelete.forEach(f => {
+        try { fs.unlinkSync(path.join(backupDir, f)); } catch {}
+        console.log(`[DB Backup] Backup antiguo eliminado: ${f}`);
+      });
+    }
+
+    // También actualizar el backup "último" legacy para compatibilidad
+    fs.writeFileSync(latestBackupPath, Buffer.from(rawDb.export()));
+  } catch (bkErr) {
+    console.error('[DB Backup] Error en backup diario:', bkErr.message);
+  }
+}
+
+async function initDB() {
+  if (isReady) return;
+
+  const SQL = await initSqlJs();
+
+  // 1. Intentar cargar base de datos existente o restaurar desde backup si está dañada
+  if (fs.existsSync(dbPath)) {
+    try {
+      const fileBuffer = fs.readFileSync(dbPath);
+      rawDb = new SQL.Database(fileBuffer);
+      // Verificación de integridad REAL con PRAGMA
+      const integrityResult = rawDb.exec('PRAGMA integrity_check;');
+      const integrityStatus = integrityResult[0]?.values[0]?.[0];
+      if (integrityStatus !== 'ok') {
+        throw new Error(`Integridad fallida: ${integrityStatus}`);
+      }
+    } catch (e) {
+      console.error('[DB Auto-Recuperación] Base de datos dañada o ilegible. Intentando restaurar desde backup...', e.message);
+      let restored = false;
+
+      // Buscar el backup más reciente disponible (primero el diario, luego el legacy)
+      const backupFiles = fs.existsSync(backupDir)
+        ? fs.readdirSync(backupDir)
+            .filter(f => f.match(/^crastur_backup_\d{4}-\d{2}-\d{2}\.db$/))
+            .sort()
+            .reverse()
+        : [];
+
+      for (const backupFile of backupFiles) {
+        try {
+          const backupBuffer = fs.readFileSync(path.join(backupDir, backupFile));
+          rawDb = new SQL.Database(backupBuffer);
+          fs.writeFileSync(dbPath, backupBuffer);
+          console.log(`[DB Auto-Recuperación] ¡Base de datos restaurada desde respaldo: ${backupFile}!`);
+          restored = true;
+          break;
+        } catch {}
+      }
+
+      if (!restored && fs.existsSync(latestBackupPath)) {
+        try {
+          const backupBuffer = fs.readFileSync(latestBackupPath);
+          rawDb = new SQL.Database(backupBuffer);
+          fs.writeFileSync(dbPath, backupBuffer);
+          console.log('[DB Auto-Recuperación] ¡Base de datos restaurada exitosamente desde el respaldo legacy!');
+          restored = true;
+        } catch (bkErr) {
+          console.error('[DB Auto-Recuperación] Respaldo no disponible. Creando nueva base de datos limpia.');
+        }
+      }
+
+      if (!restored) {
+        rawDb = new SQL.Database();
+      }
+    }
+  } else if (fs.existsSync(latestBackupPath)) {
+    try {
+      const backupBuffer = fs.readFileSync(latestBackupPath);
+      rawDb = new SQL.Database(backupBuffer);
+      fs.writeFileSync(dbPath, backupBuffer);
+      console.log('[DB Auto-Recuperación] Archivo recuperado desde backup existente.');
+    } catch (e) {
+      rawDb = new SQL.Database();
+    }
+  } else {
+    rawDb = new SQL.Database();
+  }
+
+  // 2. Crear backup inicial inmediato
+  try {
+    const backupData = rawDb.export();
+    fs.writeFileSync(latestBackupPath, Buffer.from(backupData));
+  } catch {}
+
+
+  // Crear tablas principales
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      marca TEXT NOT NULL,
+      modelo TEXT NOT NULL,
+      categoria TEXT NOT NULL,
+      precio_usd REAL NOT NULL,
+      descripcion TEXT,
+      imagen_url TEXT,
+      stock INTEGER DEFAULT 1,
+      activo INTEGER DEFAULT 1,
+      creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS sellers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL,
+      telefono TEXT NOT NULL,
+      departamento TEXT DEFAULT 'Ventas',
+      activo INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      jid TEXT PRIMARY KEY,
+      push_name TEXT,
+      step TEXT DEFAULT 'start',
+      ultimo_producto_id INTEGER,
+      ultimo_producto_nombre TEXT,
+      ultimo_mensaje_at INTEGER,
+      seguimiento_enviado INTEGER DEFAULT 0,
+      bot_pausado INTEGER DEFAULT 0,
+      nivel_cashea INTEGER DEFAULT 1,
+      contexto_productos TEXT,
+      apartado_metadata TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      jid TEXT,
+      remitente TEXT,
+      contenido TEXT,
+      timestamp INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS bot_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      evento TEXT,
+      detalle TEXT,
+      jid TEXT,
+      timestamp INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      jid TEXT NOT NULL,
+      nombre TEXT NOT NULL,
+      cedula TEXT NOT NULL,
+      telefono TEXT NOT NULL,
+      producto_id INTEGER,
+      producto_nombre TEXT NOT NULL,
+      precio_usd REAL NOT NULL,
+      precio_bs REAL NOT NULL,
+      creado_en INTEGER NOT NULL,
+      expira_en INTEGER NOT NULL,
+      estado TEXT DEFAULT 'activo'
+    );
+  `);
+
+  // Migración: agregar columna apartado_metadata si no existe (bases de datos antiguas)
+  try {
+    rawDb.exec('ALTER TABLE chat_sessions ADD COLUMN apartado_metadata TEXT;');
+  } catch {}
+
+  // Índices optimizadores para queries frecuentes
+  rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_products_activo ON products(activo);
+    CREATE INDEX IF NOT EXISTS idx_sessions_jid ON chat_sessions(jid);
+    CREATE INDEX IF NOT EXISTS idx_messages_jid ON chat_messages(jid);
+    CREATE INDEX IF NOT EXISTS idx_metrics_evento ON bot_metrics(evento, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_reservations_estado ON reservations(estado, expira_en);
+  `);
+
+  // Default settings
+  const defaultSettings = {
+    'nombre_negocio': 'Crastur - Insumos para Caucheras, Repuestos de Moto & Otros Productos',
+    'tasa_bcv': '849.56',
+    'fecha_tasa': 'Sincronizado con BCV',
+    'tasa_manual_activa': '0',
+    'tasa_personalizada': '849.56',
+    'direccion_tienda': 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas, Venezuela',
+    'google_maps_url': 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA',
+    'cashea_inicial_pct': '40',
+    'cashea_cuotas': '3',
+    'cashea_info': '¡En Crastur contamos con Cashea! Llévate hoy tus repuestos y accesorios para moto e insumos pagando solo una inicial y el resto en 3 cuotas quincenales sin interés.',
+    'insistencia_activa': '1',
+    'insistencia_minutos': '15',
+    'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM',
+    'politica_envios': 'Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.',
+    'metodos_pago': 'Transferencia Bancaria, Pago Móvil, Efectivo ($ y Bs a tasa BCV oficial) y Cashea.',
+    'mensaje_insistencia': '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.',
+    'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nInsumos para caucheras, repuestos y accesorios para moto, y otros productos con financiamiento Cashea.',
+    'fuera_horario_activo': '0',
+    'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨'
+  };
+
+  const getStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
+  const insertStmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+
+  for (const [key, val] of Object.entries(defaultSettings)) {
+    const exists = getStmt.get(key);
+    if (!exists) {
+      insertStmt.run(key, val);
+    }
+  }
+
+  // Garantizar que la tabla de vendedores inicie limpia (0 asesores por defecto)
+  db.exec('DELETE FROM sellers WHERE nombre LIKE "%Asesor de Repuestos%";');
+
+  // Guardar inmediatamente en disco
+  persistDB();
+
+  // Programar backup diario cada 24 horas
+  setInterval(performDailyBackup, 24 * 60 * 60 * 1000);
+  // Backup inicial al arrancar (diferido 5 segundos)
+  setTimeout(performDailyBackup, 5000);
+
+  isReady = true;
+  readyResolvers.forEach(res => res());
+  readyResolvers = [];
+  console.log('[DB] Base de datos local SQLite (sql.js WASM) lista y persistida en crastur.db');
+}
+
+// Iniciar automáticamente en segundo plano
+initDB().catch(err => console.error('[DB] Error iniciando base de datos:', err));
+
+function getSettings() {
+  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const obj = {};
+  for (const r of rows) {
+    obj[r.key] = r.value;
+  }
+  return obj;
+}
+
+function updateSetting(key, value) {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value));
+}
+
+function getEffectiveRate() {
+  const settings = getSettings();
+  if (settings.tasa_manual_activa === '1' && settings.tasa_personalizada) {
+    return parseFloat(settings.tasa_personalizada) || 849.56;
+  }
+  return parseFloat(settings.tasa_bcv) || 849.56;
+}
+
+function recordMetric(evento, detalle = '', jid = '') {
+  try {
+    db.prepare(`
+      INSERT INTO bot_metrics (evento, detalle, jid, timestamp)
+      VALUES (?, ?, ?, ?)
+    `).run(evento, detalle, jid, Date.now());
+  } catch (e) {
+    console.error('Error recording metric:', e.message);
+  }
+}
+
+function toggleBotPause(jid, paused) {
+  db.prepare(`
+    UPDATE chat_sessions
+    SET bot_pausado = ?
+    WHERE jid = ?
+  `).run(paused ? 1 : 0, jid);
+}
+
+function isBotPaused(jid) {
+  const session = db.prepare('SELECT bot_pausado FROM chat_sessions WHERE jid = ?').get(jid);
+  // Comparación robusta: acepta tanto número 1 como string '1'
+  return session ? parseInt(session.bot_pausado) === 1 : false;
+}
+
+function getMetricsSummary() {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayMs = todayStart.getTime();
+
+  const totalHoy = db.prepare('SELECT COUNT(*) as count FROM bot_metrics WHERE timestamp >= ?').get(todayMs)?.count || 0;
+  const totalMensajes = db.prepare('SELECT COUNT(*) as count FROM chat_messages').get()?.count || 0;
+  const totalSesiones = db.prepare('SELECT COUNT(*) as count FROM chat_sessions').get()?.count || 0;
+  const topBusquedas = db.prepare(`
+    SELECT detalle, COUNT(*) as total
+    FROM bot_metrics
+    WHERE evento = 'busqueda_producto' AND detalle != ''
+    GROUP BY detalle
+    ORDER BY total DESC
+    LIMIT 5
+  `).all();
+
+  return {
+    consultas_hoy: totalHoy,
+    total_mensajes: totalMensajes,
+    total_clientes: totalSesiones,
+    top_busquedas: topBusquedas
+  };
+}
+
+function exportCatalog() {
+  const products = db.prepare('SELECT marca, modelo, categoria, precio_usd, descripcion, stock FROM products WHERE activo = 1').all();
+  return {
+    version: '1.0',
+    exportado_en: new Date().toISOString(),
+    total: products.length,
+    productos: products
+  };
+}
+
+function importCatalog(productsList) {
+  if (!Array.isArray(productsList)) throw new Error('El formato debe ser una lista de productos');
+
+  const insertStmt = db.prepare(`
+    INSERT INTO products (marca, modelo, categoria, precio_usd, descripcion, stock, activo)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+  `);
+
+  let count = 0;
+  for (const p of productsList) {
+    if (p.marca && p.modelo && p.precio_usd !== undefined) {
+      insertStmt.run(
+        String(p.marca).trim(),
+        String(p.modelo).trim(),
+        String(p.categoria || 'General').trim(),
+        parseFloat(p.precio_usd) || 0,
+        String(p.descripcion || '').trim(),
+        parseInt(p.stock || 1, 10)
+      );
+      count++;
+    }
+  }
+
+  // Respaldo inmediato tras importar
+  persistDB();
+  return { success: true, count };
+}
+
+function getReservations(onlyActive = false) {
+  cleanExpiredReservations();
+  if (onlyActive) {
+    return db.prepare("SELECT * FROM reservations WHERE estado = 'activo' ORDER BY expira_en ASC").all();
+  }
+  return db.prepare("SELECT * FROM reservations ORDER BY id DESC").all();
+}
+
+function createReservation({ jid, nombre, cedula, telefono, producto_id, producto_nombre, precio_usd, precio_bs }) {
+  const now = Date.now();
+  const expiraEn = now + (24 * 60 * 60 * 1000); // 24 horas continuas
+  const stmt = db.prepare(`
+    INSERT INTO reservations (jid, nombre, cedula, telefono, producto_id, producto_nombre, precio_usd, precio_bs, creado_en, expira_en, estado)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo')
+  `);
+  const res = stmt.run(
+    jid || '',
+    nombre.trim(),
+    cedula.trim().toUpperCase(),
+    telefono.trim(),
+    producto_id || null,
+    producto_nombre.trim(),
+    parseFloat(precio_usd) || 0,
+    parseFloat(precio_bs) || 0,
+    now,
+    expiraEn
+  );
+  persistDB();
+  return {
+    id: res.lastInsertRowid,
+    jid,
+    nombre: nombre.trim(),
+    cedula: cedula.trim().toUpperCase(),
+    telefono: telefono.trim(),
+    producto_id,
+    producto_nombre: producto_nombre.trim(),
+    precio_usd: parseFloat(precio_usd) || 0,
+    precio_bs: parseFloat(precio_bs) || 0,
+    creado_en: now,
+    expira_en: expiraEn,
+    estado: 'activo'
+  };
+}
+
+function updateReservationStatus(id, estado) {
+  db.prepare("UPDATE reservations SET estado = ? WHERE id = ?").run(estado, id);
+  persistDB();
+}
+
+function deleteReservation(id) {
+  db.prepare("DELETE FROM reservations WHERE id = ?").run(id);
+  persistDB();
+}
+
+function cleanExpiredReservations() {
+  const now = Date.now();
+  // Borrar automáticamente los apartados cuyo plazo de 24 horas haya caducado sin retiro
+  const expired = db.prepare("SELECT id, producto_nombre, nombre FROM reservations WHERE expira_en <= ? AND estado = 'activo'").all(now);
+  if (expired.length > 0) {
+    db.prepare("DELETE FROM reservations WHERE expira_en <= ? AND estado = 'activo'").run(now);
+    persistDB();
+    console.log(`[Apartados 24h] Se liberaron y borraron ${expired.length} apartados vencidos automáticamente.`);
+  }
+  return expired;
+}
+
+module.exports = {
+  db,
+  initDB,
+  whenReady,
+  getSettings,
+  updateSetting,
+  getEffectiveRate,
+  recordMetric,
+  toggleBotPause,
+  isBotPaused,
+  getMetricsSummary,
+  exportCatalog,
+  importCatalog,
+  getReservations,
+  createReservation,
+  updateReservationStatus,
+  deleteReservation,
+  cleanExpiredReservations
+};
