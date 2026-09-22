@@ -43,10 +43,8 @@ function handleDiscountResponse(tasa, settings) {
  * Con soporte inteligente para mostrar los detalles del producto en contexto
  */
 function handleDeliveryResponse(settings, session, tasa, text) {
-  const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas, Venezuela';
-  const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+  const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
 
-  // 1. Verificar si mencionó un repuesto en el mismo mensaje (ej: "delivery de pastillas corolla")
   let matchedProduct = null;
   const searchResults = searchProductsFuzzy(text);
   if (searchResults.length > 0) {
@@ -55,87 +53,29 @@ function handleDeliveryResponse(settings, session, tasa, text) {
     matchedProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(session.ultimo_producto_id);
   }
 
-  // 2. Detectar zona de Caracas con tarifas personalizadas
   const detectedZone = detectCaracasZone(text, settings);
 
-  // Caso A: Hay un producto en contexto o consultado
-  if (matchedProduct || session?.ultimo_producto_nombre) {
-    const prodNombre = matchedProduct ? `${matchedProduct.marca} - ${matchedProduct.modelo}` : session.ultimo_producto_nombre;
-    const precioUsd = matchedProduct ? parseFloat(matchedProduct.precio_usd) : null;
-    const precioBs = (precioUsd && tasa) ? precioUsd * tasa : null;
-    const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
-    const n1 = precioUsd ? (precioUsd * 0.40) : null;
-    const cuotaN1 = (precioUsd && n1) ? ((precioUsd - n1) / cuotasCashea) : null;
+  let msg = `🛵 *Delivery en Caracas - Crastur* 📦\n\n`;
+  msg += `¡Sí! Despachamos hoy mismo con motorizado a tu domicilio, trabajo o taller mecánico en Caracas.\n\n`;
 
-    let msg = `🛵 *Servicio de Delivery a Toda Caracas - Crastur* 📦\n\n`;
-    msg += `¡Sí! Con gusto te llevamos tu repuesto directo a tu domicilio, taller mecánico o trabajo en cualquier zona de Caracas con nuestro motorizado de confianza.\n\n`;
-    msg += `📦 *Detalles de la Pieza a Despachar:*\n`;
-    msg += `• *Producto:* *${prodNombre}*\n`;
-    if (matchedProduct?.categoria) {
-      msg += `• *Categoría:* ${matchedProduct.categoria}\n`;
-    }
-    if (precioUsd) {
-      msg += `• *Precio Contado:* *$${precioUsd.toFixed(2)} USD*\n`;
-      msg += `• *En Bolívares (Tasa BCV):* *Bs. ${formatBs(precioBs)}* _(Tasa oficial: ${formatRate(tasa)})_\n`;
-      msg += `• 🔥 *Descuento en Divisas:* ¡Cuentas con un descuento especial directo si pagas en efectivo en divisas! 💵🏷️\n`;
-      if (precioUsd >= 25) {
-        msg += `• 💛 *Con Cashea (Tienda Física):* Si retiras en tienda, te lo llevas pagando solo *$${n1.toFixed(2)} USD* de inicial (Bs. ${formatBs(n1 * tasa)}) y ${cuotasCashea} cuotas quincenales de *$${cuotaN1.toFixed(2)} USD*.\n`;
-      } else {
-        msg += `• 💛 *Cashea:* Requiere compra mínima de $25 (puedes agregar más repuestos para financiar en tienda).\n`;
-      }
-    }
-    msg += `\n`;
-
-    if (detectedZone) {
-      msg += `📍 *Zona Indicada:* *${detectedZone.nombre}*\n`;
-      msg += `🛵 *Costo aproximado de delivery:* *${detectedZone.tarifa}*\n`;
-      msg += `⏱️ *Tiempo estimado:* Despacho el mismo día con motorizado.\n\n`;
-    } else {
-      msg += `📍 *Tarifas de Delivery en Caracas:*\n`;
-      msg += `• *Zonas céntricas y cercanas:* *$2 a $3 USD* (San Agustín, Centro, Bellas Artes, Candelaria, Chacao, etc.).\n`;
-      msg += `• *Otras zonas de Caracas:* *$3 a $5 USD* (Catia, El Valle, Las Mercedes, Baruta, Petare, Caricuao, El Hatillo, etc.).\n\n`;
-    }
-
-    msg += `🏢 *¿Prefieres retirar gratis en tienda física?*\nPuedes venir directamente sin pagar delivery:\n`;
-    msg += `🏠 *Dirección:* ${direccion}\n`;
-    msg += `🗺️ *Google Maps:* ${mapsUrl}\n`;
-    msg += `🕒 *Horario Corrido:* Lunes a Sábado de *8:00 AM a 8:00 PM*.\n\n`;
-
-    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `📌 *Para coordinar tu despacho ahora mismo:*\n`;
-    msg += `1️⃣ Indícanos tu *zona o dirección exacta* en Caracas.\n`;
-    msg += `2️⃣ Indícanos tu forma de pago (*Efectivo en divisas con descuento*, *Pago Móvil*, o *Cashea*).\n`;
-    msg += `👉 O escribe *VENDEDOR* para coordinar directamente la entrega con un asesor técnico.`;
-
-    return msg;
+  if (matchedProduct) {
+    const precioUsd = parseFloat(matchedProduct.precio_usd) || 0;
+    msg += `📦 *Repuesto:* *${matchedProduct.marca} - ${matchedProduct.modelo}*\n`;
+    msg += `💵 *Precio:* *$${precioUsd.toFixed(2)} USD* (Bs. ${formatBs(precioUsd * tasa)})\n\n`;
   }
-
-  // Caso B: Consulta de delivery general (sin producto previo)
-  let msg = `🛵 *Servicio de Delivery a Toda Caracas - Crastur* 📦\n\n`;
-  msg += `¡Sí! Contamos con **delivery con motorizado de confianza a toda Caracas** directo a tu domicilio, taller mecánico o lugar de trabajo 🏍️💨.\n\n`;
 
   if (detectedZone) {
-    msg += `📍 *Zona Indicada:* *${detectedZone.nombre}*\n`;
-    msg += `🛵 *Costo aproximado de delivery:* *${detectedZone.tarifa}*\n\n`;
+    msg += `📍 *Zona:* *${detectedZone.nombre}*\n`;
+    msg += `🛵 *Tarifa motorizado:* *${detectedZone.tarifa}* (despacho hoy).\n\n`;
   } else {
-    msg += `📍 *Tarifas estimadas de Delivery en Caracas:*\n`;
-    msg += `• *Zonas céntricas y cercanas:* *$2 a $3 USD* (San Agustín, Centro, Bellas Artes, La Candelaria, Chacao, etc.).\n`;
-    msg += `• *Otras zonas de Caracas:* *$3 a $5 USD* (Catia, El Valle, Las Mercedes, Baruta, Petare, Caricuao, El Hatillo, etc.).\n\n`;
+    msg += `📍 *Tarifas estimadas de motorizado:*\n`;
+    msg += `• San Agustín, Centro, Bellas Artes: *$2 a $3 USD*\n`;
+    msg += `• Catia, El Valle, Chacao, Baruta, Petare: *$3 a $5 USD*\n\n`;
   }
 
-  msg += `🏢 *Retiro gratuito en tienda física:*\nTambién puedes retirar tu repuesto sin costo de envío en nuestro local:\n`;
-  msg += `🏠 *Dirección:* ${direccion}\n`;
-  msg += `🗺️ *Google Maps:* ${mapsUrl}\n`;
-  msg += `🕒 *Horario:* Lunes a Sábado de *8:00 AM a 8:00 PM* (horario corrido).\n\n`;
-
-  msg += `💳 *Métodos de pago aceptados:*\n`;
-  msg += `💵 *Efectivo en divisas* (🔥 ¡Con descuento especial en tienda!)\n`;
-  msg += `✅ *Pago Móvil* (a tasa oficial BCV del día, sin recargos)\n`;
-  msg += `✅ *Transferencia Bancaria*\n`;
-  msg += `💛 *Cashea* (Inicial + 3 cuotas quincenales sin interés)\n\n`;
-
-  msg += `👉 Escribe el *nombre del repuesto*, accesorio o insumo que necesitas (o el modelo de tu moto) para cotizártelo con delivery hoy mismo.`;
-
+  msg += `🏢 *Retiro gratis en tienda:* ${direccion} (Lun-Sáb 8am-8pm).\n`;
+  msg += `💳 *Pago:* Efectivo ($ con descuento), Pago Móvil (tasa BCV) o Cashea en tienda.\n\n`;
+  msg += `👉 Indícanos tu *zona o dirección exacta* para coordinar el despacho, o escribe *VENDEDOR*.`;
   return msg;
 }
 
@@ -143,13 +83,13 @@ function handleDeliveryResponse(settings, session, tasa, text) {
  * Envíos Nacionales / Interior del país
  */
 function handleNationalShippingResponse(session, tasa) {
-  let msg = `📦 *Envíos y Cobertura de Entrega - Crastur* 🛞🏍️\n\n`;
-  msg += `Por los momentos en *Crastur* nuestras modalidades de entrega son exclusivamente:\n\n`;
-  msg += `1️⃣ *Delivery a toda Caracas:* Con servicio de motorizado de confianza directo a tu domicilio, oficina o taller mecánico en cualquier zona de Caracas 🛵.\n`;
-  msg += `2️⃣ *Retiro directo en nuestra tienda física:* En San Agustín Norte, Caracas (Edif. Liberalba), Lunes a Sábado de 8:00 AM a 8:00 PM 🏢.\n\n`;
-  msg += `⚠️ *Envíos al Interior del País:* Actualmente no realizamos despachos directos por agencias de encomienda nacionales (no trabajamos con Tealca, Zoom ni MRW).\n\n`;
-  msg += `💡 *Si estás en el interior:* Si cuentas con un familiar, amigo, comisionista o transporte en Caracas que pueda recibir el delivery o retirar en nuestro local por ti, ¡con todo gusto coordinamos la entrega con él!\n\n`;
-  msg += `👉 Escribe qué repuesto buscas para verificar disponibilidad o escribe *VENDEDOR* para asistirte.`;
+  let msg = `📦 *Envíos al Interior del País - Crastur* 🇻🇪\n\n`;
+  msg += `Actualmente trabajamos exclusivamente con:\n`;
+  msg += `1️⃣ *Delivery en moto a toda Caracas* 🛵\n`;
+  msg += `2️⃣ *Retiro en tienda física:* San Agustín Norte, Caracas (Edif. Liberalba) 🏢\n\n`;
+  msg += `⚠️ No realizamos envíos directos por agencias nacionales (MRW, Zoom o Tealca).\n`;
+  msg += `💡 Si tienes un familiar, amigo o comisionista en Caracas, ¡con gusto se lo entregamos a él!\n\n`;
+  msg += `👉 Escribe qué repuesto buscas para darte precio y disponibilidad.`;
   return msg;
 }
 
@@ -158,14 +98,11 @@ function handleNationalShippingResponse(session, tasa) {
  */
 function handleRateQueryResponse(tasa, settings) {
   const tasaFormatted = formatRate(tasa);
-  let msg = `🇻🇪 *Tasa Oficial BCV del Día en Crastur* 🏦📊\n\n`;
-  msg += `La tasa oficial del Banco Central de Venezuela (BCV) hoy es:\n`;
-  msg += `👉 *Bs. ${tasaFormatted} / USD*\n\n`;
-  msg += `📌 *En Crastur te garantizamos:*\n`;
-  msg += `• Calculamos todos nuestros precios en bolívares a la **tasa oficial BCV exacta**, sin recargos ocultos ni comisiones bancarias extras.\n`;
-  msg += `• 🔥 *¡Descuento en Divisas!* Si pagas en efectivo en dólares o divisas en tienda, cuentas con un **descuento especial** directo en tu compra 💵🏷️.\n`;
-  msg += `• 💛 *Cashea:* También puedes pagar tu inicial en Bolívares a tasa oficial BCV y el resto en 3 cuotas quincenales a 0% interés.\n\n`;
-  msg += `👉 Escribe el repuesto que deseas cotizar (ej: *"pastillas"*, *"aceite"*, *"batería"*) o escribe *MENU* para ver las opciones.`;
+  let msg = `🇻🇪 *Tasa Oficial BCV Hoy:* *Bs. ${tasaFormatted} / USD* 🏦\n\n`;
+  msg += `• Calculamos todos los precios a tasa oficial BCV del día sin recargos.\n`;
+  msg += `• 🔥 *¡Descuento en Divisas!* Cuentas con precio especial pagando en efectivo en tienda física 🏷️.\n`;
+  msg += `• 💛 *Cashea:* Inicial a tasa BCV y 3 cuotas quincenales a 0% interés.\n\n`;
+  msg += `👉 Escribe el repuesto que buscas para cotizártelo de una vez en $ y Bs.`;
   return msg;
 }
 

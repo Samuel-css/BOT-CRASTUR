@@ -29,7 +29,7 @@ function handleCasheaSmart(text, norm, settings, tasa, session) {
     const inicialUsd = precioUsd * inicialPct;
     const cuotaUsd = (precioUsd - inicialUsd) / cuotas;
 
-    let msg = `💛 *Financiamiento con CASHEA en Tienda Física* 🏬🚗\n`;
+    let msg = `💛 *Financiamiento con CASHEA en Tienda Física* 🛞🏍️\n`;
     msg += `Repuesto: *${prod.marca} - ${prod.modelo}*\n`;
     msg += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD* (Bs. ${formatBs(precioUsd * tasa)})\n\n`;
 
@@ -37,7 +37,7 @@ function handleCasheaSmart(text, norm, settings, tasa, session) {
       msg += `⚠️ *Nota sobre compra mínima Cashea:*\n`;
       msg += `El financiamiento con Cashea aplica exclusivamente para compras a partir de *$25.00 USD*.\n\n`;
       msg += `💡 *¿Cómo pagarlo con Cashea?*\n`;
-      msg += `Esta pieza cuesta *$${precioUsd.toFixed(2)} USD*. Puedes agregar otro repuesto o accesorio (como aceite, bujías, filtros o aditivos) a tu pedido para sumar *$25 USD o más*. Al retirar en nuestra tienda física, ¡lo pagas financiado en cuotas con tu app Cashea! 🏬✨\n\n`;
+      msg += `Esta pieza cuesta *$${precioUsd.toFixed(2)} USD*. Puedes agregar otro repuesto o accesorio (como aceite, bujías, filtros o aditivos) a tu pedido para sumar *$25 USD o más*. Al retirar en nuestra tienda física, ¡lo pagas financiado en cuotas con tu app Cashea! 🛞✨\n\n`;
     } else {
       msg += `📌 *Cálculo para tu Nivel ${nivelNum} (Inicial ${(inicialPct * 100).toFixed(0)}%):*\n`;
       msg += `• *Inicial a pagar en tienda:* *$${inicialUsd.toFixed(2)} USD* (Bs. ${formatBs(inicialUsd * tasa)})\n`;
@@ -66,7 +66,7 @@ function handleCasheaSmart(text, norm, settings, tasa, session) {
  */
 function handleCasheaResponse(settings, tasa, session, nivelExplicit = null) {
   const cuotas = settings.cashea_cuotas || '3';
-  let msg = `💛 *Financiamiento con CASHEA en Crastur (Tienda Física)* 🚗🏬\n\n`;
+  let msg = `💛 *Financiamiento con CASHEA en Crastur (Tienda Física)* 🛞🏍️✨\n\n`;
   msg += `¡Llévate hoy tus repuestos y accesorios pagando solo una inicial y el resto en cuotas quincenales sin interés!\n\n`;
   msg += `📌 *Condiciones y Niveles de Cashea:*\n`;
   msg += `• 🏷️ *Monto Mínimo:* Aplica para compras a partir de *$25.00 USD* (puedes combinar varios repuestos para llegar al monto).\n`;

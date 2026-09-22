@@ -23,6 +23,27 @@ async function checkPendingFollowUps(sendWhatsAppMessageCallback) {
   `).all(threshold);
 
   for (const session of pendingSessions) {
+    // Si el usuario está a mitad de un flujo de apartado, no interrumpir con mensajes comerciales
+    if (session.step && session.step.startsWith('apartado_')) {
+      continue;
+    }
+
+    // Si el usuario ya completó una reserva activa no vencida, marcar como atendido y omitir
+    const activeRes = db.prepare(`
+      SELECT id FROM reservations
+      WHERE jid = ? AND estado = 'activo' AND expira_en > ?
+      LIMIT 1
+    `).get(session.jid, now);
+
+    if (activeRes) {
+      db.prepare(`
+        UPDATE chat_sessions
+        SET seguimiento_enviado = 1
+        WHERE jid = ?
+      `).run(session.jid);
+      continue;
+    }
+
     const pushName = session.push_name || 'amigo/a';
     const prodName = session.ultimo_producto_nombre;
 

@@ -26,6 +26,7 @@ export default function App() {
   const [settings, setSettings] = useState({});
   const [bcvData, setBcvData] = useState({ tasa_efectiva: 849.56, tasa_bcv: 849.56, fecha_tasa: '' });
   const [waStatus, setWaStatus] = useState({ status: 'disconnected', qr: null, user: null });
+  const [botPausedGlobal, setBotPausedGlobal] = useState(false);
   const [metrics, setMetrics] = useState({ consultas_hoy: 0, total_mensajes: 0, total_clientes: 0, top_busquedas: [] });
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
@@ -109,6 +110,10 @@ export default function App() {
             const { type, data } = JSON.parse(event.data);
             if (type === 'whatsapp_status') {
               setWaStatus(data);
+            } else if (type === 'bot_global_pause_changed') {
+              if (data && data.bot_pausado_global !== undefined) {
+                setBotPausedGlobal(data.bot_pausado_global);
+              }
             } else if (type === 'bcv_updated') {
               loadBCV();
               loadProducts();
@@ -144,6 +149,7 @@ export default function App() {
         .then(r => r.json())
         .then(data => {
           if (data.whatsapp) setWaStatus(data.whatsapp);
+          if (data.bot_pausado_global !== undefined) setBotPausedGlobal(data.bot_pausado_global);
         })
         .catch(() => {});
       loadMetrics();
@@ -233,6 +239,29 @@ export default function App() {
           .catch(() => {});
       }
     });
+  };
+
+  const handleToggleGlobalBotPause = () => {
+    const nextState = !botPausedGlobal;
+    fetch('/api/bot/pause-global', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused: nextState })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.bot_pausado_global !== undefined) {
+          setBotPausedGlobal(data.bot_pausado_global);
+          if (data.bot_pausado_global) {
+            toast.warning('Bot PAUSADO globalmente. No responderá automáticamente a ningún chat.');
+          } else {
+            toast.success('Bot REANUDADO globalmente. Está atendiendo mensajes.');
+          }
+        }
+      })
+      .catch(() => {
+        toast.error('Error al cambiar el estado del bot');
+      });
   };
 
   // Product CRUD
@@ -450,6 +479,8 @@ export default function App() {
           loadingBCV={loading}
           waStatus={waStatus}
           onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
+          botPausedGlobal={botPausedGlobal}
+          onToggleBotPause={handleToggleGlobalBotPause}
         />
 
         {/* VIEW CONTAINER */}

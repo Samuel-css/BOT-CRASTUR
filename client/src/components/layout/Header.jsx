@@ -1,7 +1,16 @@
-import { DollarSign, RefreshCw, QrCode, CheckCircle2, Menu } from 'lucide-react';
+import { DollarSign, RefreshCw, QrCode, CheckCircle2, Menu, PauseCircle, PlayCircle } from 'lucide-react';
 import { formatRate } from '../../utils/formatters';
 
-export default function Header({ activeTab, bcvData, onRefreshBCV, loadingBCV, waStatus, onToggleMobileMenu }) {
+export default function Header({
+  activeTab,
+  bcvData,
+  onRefreshBCV,
+  loadingBCV,
+  waStatus,
+  onToggleMobileMenu,
+  botPausedGlobal,
+  onToggleBotPause
+}) {
   const getTabTitle = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -46,6 +55,30 @@ export default function Header({ activeTab, bcvData, onRefreshBCV, loadingBCV, w
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Botón de Pausa / Reanudación Global del Bot */}
+        <button
+          onClick={onToggleBotPause}
+          type="button"
+          title={botPausedGlobal ? 'El bot está silenciado. Clic para reactivar respuestas automáticas.' : 'El bot está respondiendo automáticamente. Clic para pausarlo.'}
+          className={`h-10 flex items-center gap-2 px-3 sm:px-3.5 rounded-xl border text-xs font-semibold transition cursor-pointer shadow-sm ${
+            botPausedGlobal
+              ? 'bg-amber-950/50 border-amber-500/80 text-amber-300 hover:bg-amber-900/60 hover:border-amber-400'
+              : 'bg-slate-900/90 border-slate-800 hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400'
+          }`}
+        >
+          {botPausedGlobal ? (
+            <>
+              <PlayCircle size={15} className="text-amber-400 shrink-0 animate-pulse" />
+              <span><span className="hidden sm:inline">Bot: </span>Pausado</span>
+            </>
+          ) : (
+            <>
+              <PauseCircle size={15} className="text-emerald-400 shrink-0" />
+              <span><span className="hidden sm:inline">Bot: </span>Activo</span>
+            </>
+          )}
+        </button>
+
         {/* Badge Tasa BCV Oficial */}
         <div className="h-10 flex items-center gap-2 px-3 rounded-xl bg-slate-900/90 border border-slate-800/80 shadow-sm">
           <DollarSign size={15} className="text-orange-400 shrink-0" />

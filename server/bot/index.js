@@ -3,7 +3,8 @@ const {
   getSettings,
   getEffectiveRate,
   recordMetric,
-  isBotPaused
+  isBotPaused,
+  isBotGloballyPaused
 } = require('../database');
 
 // Utilidades y Reglas de Negocio
@@ -64,6 +65,12 @@ const { checkPendingFollowUps } = require('./followUp/followUpService');
  * Procesa el mensaje recibido y genera la respuesta adecuada
  */
 function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = null) {
+  // 0. Si el bot está pausado globalmente desde la interfaz, no responder
+  if (isBotGloballyPaused()) {
+    console.log('[Bot] Silenciado globalmente por el panel administrativo.');
+    return null;
+  }
+
   // 1. Si el bot fue pausado manualmente por un asesor en este chat, no responder
   if (isBotPaused(jid)) {
     console.log(`[Bot] Chat ${jid} está pausado manualmente. Silenciando respuesta automática.`);
@@ -78,12 +85,6 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
   const settings = getSettings();
   const tasa = getEffectiveRate();
   const now = Date.now();
-
-  // 2. Manejo de Mensajes Multimedia (Audios, Notas de voz, Fotos, Stickers)
-  if (mediaInfo && mediaInfo.isMedia && !rawText) {
-    recordMetric('mensaje_multimedia', mediaInfo.type, jid);
-    return handleMediaResponse(pushName, mediaInfo.type);
-  }
 
   const text = (rawText || '').trim();
   const norm = normalizeText(text);
@@ -104,19 +105,48 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     `).run(pushName, now, jid);
   }
 
+  // 3. Manejo de Mensajes Multimedia (Audios, Notas de voz, Fotos, Stickers)
+  if (mediaInfo && mediaInfo.isMedia && !rawText) {
+    recordMetric('mensaje_multimedia', mediaInfo.type, jid);
+
+    // Si el usuario está en proceso de apartado y envía foto o audio
+    if (session.step && session.step.startsWith('apartado_pidiendo_')) {
+      if (mediaInfo.type === 'image') {
+        return `📷 Veo que enviaste una imagen (o foto de documento). Para generar tu ticket de apartado por 24 horas automáticamente en caja, por favor escribe tus datos en texto ✍️\n_(Escribe *cancelar* si deseas salir)_`;
+      }
+      if (mediaInfo.type === 'audio' || mediaInfo.type === 'voice') {
+        return `🎙️ Veo que enviaste una nota de voz. Por este canal procesamos los tickets por texto escrito. Por favor indícanos tus datos por mensaje escrito para completar tu apartado de 24 horas ✍️\n_(Escribe *cancelar* si deseas salir)_`;
+      }
+    }
+
+    return handleMediaResponse(pushName, mediaInfo.type);
+  }
+
   // Guardar mensaje en el registro
   db.prepare(`
     INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
     VALUES (?, 'cliente', ?, ?)
   `).run(jid, text, now);
 
-  // 3. Manejo de cancelación de flujos
-  if (norm === 'cancelar' || norm === 'salir' || norm === 'abortar') {
-    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
-    return `Operación cancelada 👍. Escribe *MENU* para volver al inicio o escribe el repuesto que buscas.`;
+  // 4. Manejo de cancelación de flujos
+  const isCancel =
+    norm === 'cancelar' ||
+    norm === 'salir' ||
+    norm === 'abortar' ||
+    norm === 'cancela' ||
+    norm.includes('cancel') ||
+    norm.includes('ya no quiero') ||
+    norm.includes('no quiero apartar') ||
+    norm.includes('no voy a apartar') ||
+    norm.includes('olvidalo') ||
+    norm.includes('dejalo asi');
+
+  if (isCancel) {
+    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL, seguimiento_enviado = 1 WHERE jid = ?").run(jid);
+    return `Operación cancelada 👍. ¿En qué más te podemos ayudar? Escribe el repuesto que buscas, *DELIVERY*, *CASHEA* o escribe *MENU* para volver al inicio.`;
   }
 
-  // 4. Máquina de estados para APARTADOS (Límite 24 Horas)
+  // 5. Máquina de estados para APARTADOS (Límite 24 Horas)
   if (session.step === 'apartado_pidiendo_nombre') {
     return handleApartadoNombre(jid, text, session, tasa, settings);
   }
@@ -127,7 +157,7 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleApartadoTelefono(jid, text, session, tasa, settings);
   }
 
-  // 5. Agradecimientos, Despedidas y Cortesía ("gracias", "chévere", "fino", etc.)
+  // 6. Agradecimientos, Despedidas y Cortesía ("gracias", "chévere", "fino", etc.)
   if (
     norm === 'gracias' ||
     norm.startsWith('gracias') ||
@@ -180,6 +210,7 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm.startsWith('no ') ||
     norm.startsWith('ya no ')
   ) {
+    db.prepare("UPDATE chat_sessions SET seguimiento_enviado = 1 WHERE jid = ?").run(jid);
     return handleNegativeResponse();
   }
 
@@ -302,41 +333,6 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleQualityAndBrandsResponse();
   }
 
-  // 15. Consulta de Repuestos para Motos
-  if (
-    norm.includes('para moto') ||
-    norm.includes('de moto') ||
-    norm.includes('repuestos de moto') ||
-    norm.includes('repuesto de moto') ||
-    norm.includes('cosas de moto') ||
-    norm.includes('para motos') ||
-    norm.includes('moto') ||
-    norm.includes('motocicleta') ||
-    norm.includes('scooter')
-  ) {
-    recordMetric('consulta_motos', text, jid);
-    return handleMotoQueryResponse();
-  }
-
-  // 15b. Consulta de Cauchera / Llantas / Cauchos
-  if (
-    norm.includes('cauchera') ||
-    norm.includes('caucho') ||
-    norm.includes('llanta') ||
-    norm.includes('llantas') ||
-    norm.includes('goma') ||
-    norm.includes('gomas') ||
-    norm.includes('valvula') ||
-    norm.includes('parche') ||
-    norm.includes('nitrogeno') ||
-    norm.includes('inflado') ||
-    norm.includes('camara de aire') ||
-    norm.includes('neumático')
-  ) {
-    recordMetric('consulta_cauchera', text, jid);
-    return handleCaucheraQueryResponse();
-  }
-
   // 15c. Consulta de Partes de Carro no comercializadas
   if (
     norm.includes('repuestos de carro') ||
@@ -400,6 +396,55 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handlePaymentMethodsResponse(tasa, settings);
   }
 
+  // 18. Detección de intención de APARTAR / RESERVAR (24H)
+  if (
+    norm.includes('apartar') ||
+    norm.includes('reservar') ||
+    norm.includes('aparta') ||
+    norm.includes('reserva') ||
+    norm.includes('guardamelo') ||
+    norm.includes('guardamela') ||
+    norm.includes('guardalo') ||
+    norm.includes('guardala') ||
+    norm.includes('lo quiero apartar') ||
+    norm.includes('quiero apartar') ||
+    norm.includes('lo paso a buscar') ||
+    norm.includes('lo voy a buscar')
+  ) {
+    recordMetric('intencion_apartado', text, jid);
+    if (settings.fuera_horario_activo === '1' && !isWithinBusinessHours()) {
+      return handleOutOfHoursTransactionResponse(settings, 'apartar');
+    }
+    return initiateApartadoFlow(jid, text, norm, session, tasa, settings, pushName);
+  }
+
+  // 18b. Búsqueda Multi-Producto / Carrito de Compras (Combo con o sin Delivery/Cashea)
+  const multiProducts = searchMultipleProducts(text);
+  if (multiProducts.length >= 2) {
+    recordMetric('busqueda_multi_producto', `${multiProducts.length} repuestos`, jid);
+
+    const contextJson = JSON.stringify(multiProducts.map(p => ({
+      id: p.id,
+      marca: p.marca,
+      modelo: p.modelo,
+      precio_usd: p.precio_usd,
+      categoria: p.categoria
+    })));
+
+    const comboTitle = `Combo (${multiProducts.length} repuestos): ` + multiProducts.map(p => `${p.marca} ${p.modelo}`).join(' + ');
+
+    db.prepare(`
+      UPDATE chat_sessions
+      SET ultimo_producto_id = ?,
+          ultimo_producto_nombre = ?,
+          contexto_productos = ?,
+          seguimiento_enviado = 0
+      WHERE jid = ?
+    `).run(multiProducts[0].id, comboTitle, contextJson, jid);
+
+    return handleMultiProductResults(multiProducts, tasa, settings, session, text);
+  }
+
   // 19. Delivery y Envíos (Solo delivery a Caracas y retiro en local)
   if (
     norm.includes('delivery') ||
@@ -460,29 +505,6 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleAvailabilityResponse();
   }
 
-  // 23. Detección de intención de APARTAR / RESERVAR (24H)
-  if (
-    norm.includes('apartar') ||
-    norm.includes('reservar') ||
-    norm.includes('aparta') ||
-    norm.includes('reserva') ||
-    norm.includes('guardamelo') ||
-    norm.includes('guardamela') ||
-    norm.includes('guardalo') ||
-    norm.includes('guardala') ||
-    norm.includes('lo quiero apartar') ||
-    norm.includes('quiero apartar') ||
-    norm.includes('lo paso a buscar') ||
-    norm.includes('lo voy a buscar')
-  ) {
-    recordMetric('intencion_apartado', text, jid);
-    // Fuera de horario: el apartado requiere presencia en tienda, informar al cliente
-    if (settings.fuera_horario_activo === '1' && !isWithinBusinessHours()) {
-      return handleOutOfHoursTransactionResponse(settings, 'apartar');
-    }
-    return initiateApartadoFlow(jid, text, norm, session, tasa, settings, pushName);
-  }
-
   // 24. Detección de solicitud de VENDEDOR
   if (
     norm.includes('vendedor') ||
@@ -519,6 +541,16 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm.includes('maps') ||
     norm.includes('donde estan') ||
     norm.includes('donde queda') ||
+    norm.includes('donde quedan') ||
+    norm.includes('donde es') ||
+    norm.includes('que parte') ||
+    norm.includes('q parte') ||
+    norm.includes('por donde') ||
+    norm.includes('quedan') ||
+    norm.includes('qdan') ||
+    norm.includes('se ubican') ||
+    norm.includes('se encuentran') ||
+    norm.includes('tienda fisica') ||
     norm.includes('tienda') ||
     norm === '4'
   ) {
@@ -532,7 +564,91 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return contextResult;
   }
 
-  // 28. Saludos o petición de Menú
+  // 29. Búsqueda Difusa de Productos en SQLite (Fuzzy Search con Levenshtein)
+  const productSearchResults = searchProductsFuzzy(text);
+  if (productSearchResults.length > 0) {
+    const firstProd = productSearchResults[0];
+    recordMetric('busqueda_producto', `${firstProd.marca} ${firstProd.modelo}`, jid);
+
+    // Acumular historial de productos recientes (para permitir "apartar ambos", "los dos", etc.)
+    let prevHistory = [];
+    try {
+      prevHistory = JSON.parse(session?.contexto_productos || '[]');
+      if (!Array.isArray(prevHistory)) prevHistory = [];
+    } catch (e) {
+      prevHistory = [];
+    }
+
+    const currentMatches = productSearchResults.map(p => ({
+      id: p.id,
+      marca: p.marca,
+      modelo: p.modelo,
+      precio_usd: p.precio_usd,
+      categoria: p.categoria
+    }));
+
+    // El producto actual va al principio, seguido por los anteriores únicos
+    const combinedHistory = [...currentMatches];
+    for (const h of prevHistory) {
+      if (!combinedHistory.some(c => c.id === h.id)) {
+        combinedHistory.push(h);
+      }
+    }
+    const contextJson = JSON.stringify(combinedHistory.slice(0, 4));
+
+    db.prepare(`
+      UPDATE chat_sessions
+      SET ultimo_producto_id = ?,
+          ultimo_producto_nombre = ?,
+          contexto_productos = ?,
+          seguimiento_enviado = 0
+      WHERE jid = ?
+    `).run(firstProd.id, `${firstProd.marca} ${firstProd.modelo}`, contextJson, jid);
+
+    // Si encontró exactamente 1 producto, mostrar directamente su ficha detallada
+    if (productSearchResults.length === 1) {
+      return handleSingleProductDetail(firstProd, tasa, settings, session);
+    }
+
+    return handleProductResults(productSearchResults, tasa, settings, session);
+  }
+
+  // 30. Consulta general de Repuestos para Moto (cuando no hubo match específico en catálogo)
+  if (
+    norm.includes('para moto') ||
+    norm.includes('de moto') ||
+    norm.includes('repuestos de moto') ||
+    norm.includes('repuesto de moto') ||
+    norm.includes('cosas de moto') ||
+    norm.includes('para motos') ||
+    norm === 'moto' ||
+    norm.includes('motocicleta') ||
+    norm.includes('scooter')
+  ) {
+    recordMetric('consulta_motos', text, jid);
+    return handleMotoQueryResponse();
+  }
+
+  // 30b. Consulta general de Cauchera / Llantas / Insumos (cuando no hubo match específico en catálogo)
+  if (
+    norm.includes('cauchera') ||
+    norm.includes('caucho') ||
+    norm.includes('llanta') ||
+    norm.includes('llantas') ||
+    norm.includes('goma') ||
+    norm.includes('gomas') ||
+    norm.includes('valvula') ||
+    norm.includes('parche') ||
+    norm.includes('nitrogeno') ||
+    norm.includes('inflado') ||
+    norm.includes('camara de aire') ||
+    norm.includes('neumatico')
+  ) {
+    recordMetric('consulta_cauchera', text, jid);
+    return handleCaucheraQueryResponse();
+  }
+
+  // 31. Saludos puros o petición de Menú (cuando no se consultó un producto específico)
   if (
     norm === 'hola' ||
     norm.startsWith('hola ') ||
@@ -551,65 +667,6 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
   ) {
     recordMetric('saludo_menu', text, jid);
     return handleGreetingResponse(pushName, settings, tasa);
-  }
-
-  // 28b. Búsqueda Multi-Producto / Carrito de Compras (ej: "pastillas aveo y aceite 20w50")
-  const multiProducts = searchMultipleProducts(text);
-  if (multiProducts.length >= 2) {
-    recordMetric('busqueda_multi_producto', `${multiProducts.length} repuestos`, jid);
-
-    const contextJson = JSON.stringify(multiProducts.map(p => ({
-      id: p.id,
-      marca: p.marca,
-      modelo: p.modelo,
-      precio_usd: p.precio_usd,
-      categoria: p.categoria
-    })));
-
-    const comboTitle = `Combo (${multiProducts.length} repuestos): ` + multiProducts.map(p => `${p.marca} ${p.modelo}`).join(' + ');
-
-    db.prepare(`
-      UPDATE chat_sessions
-      SET ultimo_producto_id = ?,
-          ultimo_producto_nombre = ?,
-          contexto_productos = ?,
-          seguimiento_enviado = 0
-      WHERE jid = ?
-    `).run(multiProducts[0].id, comboTitle, contextJson, jid);
-
-    return handleMultiProductResults(multiProducts, tasa, settings, session);
-  }
-
-  // 29. Búsqueda Difusa de Productos en SQLite (Fuzzy Search con Levenshtein)
-  const productSearchResults = searchProductsFuzzy(text);
-  if (productSearchResults.length > 0) {
-    const firstProd = productSearchResults[0];
-    recordMetric('busqueda_producto', `${firstProd.marca} ${firstProd.modelo}`, jid);
-
-    // Guardar contexto de los productos encontrados en la sesión
-    const contextJson = JSON.stringify(productSearchResults.map(p => ({
-      id: p.id,
-      marca: p.marca,
-      modelo: p.modelo,
-      precio_usd: p.precio_usd,
-      categoria: p.categoria
-    })));
-
-    db.prepare(`
-      UPDATE chat_sessions
-      SET ultimo_producto_id = ?,
-          ultimo_producto_nombre = ?,
-          contexto_productos = ?,
-          seguimiento_enviado = 0
-      WHERE jid = ?
-    `).run(firstProd.id, `${firstProd.marca} ${firstProd.modelo}`, contextJson, jid);
-
-    // Si encontró exactamente 1 producto, mostrar directamente su ficha detallada
-    if (productSearchResults.length === 1) {
-      return handleSingleProductDetail(firstProd, tasa, settings, session);
-    }
-
-    return handleProductResults(productSearchResults, tasa, settings, session);
   }
 
   // 30. Si consultó por carros y no hubo match en inventario

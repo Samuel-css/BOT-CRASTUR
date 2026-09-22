@@ -309,7 +309,8 @@ async function initDB() {
     'mensaje_insistencia': '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.',
     'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nInsumos para caucheras, repuestos y accesorios para moto, y otros productos con financiamiento Cashea.',
     'fuera_horario_activo': '0',
-    'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨'
+    'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨',
+    'bot_pausado_global': '0'
   };
 
   const getStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
@@ -386,6 +387,16 @@ function isBotPaused(jid) {
   const session = db.prepare('SELECT bot_pausado FROM chat_sessions WHERE jid = ?').get(jid);
   // Comparación robusta: acepta tanto número 1 como string '1'
   return session ? parseInt(session.bot_pausado) === 1 : false;
+}
+
+function isBotGloballyPaused() {
+  const s = getSettings();
+  return s.bot_pausado_global === '1';
+}
+
+function setBotGlobalPause(paused) {
+  updateSetting('bot_pausado_global', paused ? '1' : '0');
+  return !!paused;
 }
 
 function getMetricsSummary() {
@@ -527,6 +538,8 @@ module.exports = {
   recordMetric,
   toggleBotPause,
   isBotPaused,
+  isBotGloballyPaused,
+  setBotGlobalPause,
   getMetricsSummary,
   exportCatalog,
   importCatalog,

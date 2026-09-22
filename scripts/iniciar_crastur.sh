@@ -2,7 +2,7 @@
 # ==============================================================
 #           CRASTUR - INSUMOS CAUCHERA Y REPUESTOS MOTO
 # ==============================================================
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 if ! command -v node >/dev/null 2>&1; then
     echo "[AVISO] Node.js no se encuentra instalado en este sistema."

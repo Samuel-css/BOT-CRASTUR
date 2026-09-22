@@ -7,7 +7,7 @@ const spamCounters = new Map();
  */
 function isSpamming(jid) {
   const now = Date.now();
-  const limit = 15; // mensajes máximos por ventana
+  const limit = 30; // mensajes máximos por ventana de 60s (protección contra bots sin bloquear humanos rápidos)
   const window = 60 * 1000; // 60 segundos
 
   if (!spamCounters.has(jid)) {
@@ -24,6 +24,15 @@ function isSpamming(jid) {
   return counter.count > limit;
 }
 
+function resetSpam(jid = null) {
+  if (jid) {
+    spamCounters.delete(jid);
+  } else {
+    spamCounters.clear();
+  }
+}
+
 module.exports = {
-  isSpamming
+  isSpamming,
+  resetSpam
 };

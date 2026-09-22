@@ -12,6 +12,8 @@ const {
   recordMetric,
   toggleBotPause,
   isBotPaused,
+  isBotGloballyPaused,
+  setBotGlobalPause,
   getMetricsSummary,
   exportCatalog,
   importCatalog,
@@ -69,6 +71,10 @@ wss.on('connection', (ws) => {
     type: 'whatsapp_status',
     data: getStatus()
   }));
+  ws.send(JSON.stringify({
+    type: 'bot_global_pause_changed',
+    data: { bot_pausado_global: isBotGloballyPaused() }
+  }));
 });
 
 // ================= RUTAS DE LA API =================
@@ -84,6 +90,7 @@ app.get('/api/status', (req, res) => {
 
   res.json({
     whatsapp: waStatus,
+    bot_pausado_global: isBotGloballyPaused(),
     tasa,
     fecha_tasa: settings.fecha_tasa,
     tasa_manual_activa: settings.tasa_manual_activa === '1',
@@ -92,6 +99,14 @@ app.get('/api/status', (req, res) => {
     total_vendedores: sellerCount,
     total_apartados: apartadosCount
   });
+});
+
+// Control de Pausa Global del Bot (Botón en la interfaz)
+app.post('/api/bot/pause-global', (req, res) => {
+  const { pausado } = req.body;
+  const nuevoEstado = setBotGlobalPause(pausado !== undefined ? !!pausado : !isBotGloballyPaused());
+  broadcast('bot_global_pause_changed', { bot_pausado_global: nuevoEstado });
+  res.json({ success: true, bot_pausado_global: nuevoEstado });
 });
 
 // 2. WhatsApp Controls

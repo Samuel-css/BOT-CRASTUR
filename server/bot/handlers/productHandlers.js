@@ -8,43 +8,28 @@ function handleSingleProductDetail(p, tasa, settings, session) {
   const precioUsd = parseFloat(p.precio_usd);
   const precioBs = precioUsd * tasa;
   const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
-
-  // Niveles Cashea
   const n1 = precioUsd * 0.40;
-  const n2 = precioUsd * 0.30;
-  const n3 = precioUsd * 0.20;
 
-  let msg = `🛞🏍️ *${p.marca} - ${p.modelo}* ⚙️\n\n`;
+  let msg = `🛞🏍️ *${p.marca} - ${p.modelo}*\n`;
   if (p.descripcion) {
-    msg += `📝 *Detalles:* ${p.descripcion}\n`;
+    msg += `📝 ${p.descripcion}\n`;
   }
-  msg += `📂 *Categoría:* ${p.categoria}\n`;
-  msg += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD* _(🔥 ¡Pregunta por tu **descuento especial en divisas** en efectivo! 🏷️)_\n`;
-  msg += `🇻🇪 *Precio en Bolívares:* *Bs. ${formatBs(precioBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n\n`;
+  msg += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD* _(🔥 ¡Descuento especial en divisas en efectivo! 🏷️)_\n`;
+  msg += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(precioBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n`;
+  msg += `📦 *Disponibilidad:* ${p.stock > 0 ? '✅ Disponible para entrega inmediata' : '⚠️ Consultar stock'}\n\n`;
 
-  // REGLA CASHEA: Mínimo $25 USD
+  // Cashea resumido y claro
   if (precioUsd < 25) {
-    msg += `💛 *Financiamiento con CASHEA en Tienda Física:*\n`;
-    msg += `⚠️ _Cashea aplica exclusivamente para compras a partir de *$25.00 USD*._\n`;
-    msg += `💡 Este producto cuesta *$${precioUsd.toFixed(2)} USD*. Si agregas otro repuesto, accesorio u otro producto (como aceite, bujía, una tripa o pegas) y sumas *$25 USD o más*, ¡puedes pagarlo en cuotas con Cashea directamente en nuestra tienda física! 🏬✨\n\n`;
+    msg += `💛 *Cashea en Tienda Física:* Aplica desde *$25 USD*. (Si agregas otro producto y llegas a $25, ¡lo pagas en cuotas!).\n\n`;
   } else {
-    msg += `💛 *Planes de Financiamiento con CASHEA en Tienda Física 🏬:*\n`;
-    msg += `_(⚠️ El pago con Cashea se procesa directamente en caja al momento de retirar en nuestra tienda física)_\n`;
-    msg += `• *Nivel 1 (Inicial 40%):* Inicial en tienda de *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) + ${cuotasCashea} cuotas quincenales de *$${((precioUsd - n1) / cuotasCashea).toFixed(2)} USD*\n`;
-    msg += `• *Nivel 2 (Inicial 30%):* Inicial en tienda de *$${n2.toFixed(2)} USD* (Bs. ${formatBs(n2 * tasa)}) + ${cuotasCashea} cuotas quincenales de *$${((precioUsd - n2) / cuotasCashea).toFixed(2)} USD*\n`;
-    msg += `• *Nivel 3+ (Inicial 20%):* Inicial en tienda de *$${n3.toFixed(2)} USD* (Bs. ${formatBs(n3 * tasa)}) + ${cuotasCashea} cuotas quincenales de *$${((precioUsd - n3) / cuotasCashea).toFixed(2)} USD*\n\n`;
+    msg += `💛 *Cashea en Tienda Física:* Inicial desde *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) y ${cuotasCashea} cuotas quincenales de *$${((precioUsd - n1) / cuotasCashea).toFixed(2)} USD*.\n\n`;
   }
 
-  msg += `📦 *Disponibilidad:* ${p.stock > 0 ? '✅ Disponible para entrega inmediata en tienda y delivery' : '⚠️ Consultar disponibilidad'}\n\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `¿Qué deseas hacer con este producto?\n\n`;
-  msg += `👉 Escribe *DELIVERY* para solicitar envío en moto a tu zona en Caracas 🛵.\n`;
-  msg += `👉 Escribe *APARTAR* para reservarlo sin costo por 24 horas y retirarlo en tienda 🏢.\n`;
-  msg += `👉 Escribe *PAGO* para conocer formas de pago y descuento en divisas 💵.\n`;
-  msg += `👉 Escribe *VENDEDOR* para hablar con un asesor de ventas 👨‍🔧.\n`;
-  msg += `👉 Escribe *MENU* para volver al inicio.`;
+  msg += `👉 Escribe *APARTAR* para reservarlo 24h sin costo y retirar en tienda 🏢.\n`;
+  msg += `👉 Escribe *DELIVERY* para cotizar envío en moto en Caracas 🛵.\n`;
+  msg += `👉 Escribe *VENDEDOR* para hablar con un asesor humano 👨‍🔧.`;
 
-  // Si tiene imagen asociada, enviamos payload estructurado con foto
   if (p.imagen_url && typeof p.imagen_url === 'string' && p.imagen_url.trim().length > 5) {
     return {
       text: msg,
@@ -144,7 +129,7 @@ function handleContextualSelection(norm, session, tasa, settings) {
 /**
  * Formatea cotización combinada para múltiples productos (Carrito/Combo)
  */
-function handleMultiProductResults(products, tasa, settings, session) {
+function handleMultiProductResults(products, tasa, settings, session, text = '') {
   const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
   const totalUsd = products.reduce((sum, p) => sum + (parseFloat(p.precio_usd) || 0), 0);
   const totalBs = totalUsd * tasa;
@@ -168,16 +153,15 @@ function handleMultiProductResults(products, tasa, settings, session) {
 
   if (totalUsd >= 25) {
     const n1 = totalUsd * 0.40;
-    const n2 = totalUsd * 0.30;
-    const n3 = totalUsd * 0.20;
-    msg += `💛 *Financiamiento con CASHEA en Tienda Física 🏬:*\n`;
-    msg += `_(Como tu pedido suma *$${totalUsd.toFixed(2)} USD* [mínimo $25], ¡calificas para pagar todo el combo en cuotas con Cashea al retirar en tienda!)_\n`;
-    msg += `• *Nivel 1 (Inicial 40%):* Inicial en tienda de *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) + ${cuotasCashea} cuotas de *$${((totalUsd - n1) / cuotasCashea).toFixed(2)} USD*\n`;
-    msg += `• *Nivel 2 (Inicial 30%):* Inicial en tienda de *$${n2.toFixed(2)} USD* (Bs. ${formatBs(n2 * tasa)}) + ${cuotasCashea} cuotas de *$${((totalUsd - n2) / cuotasCashea).toFixed(2)} USD*\n`;
-    msg += `• *Nivel 3+ (Inicial 20%):* Inicial en tienda de *$${n3.toFixed(2)} USD* (Bs. ${formatBs(n3 * tasa)}) + ${cuotasCashea} cuotas de *$${((totalUsd - n3) / cuotasCashea).toFixed(2)} USD*\n`;
-    msg += `⚠️ _Recuerda: El pago con Cashea se procesa directamente en caja al momento de retirar en nuestra tienda física con tu app Cashea._\n\n`;
+    msg += `💛 *Cashea en Tienda Física:* Inicial desde *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) y ${cuotasCashea} cuotas quincenales de *$${((totalUsd - n1) / cuotasCashea).toFixed(2)} USD*.\n\n`;
   } else {
-    msg += `💛 *Nota sobre Cashea:* Este pedido suma *$${totalUsd.toFixed(2)} USD*. Cashea requiere una compra mínima de *$25.00 USD*. Si agregas otro repuesto o producto para llegar a $25, ¡podrás pagarlo en cuotas con Cashea en tienda física! 🏬\n\n`;
+    msg += `💛 *Cashea en Tienda:* Requiere compra mínima de $25 (¡agrega otro producto para financiar en cuotas!).\n\n`;
+  }
+
+  const { detectCaracasZone } = require('../utils/caracasDelivery');
+  const detectedZone = text ? detectCaracasZone(text, settings) : null;
+  if (detectedZone) {
+    msg += `🛵 *Delivery estimado a ${detectedZone.nombre}:* *${detectedZone.tarifa}* (motorizado hoy mismo).\n\n`;
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;

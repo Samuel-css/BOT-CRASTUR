@@ -90,7 +90,45 @@ const SYNONYMS = {
   'silicon': 'silicon',
   'fusible': 'fusibles',
   'fusibles': 'fusibles',
-  'repuesto': 'repuestos'
+  'repuesto': 'repuestos',
+
+  // 💵 Monedas y modismos
+  'verdes': 'dolares',
+  'verde': 'dolares',
+  'lechugas': 'dolares',
+  'divisa': 'dolares',
+  'divisas': 'dolares',
+  'dolar': 'dolares',
+
+  // 🛞 Neumáticos y llantas
+  'caucho': 'caucho',
+  'cauchos': 'caucho',
+  'llanta': 'caucho',
+  'llantas': 'caucho',
+  'neumatico': 'caucho',
+  'neumaticos': 'caucho',
+  'sellomatic': 'sellomatic',
+
+  // 🏍️ Marcas y Modelos populares en Venezuela
+  'sbr': 'sbr',
+  'horse': 'horse',
+  'owen': 'owen',
+  'arsen': 'arsen',
+  'gn': 'gn',
+  'gn125': 'gn',
+  'hj': 'hj',
+  'speed': 'speed',
+  'tx': 'tx',
+  'tx200': 'tx',
+  'kway': 'keeway',
+  'keeway': 'keeway',
+  'jaguar': 'jaguar',
+  'bera': 'bera',
+  'empire': 'empire',
+  'suzuki': 'suzuki',
+  'ngk': 'ngk',
+  'motul': 'motul',
+  'sky': 'sky'
 };
 
 module.exports = { SYNONYMS };
