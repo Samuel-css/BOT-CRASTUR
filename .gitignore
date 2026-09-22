@@ -4,8 +4,9 @@ client/node_modules/
 package-lock.json
 
 # Builds de producción
-client/dist/
-dist/
+/dist/
+!client/dist/
+
 
 # SEGURIDAD CRÍTICA: Credenciales de WhatsApp (Baileys)
 data/auth_info_baileys/

@@ -474,123 +474,17 @@ app.post('/api/catalog/import', (req, res) => {
   }
 });
 
-// Servir frontend compilado en producción (con fallback amigable si no está compilado)
+// Servir frontend compilado en producción
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
-app.use(express.static(clientDist));
-
-app.use((req, res, next) => {
-  if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
-    const indexPath = path.join(clientDist, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      return res.sendFile(indexPath);
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(clientDist, 'index.html'));
     }
-    // Fallback amigable si el frontend aún no ha sido compilado
-    return res.status(200).send(`
-      <!DOCTYPE html>
-      <html lang="es">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Crastur - Compilación Requerida</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #0b0f19;
-            color: #f1f5f9;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 24px;
-          }
-          .card {
-            background: #141e33;
-            border: 1px solid #1e293b;
-            border-radius: 16px;
-            padding: 36px;
-            max-width: 560px;
-            width: 100%;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
-            text-align: center;
-          }
-          .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(245, 158, 11, 0.15);
-            color: #fbbf24;
-            border: 1px solid rgba(245, 158, 11, 0.3);
-            padding: 6px 16px;
-            border-radius: 9999px;
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 20px;
-          }
-          h1 { font-size: 22px; font-weight: 700; margin-bottom: 12px; color: #ffffff; }
-          p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
-          .step-box {
-            background: #0b1120;
-            border: 1px solid #22324f;
-            border-radius: 10px;
-            padding: 16px;
-            text-align: left;
-            margin-bottom: 16px;
-          }
-          .step-title { color: #38bdf8; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
-          .step-desc { color: #94a3b8; font-size: 13px; }
-          code {
-            display: block;
-            background: #020617;
-            padding: 10px 14px;
-            border-radius: 6px;
-            color: #4ade80;
-            font-family: Consolas, monospace;
-            font-size: 13px;
-            margin-top: 8px;
-          }
-          .btn-reload {
-            display: inline-block;
-            margin-top: 10px;
-            padding: 10px 22px;
-            background: #2563eb;
-            color: #ffffff;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 14px;
-            cursor: pointer;
-            border: none;
-          }
-          .btn-reload:hover { background: #1d4ed8; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="badge">⚙️ Interfaz Visual No Compilada</div>
-          <h1>El servidor Crastur está activo</h1>
-          <p>El backend y el servicio de WhatsApp están listos, pero la interfaz visual web (React/Vite) aún no ha sido construida.</p>
-          
-          <div class="step-box">
-            <div class="step-title">Opción recomendada:</div>
-            <div class="step-desc">Ejecuta el archivo de arranque en Windows:</div>
-            <code>Crastur.bat</code>
-          </div>
-
-          <div class="step-box">
-            <div class="step-title">Si estás usando la terminal o editor:</div>
-            <div class="step-desc">Abre la terminal en la raíz del proyecto y ejecuta:</div>
-            <code>npm run build</code>
-          </div>
-
-          <button class="btn-reload" onclick="location.reload()">Recargar Página</button>
-        </div>
-      </body>
-      </html>
-    `);
-  }
-  next();
-});
+    next();
+  });
+}
 
 // Manejo Global de Errores para que el servidor NUNCA se cierre inesperadamente
 process.on('uncaughtException', (err) => {
