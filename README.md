@@ -99,11 +99,13 @@ graph TD
 
 ```text
 crastur/
-├── Crastur.bat                 # EJECUTABLE MAESTRO (Windows 1-clic, 0 alertas Defender)
+├── Crastur.bat                 # EJECUTABLE MAESTRO (Windows 1-clic con auto-instalación)
 ├── Crear-Acceso-Directo.bat    # Crea el acceso directo en el Escritorio con crastur.ico
-├── crastur.ico                 # Icono oficial de Windows (7 resoluciones de 16x16 a 256x256)
-├── iniciar_crastur.sh          # Lanzador ejecutable para Linux / Ubuntu
-├── launcher.js                 # Verificador inteligente multiplataforma
+├── Iniciar-Crastur.ps1         # Lanzador alternativo para PowerShell en Windows
+├── crastur.ico                 # Icono oficial de Windows (resoluciones de 16x16 a 256x256)
+├── iniciar_crastur.sh          # Lanzador ejecutable para Linux / macOS
+├── launcher.js                 # Verificador inteligente y lanzador multiplataforma
+├── .gitattributes              # Control estricto de finales de línea CRLF/LF
 │
 ├── client/                     # Panel Web Administrativo (React 19, Tailwind CSS, Vite)
 │   ├── public/
@@ -115,7 +117,7 @@ crastur/
 │   │   │   ├── views/          # CatalogView, ReservationsView, DashboardView, SettingsView, etc.
 │   │   │   └── modals/         # ProductModal, ConfirmModal, SellerModal, ReservationModal
 │   │   └── constants/          # categories.js (4 categorías oficiales y subcategorías)
-│   └── dist/                   # Build compilado de producción
+│   └── dist/                   # Build compilado de producción (generado con npm run build)
 │
 ├── server/                     # Backend local en Node.js
 │   ├── bot/                    # MOTOR MODULAR DEL BOT DE WHATSAPP
@@ -128,7 +130,7 @@ crastur/
 │   ├── database.js             # SQLite WASM, migraciones, PRAGMA checks y respaldos 7 días
 │   ├── whatsappService.js      # Baileys WhatsApp con debounce por cliente y reconexión
 │   ├── bcvService.js           # Scraping oficial del BCV en vivo
-│   └── server.js               # Servidor Express y WebSocket
+│   └── server.js               # Servidor Express, WebSocket y servidor de interfaz
 │
 └── data/                       # Almacenamiento local persistente
     ├── crastur.db              # Base de datos SQLite
@@ -138,20 +140,105 @@ crastur/
 
 ---
 
+## 💻 Requisitos Previos
+
+* **Node.js (Versión LTS 18 o superior):**
+  Descárgalo e instálalo gratis desde el sitio oficial: [https://nodejs.org](https://nodejs.org).
+  *(Asegúrate de marcar la casilla para agregarlo al `PATH` durante la instalación).*
+
+---
+
 ## 🚀 Cómo Iniciar el Sistema
 
-### En Windows (Recomendado):
-* **Opción 1:** Haz doble clic en **`Crastur.bat`**. Abrirá el servidor y la ventana de escritorio automáticamente.
-* **Opción 2 (Con Ícono en el Escritorio):** Haz doble clic en **`Crear-Acceso-Directo.bat`**. Creará de inmediato el icono en tu Escritorio con la imagen oficial `crastur.ico` asignada.
+### 🪟 En Windows (Usuarios Finales - Recomendado):
 
-### En Linux:
+> [!IMPORTANT]
+> **Paso previo en Windows 11 (Desbloquear archivos descargados):**
+> Si descargaste el proyecto en un archivo comprimido o desde internet, Windows 11 (*Smart App Control / SmartScreen*) puede bloquear archivos `.bat`.
+> 1. Haz clic derecho sobre **`Crastur.bat`** ➔ **Propiedades**.
+> 2. En la pestaña **General**, abajo del todo en la sección *Seguridad*, marca la casilla **☑ Desbloquear** (*Unblock*).
+> 3. Haz clic en **Aplicar** y luego en **Aceptar**. *(Haz lo mismo con `Crear-Acceso-Directo.bat`)*.
+>
+> *Alternativa en PowerShell:* En la carpeta del proyecto ejecuta: `dir | Unblock-File`
+
+#### Método 1: Doble clic directo
+* Haz doble clic en **`Crastur.bat`**.
+* El sistema comprobará Node.js, instalará las dependencias necesarias, compilará el panel visual y abrirá la ventana de la aplicación automáticamente.
+
+#### Método 2: Acceso directo en el Escritorio
+* Haz doble clic en **`Crear-Acceso-Directo.bat`**.
+* Creará inmediatamente un acceso directo en tu Escritorio con el ícono oficial de Crastur para abrir el sistema con un clic en cualquier momento.
+
+#### Método 3: Lanzador alternativo PowerShell
+* Clic derecho en **`Iniciar-Crastur.ps1`** ➔ **Ejecutar con PowerShell**.
+
+---
+
+### 👨‍💻 En el Editor de Código (VS Code / Cursor / Terminal):
+
+Si eres desarrollador o deseas ejecutar el sistema desde la terminal de tu editor:
+
+1. **Abre la terminal en la raíz del proyecto** (donde está el archivo `package.json` principal).
+2. **Instala las dependencias:**
+   ```bash
+   npm install
+   ```
+3. **Compila la interfaz visual:** *(Paso obligatorio para generar la carpeta `client/dist`)*
+   ```bash
+   npm run build
+   ```
+4. **Inicia el sistema:**
+   ```bash
+   npm run launch
+   # o alternativamente:
+   npm start
+   ```
+5. Abre en tu navegador: **`http://localhost:3333`**.
+
+---
+
+### 🐧 En Linux / macOS:
+
 ```bash
+chmod +x iniciar_crastur.sh
 ./iniciar_crastur.sh
 ```
 
-### Vincular WhatsApp por primera vez:
-1. Abre el panel web en tu computadora.
-2. Ve a la pestaña **Conexión WhatsApp**.
-3. En tu teléfono, abre WhatsApp ➔ *Dispositivos vinculados* ➔ *Vincular un dispositivo*.
-4. Escanea el código QR que aparece en pantalla.
-5. ¡Listo! El bot atenderá a todos los clientes de forma automática las 24 horas del día.
+---
+
+## 📲 Vincular WhatsApp por Primera Vez
+
+1. Abre el panel web en tu computadora (**`http://localhost:3333`**).
+2. Ve al menú lateral y haz clic en **Conexión WhatsApp**.
+3. En tu teléfono móvil, abre WhatsApp ➔ Menú de tres puntos (o Ajustes) ➔ **Dispositivos vinculados** ➔ **Vincular un dispositivo**.
+4. Escanea el código QR que se muestra en el panel administrativo.
+5. ¡Listo! El sistema confirmará la conexión con el badge verde de **Conectado** y comenzará a atender clientes de forma automática.
+
+---
+
+## 🛠️ Solución de Problemas Frecuentes (FAQ / Troubleshooting)
+
+> [!WARNING]
+> ### 1. Al abrir `Crastur.bat`, Windows muestra: *"Smart App Control blocked a file that may be unsafe"*
+> **Causa:** Medida de protección de Windows 11 para archivos `.bat` descargados de internet.  
+> **Solución:** Clic derecho sobre `Crastur.bat` ➔ **Propiedades** ➔ Marcar la casilla **Desbloquear** abajo ➔ **Aplicar** y **Aceptar**.
+
+> [!NOTE]
+> ### 2. El navegador muestra pantalla en blanco con *"Cannot GET /"*
+> **Causa:** Se inició el servidor backend (`node server/server.js`) pero la interfaz visual aún no ha sido compilada.  
+> **Solución:** Abre la terminal en la raíz del proyecto y ejecuta `npm run build`. Luego recarga el navegador. *(Si inicias con `Crastur.bat`, este paso se hace automáticamente).*
+
+> [!NOTE]
+> ### 3. Error en terminal: *"npm error enoent: Could not read package.json"*
+> **Causa:** La consola se abrió en tu carpeta de usuario personal (ej. `C:\Users\tu-nombre>`) en lugar de la carpeta del proyecto.  
+> **Solución:** Navega hasta la carpeta del proyecto antes de ejecutar comandos:
+> ```cmd
+> cd ruta\donde\esta\crastur
+> npm install
+> ```
+
+> [!NOTE]
+> ### 4. Error: *"[ERROR] No se encontro Node.js instalado en esta computadora"*
+> **Causa:** Node.js no está instalado o no se encuentra en las variables de entorno del sistema.  
+> **Solución:** Descarga e instala Node.js LTS desde [nodejs.org](https://nodejs.org). Si ya lo instalaste, cierra todas las ventanas de consola o reinicia tu equipo para que Windows actualice la variable `PATH`.
+
