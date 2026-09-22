@@ -266,6 +266,12 @@ function initiateApartadoFlow(jid, text, norm, session, tasa, settings, pushName
   if (searchResults.length > 0 && !wantsBoth) {
     const matchedProduct = searchResults[0];
     const prodNombre = `${matchedProduct.marca} - ${matchedProduct.modelo}`;
+
+    // Verificación de stock disponible
+    if (matchedProduct.stock !== null && matchedProduct.stock !== undefined && matchedProduct.stock <= 0) {
+      return `⚠️ El repuesto *${prodNombre}* se encuentra actualmente *agotado* en nuestra tienda física.\n\n👉 Puedes escribir *VENDEDOR* para consultar con nuestro asesor la fecha de llegada del nuevo lote o escribir qué otro repuesto necesitas.`;
+    }
+
     const prodPrecioUsd = parseFloat(matchedProduct.precio_usd) || 0;
 
     const metadata = {
@@ -350,6 +356,12 @@ function initiateApartadoFlow(jid, text, norm, session, tasa, settings, pushName
   }
 
   const prodNombre = `${matchedProduct.marca} - ${matchedProduct.modelo}`;
+
+  // Verificación de stock disponible
+  if (matchedProduct.stock !== null && matchedProduct.stock !== undefined && matchedProduct.stock <= 0) {
+    return `⚠️ El repuesto *${prodNombre}* se encuentra actualmente *agotado* en nuestra tienda física.\n\n👉 Puedes escribir *VENDEDOR* para consultar con nuestro asesor la fecha de llegada del nuevo lote o escribir qué otro repuesto necesitas.`;
+  }
+
   const prodPrecioUsd = parseFloat(matchedProduct.precio_usd) || 0;
 
   const metadata = {
@@ -562,17 +574,23 @@ function handleApartadoTelefono(jid, text, session, tasa, settings) {
   const precioUsd = parseFloat(metadata.precio_usd) || 0;
   const precioBs = precioUsd * tasa;
 
-  // Crear la reserva en la base de datos con límite de 24 horas
-  const reservation = createReservation({
-    jid,
-    nombre,
-    cedula,
-    telefono,
-    producto_id: prodId,
-    producto_nombre: prodNombre,
-    precio_usd: precioUsd,
-    precio_bs: precioBs
-  });
+  // Crear la reserva en la base de datos con límite de 24 horas y control de stock
+  let reservation;
+  try {
+    reservation = createReservation({
+      jid,
+      nombre,
+      cedula,
+      telefono,
+      producto_id: prodId,
+      producto_nombre: prodNombre,
+      precio_usd: precioUsd,
+      precio_bs: precioBs
+    });
+  } catch (err) {
+    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
+    return `⚠️ ${err.message}\n\nPuedes escribir *VENDEDOR* si deseas consultar alternativas con nuestro personal de tienda física o escribir qué otro repuesto buscas.`;
+  }
 
   // Resetear el estado de la sesión
   db.prepare(`
@@ -594,6 +612,7 @@ function handleApartadoTelefono(jid, text, session, tasa, settings) {
 
   let ticket = `✅ *¡APARTADO CONFIRMADO CON ÉXITO!* 🎟️🛞🏍️\n\n`;
   ticket += `Estimado/a *${nombre}*, tu apartado ha sido guardado exclusivamente para ti:\n\n`;
+  ticket += `🎟️ *Código Oficial de Ticket:* *#CRA-${String(reservation.id).padStart(4, '0')}*\n`;
   ticket += `📦 *Producto:* ${prodNombre}\n`;
 
   if (metadata.items && Array.isArray(metadata.items) && metadata.items.length > 1) {
@@ -616,6 +635,8 @@ function handleApartadoTelefono(jid, text, session, tasa, settings) {
   ticket += `🗺️ *Google Maps:* ${settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA'}\n\n`;
   ticket += `🕒 *Horario:* ${settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM'}.\n`;
   ticket += `🛵 *¿Prefieres delivery en Caracas?* Escribe *DELIVERY* o *VENDEDOR* para coordinar el motorizado.\n\n`;
+  ticket += `🔒 *Protección de Datos (Venezuela):*\n`;
+  ticket += `Tus datos personales se registran confidencialmente de forma exclusiva para la validación y canje de este apartado en tienda física conforme al Art. 28 de la CRBV y la Ley Especial contra los Delitos Informáticos.\n\n`;
   ticket += `Presenta tu cédula en caja al llegar y ¡listo! ¡Te esperamos en Crastur! 🛞🏍️✨`;
 
   return ticket;

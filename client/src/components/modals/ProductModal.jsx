@@ -67,8 +67,15 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
       setFormError('El stock debe ser un número entero mayor o igual a 0.');
       return;
     }
+    let cat = (form.categoria || 'Otros Productos').trim();
+    if (cat === 'Repuestos para Moto' || cat.startsWith('Repuestos para Moto')) {
+      cat = cat.replace('Repuestos para Moto', 'Repuestos Moto');
+    }
+    if (cat === 'Insumos para Caucheras' || cat.startsWith('Insumos para Caucheras')) {
+      cat = cat.replace('Insumos para Caucheras', 'Insumos Cauchera');
+    }
     setFormError('');
-    onSave(form);
+    onSave({ ...form, categoria: cat });
   };
 
   const handleFileUpload = (e) => {

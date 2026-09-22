@@ -119,10 +119,8 @@ function handleContextualSelection(norm, session, tasa, settings) {
     }
   }
 
-  if (selectedIndex >= 0 && selectedIndex >= products.length) {
-    return `Solo encontré *${products.length}* resultado${products.length > 1 ? 's' : ''}. Escribe un número del *1* al *${products.length}* para ver los detalles, o consulta otro producto. 😊`;
-  }
-
+  // Si el índice solicitado no pertenece a la lista actual de productos en pantalla,
+  // retornar null para permitir que el enrutador ejecute la opción de categoría o menú correspondiente.
   return null;
 }
 

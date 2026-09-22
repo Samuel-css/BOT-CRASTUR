@@ -23,7 +23,9 @@ function persistDB() {
   if (!rawDb) return;
   try {
     const data = rawDb.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
+    const tempPath = dbPath + '.tmp';
+    fs.writeFileSync(tempPath, Buffer.from(data));
+    fs.renameSync(tempPath, dbPath);
   } catch (e) {
     console.error('[DB] Error guardando archivo crastur.db:', e.message);
   }
@@ -326,13 +328,23 @@ async function initDB() {
   // Garantizar que la tabla de vendedores inicie limpia (0 asesores por defecto)
   db.exec('DELETE FROM sellers WHERE nombre LIKE "%Asesor de Repuestos%";');
 
+  // Normalizar y blindar categorías contra inconsistencias históricas o de prueba
+  try {
+    db.prepare("UPDATE products SET categoria = 'Repuestos Moto' WHERE categoria = 'Repuestos para Moto' OR categoria LIKE 'Repuestos para Moto%'").run();
+    db.prepare("UPDATE products SET categoria = 'Insumos Cauchera' WHERE categoria = 'Insumos para Caucheras' OR categoria LIKE 'Insumos para Caucheras%'").run();
+    db.prepare("DELETE FROM products WHERE modelo LIKE '%TEST%' OR categoria LIKE '%Test%' OR marca = 'TEST'").run();
+  } catch {}
+
   // Guardar inmediatamente en disco
   persistDB();
 
-  // Programar backup diario cada 24 horas
-  setInterval(performDailyBackup, 24 * 60 * 60 * 1000);
+  // Programar backup diario cada 24 horas (unref para no bloquear cierre en scripts)
+  const dailyBackupTimer = setInterval(performDailyBackup, 24 * 60 * 60 * 1000);
+  if (dailyBackupTimer && dailyBackupTimer.unref) dailyBackupTimer.unref();
+
   // Backup inicial al arrancar (diferido 5 segundos)
-  setTimeout(performDailyBackup, 5000);
+  const initBackupTimer = setTimeout(performDailyBackup, 5000);
+  if (initBackupTimer && initBackupTimer.unref) initBackupTimer.unref();
 
   isReady = true;
   readyResolvers.forEach(res => res());
@@ -445,10 +457,18 @@ function importCatalog(productsList) {
   let count = 0;
   for (const p of productsList) {
     if (p.marca && p.modelo && p.precio_usd !== undefined) {
+      let cat = String(p.categoria || 'Otros Productos').trim();
+      if (cat === 'Repuestos para Moto' || cat.startsWith('Repuestos para Moto')) {
+        cat = cat.replace('Repuestos para Moto', 'Repuestos Moto');
+      }
+      if (cat === 'Insumos para Caucheras' || cat.startsWith('Insumos para Caucheras')) {
+        cat = cat.replace('Insumos para Caucheras', 'Insumos Cauchera');
+      }
+
       insertStmt.run(
         String(p.marca).trim(),
         String(p.modelo).trim(),
-        String(p.categoria || 'General').trim(),
+        cat,
         parseFloat(p.precio_usd) || 0,
         String(p.descripcion || '').trim(),
         parseInt(p.stock || 1, 10)
@@ -473,6 +493,19 @@ function getReservations(onlyActive = false) {
 function createReservation({ jid, nombre, cedula, telefono, producto_id, producto_nombre, precio_usd, precio_bs }) {
   const now = Date.now();
   const expiraEn = now + (24 * 60 * 60 * 1000); // 24 horas continuas
+
+  // 1. Control de Stock: verificar y reservar unidad
+  if (producto_id) {
+    const prod = db.prepare('SELECT id, stock, activo FROM products WHERE id = ?').get(producto_id);
+    if (prod && prod.stock !== null && prod.stock !== undefined) {
+      if (prod.stock <= 0) {
+        throw new Error(`El repuesto "${producto_nombre}" no cuenta con stock disponible para apartar.`);
+      }
+      // Descontar unidad del stock activo
+      db.prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0').run(producto_id);
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO reservations (jid, nombre, cedula, telefono, producto_id, producto_nombre, precio_usd, precio_bs, creado_en, expira_en, estado)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo')
@@ -507,25 +540,63 @@ function createReservation({ jid, nombre, cedula, telefono, producto_id, product
 }
 
 function updateReservationStatus(id, estado) {
+  const current = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+  if (current) {
+    // Si se cancela o expira un apartado que estaba activo, devolver stock al inventario
+    if ((estado === 'cancelado' || estado === 'vencido') && current.estado === 'activo' && current.producto_id) {
+      db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(current.producto_id);
+    }
+    // Si se reactiva un apartado que estaba inactivo, descontar nuevamente si hay stock
+    if (estado === 'activo' && current.estado !== 'activo' && current.producto_id) {
+      db.prepare('UPDATE products SET stock = MAX(0, stock - 1) WHERE id = ?').run(current.producto_id);
+    }
+  }
   db.prepare("UPDATE reservations SET estado = ? WHERE id = ?").run(estado, id);
   persistDB();
 }
 
 function deleteReservation(id) {
+  const current = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+  if (current && current.estado === 'activo' && current.producto_id) {
+    db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(current.producto_id);
+  }
   db.prepare("DELETE FROM reservations WHERE id = ?").run(id);
   persistDB();
 }
 
+/**
+ * Gestiona el ciclo de vida de los apartados:
+ * 1. A las 24h: pasa de 'activo' a 'vencido' y repone el stock para que la tienda pueda venderlo.
+ * 2. 12 horas adicionales de gracia: permanece visible como 'vencido' en el panel para consulta.
+ * 3. A las 36h totales (24h + 12h de gracia): se purga definitivamente de la base de datos.
+ */
 function cleanExpiredReservations() {
   const now = Date.now();
-  // Borrar automáticamente los apartados cuyo plazo de 24 horas haya caducado sin retiro
-  const expired = db.prepare("SELECT id, producto_nombre, nombre FROM reservations WHERE expira_en <= ? AND estado = 'activo'").all(now);
-  if (expired.length > 0) {
-    db.prepare("DELETE FROM reservations WHERE expira_en <= ? AND estado = 'activo'").run(now);
+  const GRACE_PERIOD_MS = 12 * 60 * 60 * 1000; // 12 horas extras
+
+  // Paso 1: Marcar como 'vencido' los apartados que superaron las 24 horas y reponer stock
+  const newlyExpired = db.prepare("SELECT id, producto_id, producto_nombre, nombre FROM reservations WHERE expira_en <= ? AND estado = 'activo'").all(now);
+  if (newlyExpired.length > 0) {
+    for (const item of newlyExpired) {
+      db.prepare("UPDATE reservations SET estado = 'vencido' WHERE id = ?").run(item.id);
+      if (item.producto_id) {
+        db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(item.producto_id);
+      }
+      console.log(`[Apartados 24h] Apartado #${item.id} (${item.nombre} - ${item.producto_nombre}) marcado como VENCIDO. Stock restablecido.`);
+    }
     persistDB();
-    console.log(`[Apartados 24h] Se liberaron y borraron ${expired.length} apartados vencidos automáticamente.`);
   }
-  return expired;
+
+  // Paso 2: Purgar definitivamente solo los que superaron las 12 horas extras tras vencer
+  const deadlineForPurge = now - GRACE_PERIOD_MS;
+  const toPurge = db.prepare("SELECT id, nombre, producto_nombre FROM reservations WHERE estado = 'vencido' AND expira_en <= ?").all(deadlineForPurge);
+  if (toPurge.length > 0) {
+    db.prepare("DELETE FROM reservations WHERE estado = 'vencido' AND expira_en <= ?").run(deadlineForPurge);
+    persistDB();
+    console.log(`[Apartados 24h] Purgados ${toPurge.length} apartados tras cumplir sus 12 horas extras de gracia post-vencimiento.`);
+  }
+
+  return newlyExpired;
 }
 
 module.exports = {
@@ -547,5 +618,7 @@ module.exports = {
   createReservation,
   updateReservationStatus,
   deleteReservation,
-  cleanExpiredReservations
+  cleanExpiredReservations,
+  persistDB,
+  performDailyBackup
 };

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import DashboardView from './components/views/DashboardView';
+import LiveInboxView from './components/views/LiveInboxView';
 import CatalogView from './components/views/CatalogView';
 import ReservationsView from './components/views/ReservationsView';
 import CasheaCalculatorView from './components/views/CasheaCalculatorView';
@@ -109,7 +110,7 @@ export default function App() {
           try {
             const { type, data } = JSON.parse(event.data);
             if (type === 'whatsapp_status') {
-              setWaStatus(data);
+              setWaStatus(data || { status: 'disconnected', qr: null, user: null });
             } else if (type === 'bot_global_pause_changed') {
               if (data && data.bot_pausado_global !== undefined) {
                 setBotPausedGlobal(data.bot_pausado_global);
@@ -148,8 +149,12 @@ export default function App() {
       fetch('/api/status')
         .then(r => r.json())
         .then(data => {
-          if (data.whatsapp) setWaStatus(data.whatsapp);
-          if (data.bot_pausado_global !== undefined) setBotPausedGlobal(data.bot_pausado_global);
+          if (data && data.whatsapp) {
+            setWaStatus(data.whatsapp);
+          } else {
+            setWaStatus({ status: 'disconnected', qr: null, user: null });
+          }
+          if (data && data.bot_pausado_global !== undefined) setBotPausedGlobal(data.bot_pausado_global);
         })
         .catch(() => {});
       loadMetrics();
@@ -481,6 +486,7 @@ export default function App() {
           onToggleMobileMenu={() => setMobileMenuOpen(prev => !prev)}
           botPausedGlobal={botPausedGlobal}
           onToggleBotPause={handleToggleGlobalBotPause}
+          onNavigate={setActiveTab}
         />
 
         {/* VIEW CONTAINER */}
@@ -496,6 +502,26 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'inbox' && (
+            <LiveInboxView
+              waStatus={waStatus}
+              onNavigate={setActiveTab}
+              bcvRate={currentRate}
+              onRequestConfirm={(opts) => setConfirmModal({
+                isOpen: true,
+                title: opts.title,
+                message: opts.message,
+                confirmText: opts.confirmText,
+                cancelText: opts.cancelText || 'Cancelar',
+                isDanger: opts.isDanger !== false,
+                onConfirm: () => {
+                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                  if (opts.onConfirm) opts.onConfirm();
+                }
+              })}
+            />
+          )}
+
           {activeTab === 'products' && (
             <CatalogView
               products={products}
@@ -505,6 +531,7 @@ export default function App() {
               onDeleteProduct={handleDeleteProduct}
               onCopyQuote={copyWhatsAppQuote}
               copiedId={copiedId}
+              onReload={loadProducts}
             />
           )}
 

@@ -39,7 +39,10 @@ const {
   handleWarrantyResponse,
   handleAvailabilityResponse,
   handleLocationResponse,
-  handleCarInquiryResponse
+  handleCarInquiryResponse,
+  handleElderlyOrConfusedResponse,
+  handleHostilityOrComplaintResponse,
+  handleCategoryBrowseResponse
 } = require('./handlers/infoHandlers');
 const { handleCasheaSmart, handleCasheaResponse } = require('./handlers/casheaHandlers');
 const {
@@ -86,8 +89,26 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
   const tasa = getEffectiveRate();
   const now = Date.now();
 
-  const text = (rawText || '').trim();
+  // Limitar tamaño de entrada por seguridad (máx 2000 caracteres)
+  let safeRawText = typeof rawText === 'string' ? rawText : '';
+  if (safeRawText.length > 2000) {
+    safeRawText = safeRawText.slice(0, 2000);
+  }
+
+  const text = safeRawText.trim();
   const norm = normalizeText(text);
+
+  // Si el mensaje son puros signos de interrogación o confusión ("???", "¿?")
+  const onlyQuestionMarks = rawText && /^[\?\¿\s]+$/.test(rawText.trim());
+  if (onlyQuestionMarks) {
+    recordMetric('consulta_persona_mayor_confundida', rawText, jid);
+    return handleElderlyOrConfusedResponse(pushName, settings);
+  }
+
+  // Si el mensaje está vacío (y no es multimedia)
+  if (!text && (!mediaInfo || !mediaInfo.isMedia)) {
+    return `¡Hola, *${pushName}*! 😊 ¿En qué repuesto o insumo para tu moto o cauchera te podemos ayudar hoy? Puedes escribir el nombre del repuesto o escribir *MENU* para ver opciones.`;
+  }
 
   // Obtener o inicializar sesión
   let session = db.prepare('SELECT * FROM chat_sessions WHERE jid = ?').get(jid);
@@ -146,6 +167,63 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return `Operación cancelada 👍. ¿En qué más te podemos ayudar? Escribe el repuesto que buscas, *DELIVERY*, *CASHEA* o escribe *MENU* para volver al inicio.`;
   }
 
+  // 4b. Manejo de quejas, hostilidad, insultos o acusaciones de estafa
+  const isHostileOrComplaint =
+    norm.includes('ladron') ||
+    norm.includes('estafa') ||
+    norm.includes('trampos') ||
+    norm.includes('coño') ||
+    norm.includes('cono de tu madre') ||
+    norm.includes('cono de su madre') ||
+    norm.includes('cono de la madre') ||
+    norm.includes('maldit') ||
+    norm.includes('hijos de puta') ||
+    norm.includes('hdp') ||
+    norm.includes('mierda') ||
+    norm.includes('mamaguevo') ||
+    norm.includes('pajuo') ||
+    norm.includes('desgraciad') ||
+    norm.includes('mal servicio') ||
+    norm.includes('vayanse al carajo');
+
+  if (isHostileOrComplaint) {
+    recordMetric('queja_hostilidad', text, jid);
+    return handleHostilityOrComplaintResponse(pushName, settings);
+  }
+
+  // 4c. Manejo para personas mayores, confundidas o no familiarizadas con asistentes virtuales
+  const isElderlyOrConfused =
+    norm.includes('no se como se usa') ||
+    norm.includes('no se usar esto') ||
+    norm.includes('no se de esto') ||
+    norm.includes('no entiendo nada') ||
+    norm.includes('no entiendo como') ||
+    norm.includes('con quien hablo') ||
+    norm.includes('con quien me comunico') ||
+    norm.includes('quien me atiende') ||
+    norm.includes('hay alguien ahi') ||
+    norm.includes('hay alguien') ||
+    norm.includes('es una persona') ||
+    norm.includes('es una computadora') ||
+    norm.includes('es un robot') ||
+    norm.includes('eres un robot') ||
+    norm.includes('eres un bot') ||
+    norm.includes('esto es un robot') ||
+    norm.includes('me pueden llamar') ||
+    norm.includes('llamenme') ||
+    norm.includes('deme su numero') ||
+    norm.includes('deme un numero') ||
+    norm.includes('disculpe la molestia') ||
+    norm.includes('buenas tardes caballero') ||
+    norm.includes('buenas tardes senor') ||
+    norm.includes('buenos dias senor') ||
+    norm === '???';
+
+  if (isElderlyOrConfused) {
+    recordMetric('consulta_persona_mayor_confundida', text, jid);
+    return handleElderlyOrConfusedResponse(pushName, settings);
+  }
+
   // 5. Máquina de estados para APARTADOS (Límite 24 Horas)
   if (session.step === 'apartado_pidiendo_nombre') {
     return handleApartadoNombre(jid, text, session, tasa, settings);
@@ -190,8 +268,8 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm === 'me parece bien' ||
     norm === 'dale pues' ||
     norm === 'seguro' ||
-    norm.startsWith('si ') ||
-    norm.startsWith('ok ')
+    (norm.startsWith('si ') && norm.length < 18 && !norm.includes('pago') && !norm.includes('descuento') && !norm.includes('dolares') && !norm.includes('apartar')) ||
+    (norm.startsWith('ok ') && norm.length < 18)
   ) {
     return handleAffirmativeResponse(pushName);
   }
@@ -389,8 +467,7 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm.includes('pago movil') ||
     norm.includes('efectivo') ||
     norm.includes('dolares') ||
-    norm.includes('transferencia') ||
-    norm === '5'
+    norm.includes('transferencia')
   ) {
     recordMetric('consulta_pagos', text, jid);
     return handlePaymentMethodsResponse(tasa, settings);
@@ -505,12 +582,93 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleAvailabilityResponse();
   }
 
-  // 24. Detección de solicitud de VENDEDOR
+  // 24. Selección Contextual de Producto Anterior (ej: "el primero", "el 1", "el segundo", "opción 2")
+  const contextResult = handleContextualSelection(norm, session, tasa, settings);
+  if (contextResult) {
+    return contextResult;
+  }
+
+  // 25. Opciones del Menú Principal y Categorías Canónicas Oficiales (1..6)
+  // 1️⃣ Insumos Cauchera
   if (
+    norm === '1' ||
+    norm === '1️⃣' ||
+    norm === 'opcion 1' ||
+    norm === 'insumos cauchera' ||
+    norm === 'insumos para cauchera' ||
+    norm === 'insumos para caucheras' ||
+    norm === 'cauchera' ||
+    norm === 'caucheras'
+  ) {
+    recordMetric('categoria_insumos_cauchera', text, jid);
+    return handleCategoryBrowseResponse('Insumos Cauchera', settings, tasa, session, jid);
+  }
+
+  // 2️⃣ Repuestos Moto
+  if (
+    norm === '2' ||
+    norm === '2️⃣' ||
+    norm === 'opcion 2' ||
+    norm === 'repuestos moto' ||
+    norm === 'repuestos para moto' ||
+    norm === 'repuestos de moto' ||
+    norm === 'repuesto moto' ||
+    norm === 'repuesto de moto' ||
+    norm === 'repuestos motos'
+  ) {
+    recordMetric('categoria_repuestos_moto', text, jid);
+    return handleCategoryBrowseResponse('Repuestos Moto', settings, tasa, session, jid);
+  }
+
+  // 3️⃣ Accesorios Moto
+  if (
+    norm === '3' ||
+    norm === '3️⃣' ||
+    norm === 'opcion 3' ||
+    norm === 'accesorios moto' ||
+    norm === 'accesorios para moto' ||
+    norm === 'accesorios de moto' ||
+    norm === 'accesorio moto' ||
+    norm === 'accesorios'
+  ) {
+    recordMetric('categoria_accesorios_moto', text, jid);
+    return handleCategoryBrowseResponse('Accesorios Moto', settings, tasa, session, jid);
+  }
+
+  // 4️⃣ Otros Productos
+  if (
+    norm === '4' ||
+    norm === '4️⃣' ||
+    norm === 'opcion 4' ||
+    norm === 'otros productos' ||
+    norm === 'otros' ||
+    norm === 'otro producto'
+  ) {
+    recordMetric('categoria_otros_productos', text, jid);
+    return handleCategoryBrowseResponse('Otros Productos', settings, tasa, session, jid);
+  }
+
+  // 5️⃣ Cashea en Tienda
+  if (
+    norm === '5' ||
+    norm === '5️⃣' ||
+    norm === 'opcion 5'
+  ) {
+    recordMetric('menu_opcion_cashea', text, jid);
+    return handleCasheaSmart(text, norm, settings, tasa, session);
+  }
+
+  // 6️⃣ Hablar con un Asesor / Vendedor
+  if (
+    norm === '6' ||
+    norm === '6️⃣' ||
+    norm === 'opcion 6' ||
+    norm === 'vendedor' ||
+    norm === 'asesor' ||
+    norm === 'humano' ||
     norm.includes('vendedor') ||
     norm.includes('asesor') ||
     norm.includes('humano') ||
-    norm === '3' ||
     norm.includes('contacto') ||
     norm.includes('persona') ||
     norm.includes('asesores') ||
@@ -520,10 +678,9 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleSellersResponse(pushName);
   }
 
-  // 25. Detección de CASHEA Inteligente (Nivel + Repuesto o Cashea general)
+  // 26. Detección de CASHEA Inteligente (Nivel + Repuesto o Cashea general)
   if (
     norm.includes('cashea') ||
-    norm === '2' ||
     norm.includes('financiamiento') ||
     norm.includes('cuotas') ||
     norm.includes('inicial') ||
@@ -533,8 +690,10 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleCasheaSmart(text, norm, settings, tasa, session);
   }
 
-  // 26. Detección de UBICACIÓN / GOOGLE MAPS
+  // 27. Detección de UBICACIÓN / GOOGLE MAPS
   if (
+    norm === 'donde' ||
+    norm.startsWith('donde ') ||
     norm.includes('ubicacion') ||
     norm.includes('direccion') ||
     norm.includes('mapa') ||
@@ -551,17 +710,10 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm.includes('se ubican') ||
     norm.includes('se encuentran') ||
     norm.includes('tienda fisica') ||
-    norm.includes('tienda') ||
-    norm === '4'
+    norm.includes('tienda')
   ) {
     recordMetric('consulta_ubicacion', text, jid);
     return handleLocationResponse(settings);
-  }
-
-  // 27. Selección Contextual de Producto Anterior (ej: "el primero", "el 1", "el segundo", "opción 2")
-  const contextResult = handleContextualSelection(norm, session, tasa, settings);
-  if (contextResult) {
-    return contextResult;
   }
 
   // 29. Búsqueda Difusa de Productos en SQLite (Fuzzy Search con Levenshtein)
@@ -659,13 +811,17 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm === 'menu' ||
     norm === 'inicio' ||
     norm === 'catalogo' ||
-    norm === '1' ||
     norm === 'ayuda' ||
     norm === 'info' ||
     norm === 'informacion' ||
     norm.includes('epale')
   ) {
     recordMetric('saludo_menu', text, jid);
+    if (jid) {
+      try {
+        db.prepare("UPDATE chat_sessions SET contexto_productos = NULL, step = 'start' WHERE jid = ?").run(jid);
+      } catch {}
+    }
     return handleGreetingResponse(pushName, settings, tasa);
   }
 

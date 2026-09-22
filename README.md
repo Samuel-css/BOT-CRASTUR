@@ -58,21 +58,30 @@ Luego ingresa en tu navegador a: **`http://localhost:3333`**.
 
 ## 🗂️ Las 4 Categorías Comerciales de Crastur
 
-El bot y el inventario están organizados en 4 líneas comerciales sin mezclar repuestos ajenos:
+El bot y el inventario están organizados en 4 líneas comerciales maestras sin mezclar repuestos ajenos ni duplicar filtros:
 
 | Categoría | Productos Principales |
 | :--- | :--- |
-| 🛞 **Insumos para Caucheras** | Parches en frío/caliente, pega química azul, válvulas sin tripa TR-414, mechas para pinchazos, plomos de balanceo y terrajas. |
-| 🏍️ **Repuestos para Moto** | Kits de arrastre (cadena 428H, piñón, corona), pastillas y bandas de freno, bujías de encendido (NGK), aceites 4T/2T, tripas y cauchos. |
-| 🎽 **Accesorios para Moto** | Puños para manubrio, mallas porta-casco (pulpos), retrovisores, luces exploradoras LED, fundas y spray para cadena. |
-| 📦 **Otros Productos** | Refrigerantes para radiador, limpiadores de inyectores, aditivos de combustible, lubricantes multiuso y bombillos. |
+| 🛞 **Insumos Cauchera** | Parches en frío/caliente, pega química azul, válvulas sin tripa TR-414, mechas para pinchazos, plomos de balanceo y terrajas. |
+| 🏍️ **Repuestos Moto** | Kits de arrastre (cadena 428H, piñón, corona), pastillas y bandas de freno, bujías de encendido (NGK), repuestos de motor y tripas. |
+| 🎽 **Accesorios Moto** | Puños para manubrio, mallas porta-casco (pulpos), retrovisores, luces exploradoras LED, fundas y spray para cadena. |
+| 📦 **Otros Productos** | Aceites de motor 4T/2T, refrigerantes para radiador, limpiadores de inyectores, aditivos de combustible y bombillos. |
+
+### 🧭 Menú Numérico de Bienvenida del Bot (1 al 6)
+El bot responde tanto a preguntas en lenguaje natural como a selecciones numéricas directas desde el menú de inicio:
+- **`1`** o *"cauchera"*: Despliega el catálogo de **Insumos Cauchera** con precios en $ y Bs BCV.
+- **`2`** o *"repuestos moto"*: Despliega el catálogo de **Repuestos Moto** con kits de arrastre, bujías y frenos.
+- **`3`** o *"accesorios moto"*: Brinda atención sobre **Accesorios Moto** y consulta en almacén.
+- **`4`** o *"otros productos"*: Despliega **Otros Productos** (aceites 4T/2T, refrigerantes y aditivos).
+- **`5`**: Información oficial sobre financiamiento con **Cashea** en tienda física.
+- **`6`**: Pone en contacto directo con un **Asesor / Vendedor** humano en tienda.
 
 ---
 
 ## 🤖 Capacidades Inteligentes del Bot
 
 ### 1. 🇻🇪 Tasa Oficial BCV en Vivo (Estricta a 2 Decimales)
-- Conexión directa al Banco Central de Venezuela. Todos los precios se muestran en dólares (`$ USD`) y en bolívares (`Bs.`) calculados con la tasa del día a dos decimales exactos (ej. *Bs. 854,30 / USD*).
+- Conexión directa al Banco Central de Venezuela. Todos los precios se muestran en dólares (`$ USD`) y en bolívares (`Bs.`) calculados con la tasa del día a dos decimales exactos (ej. *Bs. 852,42 / USD*).
 - El bot resalta siempre el beneficio del **precio especial con descuento directo pagando en efectivo en divisas** en tienda física.
 
 ### 2. 🛒 Cotizador de Combos y Búsqueda Difusa (*Fuzzy Search*)
@@ -103,6 +112,31 @@ El bot y el inventario están organizados en 4 líneas comerciales sin mezclar r
 
 ---
 
+## 🛠️ Herramientas de Mantenimiento y Pruebas
+
+El sistema incluye una suite de diagnóstico, mantenimiento preventivo y verificación de versiones de Node.js:
+
+```bash
+# 🔍 Asistente interactivo de mantenimiento (menú visual 0-9)
+npm run maintenance
+
+# O ejecutar tareas de mantenimiento específicas directamente:
+npm run maintenance -- --diag            # Diagnóstico de salud, puertos y base de datos
+npm run maintenance -- --node-check      # Verificar versión de Node.js y compatibilidad LTS
+npm run maintenance -- --rebuild-deps    # Re-vincular dependencias tras actualizar Node.js
+npm run maintenance -- --clean           # Limpiar mensajes y métricas a 0 operacional
+npm run maintenance -- --vacuum          # Desfragmentar y compactar SQLite
+npm run maintenance -- --prune-backups   # Depurar respaldos antiguos (> 7 días)
+npm run maintenance -- --reset-wa        # Reiniciar sesión WhatsApp para nuevo QR
+npm run maintenance -- --build           # Recompilar el panel visual web
+npm run maintenance -- --all             # Mantenimiento completo automatizado
+
+# 🧪 Ejecutar suite de pruebas de estrés y validación extrema (200 reqs concurrentes)
+npm test
+```
+
+---
+
 ## 📂 Estructura Limpia del Proyecto
 
 ```text
@@ -110,22 +144,25 @@ crastur/
 ├── Crastur.bat                 # Lanzador de 1 clic para Windows
 ├── launcher.js                 # Verificador inteligente de arranque y auto-respaldo
 ├── crastur.ico                 # Icono oficial del sistema
+├── package.json                # Scripts de inicio, mantenimiento y pruebas
 ├── scripts/
-│   └── iniciar_crastur.sh      # Lanzador para entornos Linux / macOS
+│   ├── iniciar_crastur.sh      # Lanzador para entornos Linux / macOS
+│   ├── maintenance.js          # Script integral de mantenimiento y diagnóstico
+│   ├── clean_data.js           # Limpieza operacional a cero
+│   └── run_stress_and_edge_tests.js # Batería de estrés y 16 perfiles de clientes
 │
-├── client/                     # Panel web administrativo (React 19 + Vite)
-│   ├── src/                    # Código fuente de vistas, modales y componentes
-│   └── dist/                   # Versión compilada para producción
+├── client/                     # Panel web administrativo (React + Vite)
+│   ├── src/                    # Código fuente de vistas responsivas y modales
+│   └── dist/                   # Bundle de producción optimizado
 │
 ├── server/                     # Backend modular en Node.js
 │   ├── bot/                    # MOTOR MODULAR DEL BOT DE WHATSAPP
-│   │   ├── index.js            # Enrutador principal de mensajes
-│   │   ├── apartado/           # Flujo y validaciones de reserva por 24 horas
+│   │   ├── index.js            # Enrutador principal de mensajes y menú 1..6
+│   │   ├── apartado/           # Flujo y validaciones de reserva por 24h
 │   │   ├── followUp/           # Seguimiento inteligente sin spam
-│   │   ├── handlers/           # Respuestas por intención (productos, cashea, info, etc.)
+│   │   ├── handlers/           # Manejadores de intención (categorías, cashea, info, etc.)
 │   │   ├── services/           # Búsqueda difusa y reglas comerciales
 │   │   └── utils/              # Formateadores BCV, delivery de Caracas y anti-spam
-│   ├── botEngine.js            # Puente retrocompatible seguro
 │   ├── database.js             # Base de datos SQLite local (sql.js) con auto-respaldos
 │   ├── whatsappService.js      # Conexión WhatsApp (Baileys) con reconexión automática
 │   ├── bcvService.js           # Sincronización oficial con el BCV
@@ -145,10 +182,15 @@ crastur/
 En el panel web, ve a **Configuración** ➔ activa la opción **Tasa Manual Personalizada** ➔ escribe el valor en Bolívares y haz clic en **Guardar Configuración**. El bot comenzará a calcular con ese valor inmediatamente.
 
 ### 2. ¿Cómo desvinculo o cambio el número de WhatsApp?
-En el panel web, ve a **Conexión WhatsApp** y haz clic en el botón rojo **Desconectar / Reiniciar Sesión**. El sistema borrará las credenciales anteriores y te generará un nuevo código QR limpio para escanear con otra línea.
+En el panel web, ve a **Conexión WhatsApp** y haz clic en el botón rojo **Desconectar / Reiniciar Sesión** (o ejecuta `npm run maintenance -- --reset-wa`). El sistema borrará las credenciales anteriores y te generará un nuevo código QR limpio para escanear con otra línea.
 
-### 3. Al abrir `Crastur.bat`, la consola dice que no se encuentra Node.js:
-Descarga e instala la versión recomendada (LTS) desde el sitio oficial: [nodejs.org](https://nodejs.org). Durante la instalación, asegúrate de dejar marcada la opción que añade Node al `PATH` del sistema.
+### 3. ¿Qué hago si actualizo la versión de Node.js en mi computadora?
+El sistema Crastur incluye auto-detección y soporte para versiones modernas de Node.js (Node 20, 22 o superior). Si actualizaste Node.js, ejecuta:
+```bash
+npm run maintenance -- --node-check
+npm run maintenance -- --rebuild-deps
+```
+El script re-vinculará automáticamente las librerías binarias y de WebAssembly para garantizar máxima compatibilidad y estabilidad.
 
 ### 4. ¿Dónde están los datos de mis productos y clientes?
 Todo se almacena de forma 100% local en tu propia computadora dentro de la carpeta `data/crastur.db`. El sistema crea además copias de seguridad diarias en `data/backups/`, garantizando máxima privacidad sin mensualidades ni dependencias en la nube.

@@ -368,14 +368,32 @@ async function startWhatsApp() {
             const response = processIncomingMessage(jid, combinedText, activePushName, mediaParam);
 
             if (response) {
-              await new Promise(res => setTimeout(res, 500));
-              console.log(`[WhatsApp Bot] 🤖 Enviando respuesta a ${jid}...`);
+              console.log(`[WhatsApp Bot] 🤖 Simulando presencia de escritura para ${jid}...`);
+              // Presencia "Escribiendo..." para emular comportamiento humano anti-baneo
+              try {
+                if (sock && connectionStatus === 'connected') {
+                  await sock.sendPresenceUpdate('composing', jid);
+                }
+              } catch (pErr) {}
+
+              // Retardo natural humanizado (entre 1.2s y 2.2s según longitud)
+              const typingDelay = Math.min(2200, 1200 + Math.floor(Math.random() * 800));
+              await new Promise(res => setTimeout(res, typingDelay));
+
+              console.log(`[WhatsApp Bot] 🤖 Despachando respuesta a ${jid}...`);
 
               if (typeof response === 'object' && response !== null && response.text) {
                 await sendProductMessage(jid, response.text, response.image);
               } else if (typeof response === 'string') {
                 await sendTextMessage(jid, response);
               }
+
+              try {
+                if (sock && connectionStatus === 'connected') {
+                  await sock.sendPresenceUpdate('paused', jid);
+                }
+              } catch (pErr) {}
+
               console.log(`[WhatsApp Bot] ✅ Respuesta enviada exitosamente a ${jid}`);
             } else {
               console.log(`[WhatsApp Bot] ℹ️ Sin respuesta automática para ${jid} (chat pausado manualmente)`);

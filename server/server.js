@@ -466,6 +466,31 @@ app.post('/api/chat/send-manual', async (req, res) => {
   }
 });
 
+// Limpiar mensajes de un chat específico
+app.delete('/api/inbox/:jid', (req, res) => {
+  try {
+    const { jid } = req.params;
+    db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
+    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
+    broadcast('live_chat_message', { jid, action: 'cleared' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Vaciar historial general del inbox
+app.post('/api/inbox/clear-all', (req, res) => {
+  try {
+    db.prepare('DELETE FROM chat_messages').run();
+    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL").run();
+    broadcast('live_chat_message', { action: 'all_cleared' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // 10. Exportar e Importar Catálogo (Respaldo en 1 Clic para el Dueño)
 app.get('/api/catalog/export', (req, res) => {
@@ -504,6 +529,11 @@ if (fs.existsSync(clientDist)) {
 // Manejo Global de Errores para que el servidor NUNCA se cierre inesperadamente
 process.on('uncaughtException', (err) => {
   console.error('[Protección Anti-Fallos] Error no capturado recuperado:', err.message);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n⚠️  [Puerto Ocupado] El puerto ${PORT} ya está siendo utilizado por otra instancia de Crastur.`);
+    console.error(`💡 Para liberar el puerto puedes ejecutar: fuser -k ${PORT}/tcp o verificar si ya tienes otra terminal con npm start.\n`);
+    process.exit(1);
+  }
   try {
     const errorLogPath = path.join(__dirname, '..', 'data', 'app_error.log');
     fs.appendFileSync(errorLogPath, `[${new Date().toISOString()}] ${err.stack || err.message}\n`);
@@ -515,13 +545,30 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const PORT = process.env.PORT || 3333;
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n⚠️  [Puerto Ocupado] El puerto ${PORT} ya está siendo utilizado por otra instancia de Crastur.`);
+    console.error(`💡 Para liberar el puerto puedes ejecutar: fuser -k ${PORT}/tcp o verificar si ya tienes otra terminal abierta.\n`);
+    process.exit(1);
+  } else {
+    console.error('[Error de Servidor]', err.message);
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`[Servidor Crastur] Escuchando en http://localhost:${PORT}`);
   // Iniciar servicio BCV en segundo plano
   initBCVService();
   // Iniciar automáticamente WhatsApp y reconectar sesión existente
-  // El seguimiento y limpieza de apartados lo maneja whatsappService.js
   startWhatsApp();
+  // Chequeo independiente de apartados vencidos cada 2 minutos (libera inventario aunque WhatsApp no esté conectado)
+  const reservationInterval = setInterval(() => {
+    try {
+      cleanExpiredReservations();
+    } catch (e) {}
+  }, 2 * 60 * 1000);
+  if (reservationInterval.unref) reservationInterval.unref();
 });
 
 module.exports = { app, server };

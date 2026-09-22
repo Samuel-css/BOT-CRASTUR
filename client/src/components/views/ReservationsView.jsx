@@ -102,35 +102,68 @@ export default function ReservationsView({
             const cleanPhone = (res.telefono || '').replace(/[^\d+]/g, '').replace('+', '');
             const waLink = `https://wa.me/${cleanPhone}`;
 
+            // Calcular tiempo de gracia de 12 horas si está vencido
+            const isVencido = res.estado === 'vencido' || time.isExpired;
+            const isRetirado = res.estado === 'retirado';
+            const GRACE_PERIOD_MS = 12 * 60 * 60 * 1000;
+            const purgeTime = Number(res.expira_en) + GRACE_PERIOD_MS;
+            const remainingGraceMs = purgeTime - Date.now();
+            const graceHours = Math.max(0, Math.floor(remainingGraceMs / 3600000));
+            const graceMinutes = Math.max(0, Math.floor((remainingGraceMs % 3600000) / 60000));
+
             return (
               <div
                 key={res.id}
-                className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl p-5 shadow-xl flex flex-col justify-between card-hover"
+                className={`bg-[#0a0f1d] border rounded-3xl p-5 shadow-xl flex flex-col justify-between card-hover ${
+                  isRetirado
+                    ? 'border-emerald-500/30 opacity-75'
+                    : isVencido
+                    ? 'border-rose-900/50 bg-[#120a10]/50'
+                    : 'border-slate-800/80'
+                }`}
               >
                 <div className="space-y-3">
-                  {/* Header de la tarjeta: Tiempo restante */}
+                  {/* Header de la tarjeta: Estado y tiempo */}
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
                     <div className="flex items-center gap-2">
                       <div className={`w-2.5 h-2.5 rounded-full ${
-                        time.statusColor === 'emerald'
+                        isRetirado
+                          ? 'bg-emerald-400'
+                          : isVencido
+                          ? 'bg-rose-500 animate-pulse'
+                          : time.statusColor === 'emerald'
                           ? 'bg-emerald-400 animate-pulse'
                           : time.statusColor === 'amber'
                           ? 'bg-orange-400 animate-ping'
                           : 'bg-rose-500'
                       }`}></div>
                       <span className={`text-xs font-bold font-mono ${
-                        time.statusColor === 'emerald'
+                        isRetirado
+                          ? 'text-emerald-400'
+                          : isVencido
+                          ? 'text-rose-400'
+                          : time.statusColor === 'emerald'
                           ? 'text-emerald-400'
                           : time.statusColor === 'amber'
                           ? 'text-orange-400'
                           : 'text-rose-400'
                       }`}>
-                        {time.text}
+                        {isRetirado
+                          ? 'Retirado en Tienda'
+                          : isVencido
+                          ? `Vencido (Gracia: ${graceHours}h ${graceMinutes}m)`
+                          : time.text}
                       </span>
                     </div>
 
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#070b14] text-slate-400 border border-slate-800 font-mono font-medium">
-                      24h Límite
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-mono font-medium ${
+                      isRetirado
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                        : isVencido
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                        : 'bg-[#070b14] text-slate-400 border-slate-800'
+                    }`}>
+                      {isRetirado ? 'Entregado' : isVencido ? '12h Gracia' : '24h Límite'}
                     </span>
                   </div>
 

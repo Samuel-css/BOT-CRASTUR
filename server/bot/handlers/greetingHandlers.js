@@ -9,12 +9,12 @@ function handleGreetingResponse(pushName, settings, tasa) {
   msg += `${settings.mensaje_bienvenida || 'Te damos la bienvenida a *Crastur* 🛞🏍️📦\nTu tienda de insumos para caucheras, repuestos de moto y otros productos en Caracas con Cashea.'}\n\n`;
   msg += `🇻🇪 *Tasa oficial BCV hoy:* *Bs. ${tasaFormatted} / USD*\n\n`;
   msg += `¿Qué estás buscando hoy? Puedes responder con el *número* o escribir directamente el producto:\n\n`;
-  msg += `1️⃣ *Insumos para Caucheras* 🛞\n_(Parches, pegas, válvulas, mechas para pinchazos, plomos de balanceo, tripas)_\n\n`;
-  msg += `2️⃣ *Repuestos para Moto* 🏍️\n_(Kits de arrastre, cadenas, pastillas y bandas de freno, bujías, aceites 4T/2T)_\n\n`;
-  msg += `3️⃣ *Accesorios para Moto* 🎽\n_(Puños, mallas porta-casco, retrovisores, luces LED, spray para cadena)_\n\n`;
-  msg += `4️⃣ *Otros Productos* 📦\n_(Aceites de motor, refrigerantes para radiador, limpia inyectores, bombillos, plumillas)_\n\n`;
+  msg += `1️⃣ *Insumos Cauchera* 🛞\n_(Parches, pegas, válvulas, mechas para pinchazos, plomos de balanceo, tripas)_\n\n`;
+  msg += `2️⃣ *Repuestos Moto* 🏍️\n_(Kits de arrastre, cadenas, pastillas y bandas de freno, bujías, repuestos de motor)_\n\n`;
+  msg += `3️⃣ *Accesorios Moto* 🎽\n_(Puños, mallas porta-casco, retrovisores, luces LED, spray para cadena)_\n\n`;
+  msg += `4️⃣ *Otros Productos* 📦\n_(Aceites de motor 4T/2T, refrigerantes para radiador, aditivos, bombillos, plumillas)_\n\n`;
   msg += `5️⃣ *Pagar con Cashea en la Tienda* 💛\n_(Llévate tus productos hoy pagando solo la inicial en compras desde $25)_\n\n`;
-  msg += `6️⃣ *Hablar con una Persona* 👨‍🔧\n_(Atención directa con nuestro equipo de ventas)_\n\n`;
+  msg += `6️⃣ *Hablar con un Asesor / Vendedor* 👨‍🔧\n_(Atención directa con nuestro equipo de ventas en tienda)_\n\n`;
   msg += `¡Escríbenos lo que necesitas y te damos precio y disponibilidad al instante! 🤝✨`;
 
   return msg;

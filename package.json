@@ -6,7 +6,10 @@
     "start": "node server/server.js",
     "launch": "node launcher.js",
     "build": "npm --prefix client run build",
-    "dev:client": "npm --prefix client run dev"
+    "dev:client": "npm --prefix client run dev",
+    "maintenance": "node scripts/maintenance.js",
+    "clean": "node scripts/clean_data.js",
+    "test": "node scripts/run_stress_and_edge_tests.js"
   },
 
   "keywords": [

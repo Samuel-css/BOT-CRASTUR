@@ -1,12 +1,15 @@
 import { QrCode, CheckCircle2, RefreshCw, Smartphone, LogOut } from 'lucide-react';
 
 export default function WhatsAppView({
-  waStatus,
+  waStatus = { status: 'disconnected', qr: null, user: null },
   loading,
   onStartWhatsApp,
   onResetWhatsApp,
   onOpenLogoutConfirm
 }) {
+  const status = waStatus?.status || 'disconnected';
+  const qr = waStatus?.qr || null;
+
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in-up">
       <div className="p-6 bg-[#0a0f1d] border border-slate-800/80 rounded-3xl shadow-xl space-y-6">
@@ -22,7 +25,7 @@ export default function WhatsAppView({
           </div>
 
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            {waStatus.status === 'connected' ? (
+            {status === 'connected' ? (
               <button
                 type="button"
                 onClick={onOpenLogoutConfirm}
@@ -39,8 +42,8 @@ export default function WhatsAppView({
                   disabled={loading}
                   className="h-10 flex items-center gap-2 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/20 disabled:opacity-50 active:scale-95 whitespace-nowrap"
                 >
-                  <RefreshCw size={14} className={loading || waStatus.status === 'connecting' ? 'animate-spin' : ''} />
-                  <span>{waStatus.status === 'connecting' ? 'Conectando...' : 'Conectar WhatsApp'}</span>
+                  <RefreshCw size={14} className={loading || status === 'connecting' ? 'animate-spin' : ''} />
+                  <span>{status === 'connecting' ? 'Conectando...' : 'Conectar WhatsApp'}</span>
                 </button>
 
                 <button
@@ -60,7 +63,7 @@ export default function WhatsAppView({
 
         {/* State Display */}
         <div className="p-8 bg-[#070b14] rounded-3xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[320px]">
-          {waStatus.status === 'connected' ? (
+          {status === 'connected' ? (
             <div className="space-y-4 max-w-sm">
               <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto shadow-xl shadow-emerald-500/10">
                 <CheckCircle2 size={44} />
@@ -70,13 +73,13 @@ export default function WhatsAppView({
                 El bot está atendiendo mensajes, cotizando repuestos, registrando apartados de 24 horas y ofreciendo Cashea a tus clientes en tiempo real.
               </p>
               <div className="p-3 bg-slate-900 rounded-2xl border border-slate-800 text-xs font-mono text-emerald-400 font-bold">
-                Línea vinculada: +{waStatus.user?.phone || 'Activa'}
+                Línea vinculada: +{waStatus?.user?.phone || 'Activa'}
               </div>
             </div>
-          ) : waStatus.qr ? (
+          ) : qr ? (
             <div className="space-y-4">
               <div className="p-4 bg-white rounded-3xl shadow-2xl inline-block border-4 border-orange-500 shadow-orange-500/20">
-                <img src={waStatus.qr} alt="Código QR WhatsApp" className="w-64 h-64 mx-auto" />
+                <img src={qr} alt="Código QR WhatsApp" className="w-64 h-64 mx-auto" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-bold text-sm text-white">Escanea este código desde WhatsApp</h4>
@@ -85,7 +88,7 @@ export default function WhatsAppView({
                 </p>
               </div>
             </div>
-          ) : waStatus.status === 'connecting' ? (
+          ) : status === 'connecting' ? (
             <div className="space-y-4 max-w-sm">
               <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400 mx-auto">
                 <RefreshCw size={30} className="animate-spin" />

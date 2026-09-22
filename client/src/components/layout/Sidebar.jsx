@@ -2,6 +2,7 @@ import {
   Package,
   Wrench,
   LayoutDashboard,
+  MessageSquare,
   Calculator,
   QrCode,
   Users,
@@ -30,7 +31,7 @@ export default function Sidebar({
   setActiveTab,
   productCount,
   reservationCount,
-  waStatus,
+  waStatus = { status: 'disconnected', qr: null, user: null },
   mobileMenuOpen,
   onCloseMobileMenu
 }) {
@@ -114,6 +115,30 @@ export default function Sidebar({
           </div>
 
           <div className="space-y-1">
+            {/* Live Inbox */}
+            <button
+              onClick={() => handleNavClick('inbox')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                activeTab === 'inbox'
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-slate-950 font-bold shadow-md shadow-orange-500/20'
+                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <MessageSquare size={18} className="shrink-0" />
+                <span className="truncate whitespace-nowrap">Live Inbox</span>
+              </div>
+              <span className={`shrink-0 ml-2 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                activeTab === 'inbox'
+                  ? 'bg-slate-950/40 text-slate-950'
+                  : waStatus?.status === 'connected'
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+              }`}>
+                {waStatus?.status === 'connected' ? 'En Vivo' : 'Sin WhatsApp'}
+              </span>
+            </button>
+
             <button
               onClick={() => handleNavClick('products')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
@@ -196,12 +221,24 @@ export default function Sidebar({
                 <QrCode size={18} className="shrink-0" />
                 <span className="truncate whitespace-nowrap">Conexión WhatsApp</span>
               </div>
-              {waStatus.status === 'connected' ? (
-                <span className="shrink-0 ml-2 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              ) : waStatus.status === 'qr_ready' ? (
-                <span className="shrink-0 ml-2 w-2.5 h-2.5 rounded-full bg-orange-400 animate-ping"></span>
+              {waStatus?.status === 'connected' ? (
+                <span className="shrink-0 ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Conectado
+                </span>
+              ) : waStatus?.status === 'qr_ready' ? (
+                <span className="shrink-0 ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/20 text-orange-400 border border-orange-500/40 animate-pulse flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+                  Escanear QR
+                </span>
+              ) : waStatus?.status === 'connecting' ? (
+                <span className="shrink-0 ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                  Conectando...
+                </span>
               ) : (
-                <span className="shrink-0 ml-2 w-2.5 h-2.5 rounded-full bg-slate-600"></span>
+                <span className="shrink-0 ml-2 text-[10px] px-2 py-0.5 rounded-full font-bold bg-rose-950/40 text-rose-400 border border-rose-800/60">
+                  Desconectado
+                </span>
               )}
             </button>
 

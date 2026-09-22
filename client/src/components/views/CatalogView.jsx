@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Package, Plus, Search, Grid, List, Copy, Check, Edit2, Trash2, ShoppingBag } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Package, Plus, Search, Grid, List, Copy, Check, Edit2, Trash2, ShoppingBag, Download, Upload, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatBs } from '../../utils/formatters';
 import { PRODUCT_CATEGORIES } from '../../constants/categories';
 
@@ -10,25 +11,98 @@ export default function CatalogView({
   onEditProduct,
   onDeleteProduct,
   onCopyQuote,
-  copiedId
+  copiedId,
+  onReload
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleExport = () => {
+    window.location.href = '/api/catalog/export';
+    toast.success('Descargando archivo de respaldo del catálogo...');
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const text = await file.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (pe) {
+        toast.error('El archivo no tiene un formato JSON válido');
+        setImporting(false);
+        return;
+      }
+
+      const list = Array.isArray(parsed)
+        ? parsed
+        : (Array.isArray(parsed.productos) ? parsed.productos : null);
+
+      if (!list || list.length === 0) {
+        toast.error('No se encontraron productos en el archivo');
+        setImporting(false);
+        return;
+      }
+
+      const res = await fetch('/api/catalog/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productos: list })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`¡${data.count} repuestos importados correctamente!`);
+        if (onReload) onReload();
+      } else {
+        toast.error(data.error || 'Error al importar catálogo');
+      }
+    } catch (err) {
+      toast.error('Error procesando el archivo: ' + err.message);
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const normalizeCat = (cat) => {
+    if (!cat) return '';
+    let c = String(cat).trim();
+    if (c === 'Repuestos para Moto' || c.startsWith('Repuestos para Moto')) {
+      c = c.replace('Repuestos para Moto', 'Repuestos Moto');
+    }
+    if (c === 'Insumos para Caucheras' || c.startsWith('Insumos para Caucheras')) {
+      c = c.replace('Insumos para Caucheras', 'Insumos Cauchera');
+    }
+    return c;
+  };
 
   const categories = Array.from(new Set([
     ...PRODUCT_CATEGORIES,
-    ...products.map(p => p.categoria).filter(Boolean)
-  ]));
+    ...products.map(p => normalizeCat(p.categoria)).filter(Boolean)
+  ])).filter(c => c !== 'Test');
 
   const filtered = products.filter(p => {
     const q = searchTerm.toLowerCase();
     const marca = (p.marca || '').toLowerCase();
     const modelo = (p.modelo || '').toLowerCase();
-    const categoria = (p.categoria || '').toLowerCase();
+    const rawCat = p.categoria || '';
+    const normCat = normalizeCat(rawCat);
+    const categoria = normCat.toLowerCase();
 
     const matchesSearch = marca.includes(q) || modelo.includes(q) || categoria.includes(q);
-    const matchesCat = categoryFilter === 'all' || p.categoria === categoryFilter;
+    const matchesCat = categoryFilter === 'all' ||
+      normCat === categoryFilter ||
+      rawCat === categoryFilter ||
+      normCat.startsWith(categoryFilter + ' -') ||
+      rawCat.startsWith(categoryFilter + ' -');
+
     return matchesSearch && matchesCat;
   });
 
@@ -62,7 +136,39 @@ export default function CatalogView({
           </select>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+          {/* Botones de Exportar e Importar Catálogo */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleExport}
+              title="Descargar copia de seguridad del catálogo en JSON"
+              className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-[#070b14] border border-slate-800 hover:border-orange-500/50 text-slate-300 hover:text-orange-400 text-xs font-semibold transition active:scale-95 cursor-pointer"
+            >
+              <Download size={14} />
+              <span className="hidden md:inline">Exportar</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              title="Cargar catálogo desde un archivo JSON"
+              className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-[#070b14] border border-slate-800 hover:border-orange-500/50 text-slate-300 hover:text-orange-400 text-xs font-semibold transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {importing ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+              <span className="hidden md:inline">Importar</span>
+            </button>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".json"
+              onChange={handleImportFile}
+              className="hidden"
+            />
+          </div>
+
           {/* Alternador Grid / Table */}
           <div className="flex items-center bg-[#070b14] rounded-2xl p-1 border border-slate-800">
             <button

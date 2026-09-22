@@ -26,7 +26,7 @@ function handlePaymentMethodsResponse(tasa, settings) {
 function handleDiscountResponse(tasa, settings) {
   const tasaFormatted = formatRate(tasa);
   let msg = `🔥 *¡Descuento Especial en Divisas en Crastur!* 💵🏷️\n\n`;
-  msg += `¡Sí! Al pagar tus repuestos y accesorios en **efectivo en divisas**, cuentas con un **descuento especial** directo en tienda 🏷️.\n\n`;
+  msg += `¡Sí! Al pagar tus repuestos y accesorios en *efectivo en divisas*, cuentas con un *descuento especial* directo en tienda 🏷️.\n\n`;
   msg += `📌 *Métodos de pago disponibles:*\n`;
   msg += `💵 *Efectivo en Divisas* (🔥 *¡Con descuento especial directo!*)\n`;
   msg += `✅ *Pago Móvil* (a tasa oficial BCV sin recargos)\n`;
@@ -307,6 +307,125 @@ function handleCarInquiryResponse() {
   return msg;
 }
 
+/**
+ * Asistencia paciente y cercana para personas mayores o clientes no familiarizados con asistentes
+ */
+function handleElderlyOrConfusedResponse(pushName, settings) {
+  const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
+  const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+
+  let msg = `¡Hola! Con mucho gusto le atiendo con toda la paciencia del mundo 😊\n\n`;
+  msg += `Soy el asistente virtual de la tienda física de *Crastur* en Caracas. No se preocupe si no está familiarizado/a con esto, aquí estamos para servirle:\n\n`;
+  msg += `🏢 *Somos tienda física establecida:* Estamos ubicados en ${direccion} (muy cerca del Centro Financiero Latino y Parque Central).\n`;
+  msg += `🗺️ *Ubicación en mapa:* ${mapsUrl}\n`;
+  msg += `🕒 *Horario:* Lunes a Sábado de 8:00 AM a 8:00 PM corrido.\n\n`;
+  msg += `📌 *¿Cómo le podemos ayudar?*\n`;
+  msg += `• Solo dígame qué repuesto o pieza necesita con sus propias palabras (o la marca/modelo de la moto).\n`;
+  msg += `• También puede enviarnos una *foto de la pieza* que necesita para que el equipo la identifique.\n`;
+  msg += `• O si prefiere hablar o recibir llamada de una *persona de ventas directamente*, escriba la palabra *ASESOR* o *HUMANO* y le pondremos en contacto con nuestro mostrador.`;
+  return msg;
+}
+
+/**
+ * De-escalación respetuosa y conciliadora ante quejas, desconfianza, acusaciones o malas palabras
+ */
+function handleHostilityOrComplaintResponse(pushName, settings) {
+  const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
+  const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+
+  let msg = `Estimado cliente, lamentamos de antemano cualquier inconveniente, molestia o malentendido 🙏.\n\n`;
+  msg += `En *Crastur* nos tomamos con total seriedad el respeto y la atención a cada cliente:\n\n`;
+  msg += `🏢 *Somos una empresa comercial legal y tienda física abierta al público:*\n`;
+  msg += `📍 ${direccion}\n`;
+  msg += `🗺️ *Ver ubicación en Google Maps:*\n${mapsUrl}\n`;
+  msg += `🕒 Trabajamos de Lunes a Sábado de 8:00 AM a 8:00 PM con factura legal y garantía.\n\n`;
+  msg += `🤝 Queremos ayudarle a resolver cualquier situación o duda de la mejor manera. Por favor escriba la palabra *ASESOR* para que nuestro personal encargado le atienda de forma prioritaria y personalizada.`;
+  return msg;
+}
+
+/**
+ * Navegación y consulta de productos por categoría oficial canónica
+ */
+function handleCategoryBrowseResponse(categoryName, settings, tasa, session, jid) {
+  const categoryEmojis = {
+    'Insumos Cauchera': '🛞',
+    'Repuestos Moto': '🏍️',
+    'Accesorios Moto': '🎽',
+    'Otros Productos': '📦'
+  };
+
+  const emoji = categoryEmojis[categoryName] || '📦';
+  const prods = db.prepare(`
+    SELECT * FROM products
+    WHERE activo = 1 AND (
+      categoria = ? OR
+      categoria LIKE ? OR
+      categoria LIKE ?
+    )
+    ORDER BY modelo ASC
+  `).all(categoryName, `${categoryName} - %`, `${categoryName}%`);
+
+  if (prods.length === 0) {
+    let msg = `${emoji} *${categoryName} - Crastur* ✨\n\n`;
+    msg += `En este momento estamos actualizando el inventario digital de *${categoryName}*.\n\n`;
+    if (categoryName === 'Accesorios Moto') {
+      msg += `Disponemos en tienda de puños, mallas porta-casco, retrovisores, luces LED, pulpos y spray para cadenas.\n\n`;
+    }
+    msg += `👉 Escribe el modelo o repuesto específico que necesitas para confirmarte existencia en almacén.\n`;
+    msg += `👉 O escribe *VENDEDOR* para que nuestro equipo te cotice directamente. 👨‍🔧`;
+    return msg;
+  }
+
+  // Guardar contexto en sesión para permitir seleccionar "el 1", "apartar", etc.
+  if (jid) {
+    const contextJson = JSON.stringify(prods.slice(0, 5).map(p => ({
+      id: p.id,
+      marca: p.marca,
+      modelo: p.modelo,
+      precio_usd: p.precio_usd,
+      categoria: p.categoria
+    })));
+    try {
+      db.prepare(`
+        UPDATE chat_sessions
+        SET ultimo_producto_id = ?,
+            ultimo_producto_nombre = ?,
+            contexto_productos = ?,
+            seguimiento_enviado = 0
+        WHERE jid = ?
+      `).run(prods[0].id, `${prods[0].marca} ${prods[0].modelo}`, contextJson, jid);
+    } catch {}
+  }
+
+  let msg = `${emoji} *Catálogo: ${categoryName} - Crastur* 🇻🇪\n\n`;
+  msg += `Disponemos de los siguientes artículos para entrega inmediata:\n\n`;
+
+  prods.forEach((p, idx) => {
+    const precioUsd = parseFloat(p.precio_usd);
+    const precioBs = precioUsd * tasa;
+    msg += `*${idx + 1}. ${p.marca} - ${p.modelo}*\n`;
+    if (p.descripcion) {
+      msg += `   📝 ${p.descripcion}\n`;
+    }
+    msg += `   💵 Precio: *$${precioUsd.toFixed(2)} USD* _(🔥 ¡Descuento en divisas!)_\n`;
+    msg += `   🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}*\n`;
+    if (precioUsd >= 25) {
+      const n1 = precioUsd * 0.40;
+      msg += `   💛 Cashea: Inicial *$${n1.toFixed(2)} USD* + 3 cuotas\n`;
+    }
+    msg += `   📦 Stock: ${p.stock > 0 ? '✅ Disponible en tienda' : '⚠️ Consultar'}\n\n`;
+  });
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `💡 *Opciones:*\n`;
+  msg += `👉 Responde con el *número* (ej: *1*) para ver ficha detallada y fotos.\n`;
+  msg += `👉 Escribe *APARTAR* para reservar un producto por 24h sin costo.\n`;
+  msg += `👉 Escribe *DELIVERY* para cotizar envío en moto en Caracas 🛵.\n`;
+  msg += `👉 Escribe *VENDEDOR* para hablar con nuestro mostrador.`;
+
+  return msg;
+}
+
 module.exports = {
   handlePaymentMethodsResponse,
   handleDiscountResponse,
@@ -325,5 +444,8 @@ module.exports = {
   handleWarrantyResponse,
   handleAvailabilityResponse,
   handleLocationResponse,
-  handleCarInquiryResponse
+  handleCarInquiryResponse,
+  handleElderlyOrConfusedResponse,
+  handleHostilityOrComplaintResponse,
+  handleCategoryBrowseResponse
 };
