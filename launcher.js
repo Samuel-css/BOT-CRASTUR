@@ -96,6 +96,20 @@ async function main() {
       fs.copyFileSync(dbFile, backupTarget);
     } catch (e) {}
   }
+  
+  // En Windows: crear acceso directo en el Escritorio con icono oficial si no existe
+  if (process.platform === 'win32') {
+    try {
+      const desktop = path.join(process.env.USERPROFILE || '', 'Desktop');
+      const shortcut = path.join(desktop, 'Crastur.lnk');
+      if (fs.existsSync(desktop) && !fs.existsSync(shortcut)) {
+        const ico = path.join(__dirname, 'crastur.ico');
+        const target = path.join(__dirname, 'Crastur.bat');
+        const cmd = `powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell;$s=$w.CreateShortcut('${shortcut.replace(/\\/g, '\\\\')}');$s.TargetPath='${target.replace(/\\/g, '\\\\')}';$s.WorkingDirectory='${__dirname.replace(/\\/g, '\\\\')}';$s.IconLocation='${ico.replace(/\\/g, '\\\\')},0';$s.Save()"`;
+        execSync(cmd, { stdio: 'ignore' });
+      }
+    } catch (e) {}
+  }
   await new Promise(r => setTimeout(r, 400));
 
   // Paso 5: Listo (100%)

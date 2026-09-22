@@ -99,11 +99,8 @@ graph TD
 
 ```text
 crastur/
-├── Crastur.bat                 # EJECUTABLE MAESTRO (Windows 1-clic con auto-instalación)
-├── Crear-Acceso-Directo.bat    # Crea el acceso directo en el Escritorio con crastur.ico
-├── Iniciar-Crastur.ps1         # Lanzador alternativo para PowerShell en Windows
+├── Crastur.bat                 # ÚNICO EJECUTABLE (Windows 1-clic: instala, arranca y abre la app)
 ├── crastur.ico                 # Icono oficial de Windows (resoluciones de 16x16 a 256x256)
-├── iniciar_crastur.sh          # Lanzador ejecutable para Linux / macOS
 ├── launcher.js                 # Verificador inteligente y lanzador multiplataforma
 ├── .gitattributes              # Control estricto de finales de línea CRLF/LF
 │
@@ -148,29 +145,18 @@ crastur/
 
 ---
 
-## 🚀 Cómo Iniciar el Sistema
+## 🚀 Cómo Iniciar el Sistema (Un Solo Clic)
 
-### 🪟 En Windows (Usuarios Finales - Recomendado):
+### 🪟 En Windows:
 
-> [!IMPORTANT]
-> **Paso previo en Windows 11 (Desbloquear archivos descargados):**
-> Si descargaste el proyecto en un archivo comprimido o desde internet, Windows 11 (*Smart App Control / SmartScreen*) puede bloquear archivos `.bat`.
-> 1. Haz clic derecho sobre **`Crastur.bat`** ➔ **Propiedades**.
-> 2. En la pestaña **General**, abajo del todo en la sección *Seguridad*, marca la casilla **☑ Desbloquear** (*Unblock*).
-> 3. Haz clic en **Aplicar** y luego en **Aceptar**. *(Haz lo mismo con `Crear-Acceso-Directo.bat`)*.
->
-> *Alternativa en PowerShell:* En la carpeta del proyecto ejecuta: `dir | Unblock-File`
+Haz **doble clic en `Crastur.bat`**. ¡Eso es todo!
 
-#### Método 1: Doble clic directo
-* Haz doble clic en **`Crastur.bat`**.
-* El sistema comprobará Node.js, instalará las dependencias necesarias, compilará el panel visual y abrirá la ventana de la aplicación automáticamente.
+El sistema se encarga de todo: verifica Node.js, carga la interfaz visual, inicia el servidor, activa la conexión de WhatsApp y abre la pantalla de Crastur automáticamente.
 
-#### Método 2: Acceso directo en el Escritorio
-* Haz doble clic en **`Crear-Acceso-Directo.bat`**.
-* Creará inmediatamente un acceso directo en tu Escritorio con el ícono oficial de Crastur para abrir el sistema con un clic en cualquier momento.
+> [!TIP]
+> **Si Windows 11 bloquea el archivo la primera vez:**
+> Clic derecho en **`Crastur.bat`** ➔ **Propiedades** ➔ Marca la casilla **☑ Desbloquear** ➔ Clic en **Aceptar**.
 
-#### Método 3: Lanzador alternativo PowerShell
-* Clic derecho en **`Iniciar-Crastur.ps1`** ➔ **Ejecutar con PowerShell**.
 
 ---
 
