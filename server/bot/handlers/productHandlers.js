@@ -25,6 +25,20 @@ function handleSingleProductDetail(p, tasa, settings, session) {
     msg += `💛 *Cashea en Tienda Física:* Inicial desde *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) y ${cuotasCashea} cuotas quincenales de *$${((precioUsd - n1) / cuotasCashea).toFixed(2)} USD*.\n\n`;
   }
 
+  // Sugerencia rápida y natural de mostrador (Venta Cruzada directa en 1 línea)
+  const normCat = (p.categoria || '').toLowerCase();
+  const normMod = (p.modelo || '').toLowerCase();
+
+  if (normMod.includes('arrastre') || normMod.includes('cadena') || normMod.includes('pinon') || normMod.includes('corona')) {
+    msg += `💡 *Para el servicio:* ¿Te sumamos la grasa lubricante de cadena? 🛢️\n\n`;
+  } else if (normMod.includes('pastilla') || normMod.includes('freno') || normMod.includes('banda')) {
+    msg += `💡 *Para el servicio:* ¿Llevas la liga de freno (DOT 4) o tienes allá? 🛞\n\n`;
+  } else if (normMod.includes('parche') || normMod.includes('mecha') || normCat.includes('cauchera')) {
+    msg += `💡 *Para el taller:* ¿Cuentas con pega azul Tip Top o terraja para válvulas? 🔧\n\n`;
+  } else if (normMod.includes('aceite') || normMod.includes('lubricante') || normCat.includes('otros')) {
+    msg += `💡 *Para el cambio:* ¿Te agregamos la bujía para hacerle el servicio completo a la moto? 🏍️⚡\n\n`;
+  }
+
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `👉 Escribe *APARTAR* para reservarlo 24h sin costo y retirar en tienda 🏢.\n`;
   msg += `👉 Escribe *DELIVERY* para cotizar envío en moto en Caracas 🛵.\n`;

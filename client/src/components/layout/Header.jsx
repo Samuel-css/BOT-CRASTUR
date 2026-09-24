@@ -1,4 +1,4 @@
-import { DollarSign, RefreshCw, QrCode, CheckCircle2, Menu, PauseCircle, PlayCircle } from 'lucide-react';
+import { DollarSign, RefreshCw, QrCode, CheckCircle2, Menu, PauseCircle, PlayCircle, Search, Store } from 'lucide-react';
 import { formatRate } from '../../utils/formatters';
 
 export default function Header({
@@ -10,7 +10,10 @@ export default function Header({
   onToggleMobileMenu,
   botPausedGlobal,
   onToggleBotPause,
-  onNavigate
+  onNavigate,
+  onOpenQuickPrice,
+  settings = {},
+  onToggleStoreStatus
 }) {
   const getTabTitle = () => {
     switch (activeTab) {
@@ -59,7 +62,36 @@ export default function Header({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Botón Modo Mostrador Rápido */}
+        {onOpenQuickPrice && (
+          <button
+            onClick={onOpenQuickPrice}
+            type="button"
+            title="Consultar precio y stock en 1 segundo (F2)"
+            className="h-9 sm:h-10 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 rounded-xl border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 hover:text-white text-[11px] sm:text-xs font-bold transition cursor-pointer shadow-sm shadow-orange-500/5 shrink-0"
+          >
+            <Search size={14} className="text-orange-400 shrink-0" />
+            <span><span className="hidden sm:inline">Precio </span>Rápido <kbd className="hidden md:inline px-1 py-0.2 rounded bg-black/40 text-[9px] font-mono text-orange-200 ml-0.5">F2</kbd></span>
+          </button>
+        )}
+
+        {/* Toggle Tienda Abierta / Cerrada */}
+        {onToggleStoreStatus && (
+          <button
+            onClick={onToggleStoreStatus}
+            type="button"
+            title={settings.fuera_horario_activo === '1' ? 'Tienda marcada como CERRADA. Clic para marcarla como ABIERTA.' : 'Tienda marcada como ABIERTA. Clic para cerrarla temporalmente.'}
+            className={`h-9 sm:h-10 flex items-center gap-1.5 px-2.5 rounded-xl border text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 ${
+              settings.fuera_horario_activo === '1'
+                ? 'bg-rose-950/40 border-rose-800/60 text-rose-300 hover:bg-rose-900/50'
+                : 'bg-emerald-950/30 border-emerald-800/50 text-emerald-300 hover:bg-emerald-900/40'
+            }`}
+          >
+            <Store size={14} className={settings.fuera_horario_activo === '1' ? 'text-rose-400' : 'text-emerald-400'} />
+            <span className="hidden lg:inline">{settings.fuera_horario_activo === '1' ? 'Cerrado' : 'Abierto'}</span>
+          </button>
+        )}
         {/* Botón de Pausa / Reanudación Global del Bot */}
         <button
           onClick={onToggleBotPause}

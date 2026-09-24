@@ -3,7 +3,7 @@ const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const pino = require('pino');
-const { processIncomingMessage, checkPendingFollowUps } = require('./botEngine');
+const { processIncomingMessage, checkPendingFollowUps, check22hReservationReminders } = require('./botEngine');
 const { db, recordMetric, cleanExpiredReservations } = require('./database');
 
 const authFolder = path.join(__dirname, '..', 'data', 'auth_info_baileys');
@@ -19,6 +19,10 @@ let followUpInterval = null;
 // Buffer de Debounce Anti-Spam para ráfagas de mensajes rápidos
 const messageDebounceTimers = new Map();
 const messageDebounceQueues = new Map();
+
+// Buffer para mensajes acumulados mientras la PC estuvo apagada (anoche / cortes de luz)
+let overnightCatchupTimer = null;
+const overnightCatchupMap = new Map();
 
 /**
  * Desempaqueta capas anidadas de Baileys (ephemeralMessage, viewOnce, etc.)
@@ -249,6 +253,12 @@ async function startWhatsApp() {
             }
 
             if (connectionStatus === 'connected' && sock) {
+              if (typeof check22hReservationReminders === 'function') {
+                check22hReservationReminders(async (targetJid, messageText) => {
+                  await sendTextMessage(targetJid, messageText);
+                });
+              }
+
               checkPendingFollowUps(async (targetJid, messageText) => {
                 await sendTextMessage(targetJid, messageText);
               });
@@ -284,11 +294,84 @@ async function startWhatsApp() {
           continue;
         }
 
-        // Si el mensaje es muy antiguo (sincronización inicial de historial mayor a 5 minutos), ignorarlo
+        // Si el mensaje llegó mientras la PC estuvo apagada (sincronización de WhatsApp)
         const messageTimestamp = msg.messageTimestamp;
         if (messageTimestamp) {
           const ageSec = Math.floor(Date.now() / 1000) - Number(messageTimestamp);
+          
+          // Si tiene más de 24 horas, ignorar completamente para no desempolvar chats viejos
+          if (ageSec > 24 * 3600) {
+            continue;
+          }
+
+          // Si tiene más de 5 minutos (llegó mientras la computadora estuvo apagada anoche)
           if (ageSec > 300) {
+            const info = extractMessageInfo(msg);
+            if (info && (info.text || info.isMedia)) {
+              const pushName = msg.pushName || 'cliente';
+              const msgTime = Number(messageTimestamp) * 1000;
+              const contentText = info.text || `[${info.mediaType || 'Multimedia'}]`;
+
+              try {
+                db.prepare(`
+                  INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+                  VALUES (?, 'cliente', ?, ?)
+                `).run(jid, `🌙 [Recibido fuera de horario]: ${contentText}`, msgTime);
+
+                const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
+                if (!exists) {
+                  db.prepare(`
+                    INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
+                    VALUES (?, ?, 'start', ?, 0, 0, 1)
+                  `).run(jid, pushName, msgTime);
+                } else {
+                  db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = MAX(ultimo_mensaje_at, ?), push_name = ? WHERE jid = ?')
+                    .run(msgTime, pushName, jid);
+                }
+              } catch (e) {}
+
+              notifyLiveMessage({
+                jid,
+                pushName,
+                remitente: 'cliente',
+                contenido: `🌙 [Recibido fuera de horario]: ${contentText}`,
+                timestamp: msgTime
+              });
+
+              if (info.text && info.text.trim().length > 1) {
+                overnightCatchupMap.set(jid, { text: info.text.trim(), pushName });
+              }
+
+              // Programar respuesta matutina educada consolidada tras terminar la sincronización de Baileys
+              if (overnightCatchupTimer) clearTimeout(overnightCatchupTimer);
+              overnightCatchupTimer = setTimeout(async () => {
+                if (overnightCatchupMap.size === 0) return;
+                const entries = Array.from(overnightCatchupMap.entries());
+                overnightCatchupMap.clear();
+
+                const { isWithinBusinessHours } = require('./bot/services/businessRules');
+                if (!isWithinBusinessHours()) {
+                  console.log('[WhatsApp] Mensajes nocturnos registrados en Live Inbox. La tienda aún está cerrada.');
+                  return;
+                }
+
+                console.log(`[WhatsApp] ☀️ Atendiendo ${entries.length} consultas acumuladas mientras la PC estuvo apagada...`);
+                for (const [targetJid, clientData] of entries) {
+                  try {
+                    const res = processIncomingMessage(targetJid, clientData.text, clientData.pushName);
+                    if (res) {
+                      const rawReply = typeof res === 'object' && res.text ? res.text : String(res);
+                      const morningReply = `¡Buenos días, *${clientData.pushName}*! 👋 Recibimos tu consulta mientras nuestra tienda física estaba cerrada. Ya estamos abiertos hoy de 8:00 AM a 8:00 PM con entrega inmediata en San Agustín Norte:\n\n${rawReply}`;
+
+                      await sendTextMessage(targetJid, morningReply);
+                      await new Promise(r => setTimeout(r, 2000));
+                    }
+                  } catch (mErr) {
+                    console.error(`[WhatsApp] Error respondiendo mensaje matutino a ${targetJid}:`, mErr.message);
+                  }
+                }
+              }, 8000);
+            }
             continue;
           }
         }
@@ -386,6 +469,55 @@ async function startWhatsApp() {
                 await sendProductMessage(jid, response.text, response.image);
               } else if (typeof response === 'string') {
                 await sendTextMessage(jid, response);
+              }
+
+              const responseText = typeof response === 'object' && response !== null ? response.text : String(response);
+
+              // 1. Si es respuesta de ubicación física, enviar además el Pin de mapa interactivo de WhatsApp
+              if (responseText.includes('Liberalba') && responseText.includes('Google Maps')) {
+                try {
+                  if (sock && connectionStatus === 'connected') {
+                    await sock.sendMessage(jid, {
+                      location: {
+                        degreesLatitude: 10.5015,
+                        degreesLongitude: -66.9015,
+                        name: 'Crastur - Insumos Cauchera y Repuestos Moto',
+                        address: 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas'
+                      }
+                    });
+                    console.log(`[WhatsApp Bot] 📍 Pin de ubicación interactivo enviado a ${jid}`);
+                  }
+                } catch (locErr) {
+                  console.warn('[WhatsApp Bot] No se pudo enviar pin interactivo:', locErr.message);
+                }
+              }
+
+              // 2. Si el cliente pide guardar contacto o el número oficial, enviar la tarjeta vCard lista para guardar
+              const normInput = (combinedText || '').toLowerCase();
+              if (normInput.includes('contacto') || normInput.includes('guardar') || normInput.includes('numero') || normInput.includes('telefono')) {
+                try {
+                  if (sock && connectionStatus === 'connected') {
+                    const botPhone = currentUser?.phone || (sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : '584120000000');
+                    const vcard = 'BEGIN:VCARD\n'
+                      + 'VERSION:3.0\n'
+                      + 'FN:Crastur - Repuestos e Insumos\n'
+                      + 'ORG:Crastur Caracas;\n'
+                      + `TEL;type=CELL;type=VOICE;waid=${botPhone}:+${botPhone}\n`
+                      + 'NOTE:Tienda Física en San Agustín Norte - Insumos de Cauchera y Repuestos Moto\n'
+                      + 'URL:https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA\n'
+                      + 'END:VCARD';
+
+                    await sock.sendMessage(jid, {
+                      contacts: {
+                        displayName: 'Crastur - Repuestos e Insumos',
+                        contacts: [{ vcard }]
+                      }
+                    });
+                    console.log(`[WhatsApp Bot] 📇 Tarjeta de contacto oficial enviada a ${jid}`);
+                  }
+                } catch (cardErr) {
+                  console.warn('[WhatsApp Bot] No se pudo enviar tarjeta de contacto:', cardErr.message);
+                }
               }
 
               try {

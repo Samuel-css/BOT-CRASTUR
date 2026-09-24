@@ -61,7 +61,7 @@ const {
   handleApartadoCedula,
   handleApartadoTelefono
 } = require('./apartado/apartadoFlow');
-const { checkPendingFollowUps } = require('./followUp/followUpService');
+const { checkPendingFollowUps, check22hReservationReminders } = require('./followUp/followUpService');
 
 /**
  * Enrutador principal de mensajes de WhatsApp
@@ -844,5 +844,6 @@ module.exports = {
   handleSellersResponse,
   handleLocationResponse,
   handleCarInquiryResponse,
-  checkPendingFollowUps
+  checkPendingFollowUps,
+  check22hReservationReminders
 };

@@ -31,6 +31,24 @@ function persistDB() {
   }
 }
 
+// Protección de guardado atómico ante apagones o cierre de la PC
+if (typeof process !== 'undefined') {
+  const handleExit = () => {
+    try {
+      persistDB();
+    } catch (e) {}
+  };
+  process.once('beforeExit', handleExit);
+  process.once('SIGINT', () => {
+    handleExit();
+    process.exit(0);
+  });
+  process.once('SIGTERM', () => {
+    handleExit();
+    process.exit(0);
+  });
+}
+
 function scheduleSave() {
   if (saveScheduled) return;
   saveScheduled = true;
@@ -273,13 +291,19 @@ async function initDB() {
       precio_bs REAL NOT NULL,
       creado_en INTEGER NOT NULL,
       expira_en INTEGER NOT NULL,
-      estado TEXT DEFAULT 'activo'
+      estado TEXT DEFAULT 'activo',
+      aviso_22h_enviado INTEGER DEFAULT 0
     );
   `);
 
   // Migración: agregar columna apartado_metadata si no existe (bases de datos antiguas)
   try {
     rawDb.exec('ALTER TABLE chat_sessions ADD COLUMN apartado_metadata TEXT;');
+  } catch {}
+
+  // Migración: agregar columna aviso_22h_enviado si no existe
+  try {
+    rawDb.exec('ALTER TABLE reservations ADD COLUMN aviso_22h_enviado INTEGER DEFAULT 0;');
   } catch {}
 
   // Índices optimizadores para queries frecuentes
@@ -333,6 +357,12 @@ async function initDB() {
     db.prepare("UPDATE products SET categoria = 'Repuestos Moto' WHERE categoria = 'Repuestos para Moto' OR categoria LIKE 'Repuestos para Moto%'").run();
     db.prepare("UPDATE products SET categoria = 'Insumos Cauchera' WHERE categoria = 'Insumos para Caucheras' OR categoria LIKE 'Insumos para Caucheras%'").run();
     db.prepare("DELETE FROM products WHERE modelo LIKE '%TEST%' OR categoria LIKE '%Test%' OR marca = 'TEST'").run();
+  } catch {}
+
+  // Optimización de arranque y liberación limpia de apartados vencidos mientras la PC estuvo apagada
+  try {
+    rawDb.exec('PRAGMA optimize;');
+    cleanExpiredReservations();
   } catch {}
 
   // Guardar inmediatamente en disco
@@ -599,6 +629,25 @@ function cleanExpiredReservations() {
   return newlyExpired;
 }
 
+function getReservationsNeeding22hReminder() {
+  const now = Date.now();
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  return db.prepare(`
+    SELECT * FROM reservations
+    WHERE estado = 'activo'
+      AND (expira_en - ?) <= ?
+      AND expira_en > ?
+      AND (aviso_22h_enviado IS NULL OR aviso_22h_enviado = 0)
+      AND jid IS NOT NULL
+      AND jid != ''
+  `).all(now, TWO_HOURS_MS, now);
+}
+
+function markReservation22hReminderSent(id) {
+  db.prepare('UPDATE reservations SET aviso_22h_enviado = 1 WHERE id = ?').run(id);
+  persistDB();
+}
+
 module.exports = {
   db,
   initDB,
@@ -619,6 +668,8 @@ module.exports = {
   updateReservationStatus,
   deleteReservation,
   cleanExpiredReservations,
+  getReservationsNeeding22hReminder,
+  markReservation22hReminderSent,
   persistDB,
   performDailyBackup
 };

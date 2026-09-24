@@ -14,6 +14,7 @@ import ProductModal from './components/modals/ProductModal';
 import SellerModal from './components/modals/SellerModal';
 import ReservationModal from './components/modals/ReservationModal';
 import ConfirmModal from './components/modals/ConfirmModal';
+import QuickPriceModal from './components/modals/QuickPriceModal';
 import ToastContainer, { useToast } from './components/ui/Toast';
 import { Toaster } from 'sonner';
 
@@ -39,6 +40,39 @@ export default function App() {
   const [sellerModal, setSellerModal] = useState({ isOpen: false, editing: null });
   const [reservationModal, setReservationModal] = useState({ isOpen: false, data: null });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: true });
+  const [quickPriceOpen, setQuickPriceOpen] = useState(false);
+
+  // Escuchar tecla F2 para abrir consulta rápida de mostrador
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        setQuickPriceOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleToggleStoreStatus = () => {
+    const isClosed = settings.fuera_horario_activo === '1';
+    const newStatus = isClosed ? '0' : '1';
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fuera_horario_activo: newStatus })
+    })
+      .then(r => r.json())
+      .then(data => {
+        setSettings(data.settings || {});
+        if (newStatus === '1') {
+          toast.warning('Tienda marcada como CERRADA temporalmente');
+        } else {
+          toast.success('Tienda marcada como ABIERTA (Atendiendo normal)');
+        }
+      })
+      .catch(() => toast.error('Error al cambiar estado de la tienda'));
+  };
 
   const loadProducts = () => {
     fetch('/api/products')
@@ -487,6 +521,9 @@ export default function App() {
           botPausedGlobal={botPausedGlobal}
           onToggleBotPause={handleToggleGlobalBotPause}
           onNavigate={setActiveTab}
+          onOpenQuickPrice={() => setQuickPriceOpen(true)}
+          settings={settings}
+          onToggleStoreStatus={handleToggleStoreStatus}
         />
 
         {/* VIEW CONTAINER */}
@@ -628,6 +665,13 @@ export default function App() {
         isDanger={confirmModal.isDanger}
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
         onConfirm={confirmModal.onConfirm}
+      />
+
+      <QuickPriceModal
+        isOpen={quickPriceOpen}
+        onClose={() => setQuickPriceOpen(false)}
+        products={products}
+        bcvData={bcvData}
       />
 
       {/* Notificaciones modernas Sonner y ToastContainer */}

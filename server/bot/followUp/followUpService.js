@@ -79,6 +79,40 @@ async function checkPendingFollowUps(sendWhatsAppMessageCallback) {
   }
 }
 
+/**
+ * Recordatorio de rescate de apartado a las 22 horas (faltando 2 horas para vencer las 24h)
+ */
+async function check22hReservationReminders(sendWhatsAppMessageCallback) {
+  if (typeof sendWhatsAppMessageCallback !== 'function') return;
+
+  const { getReservationsNeeding22hReminder, markReservation22hReminderSent } = require('../../database');
+  const needingReminder = getReservationsNeeding22hReminder();
+
+  for (const res of needingReminder) {
+    const pushName = res.nombre ? res.nombre.split(' ')[0] : 'amigo/a';
+    const prodName = res.producto_nombre;
+    const jid = res.jid;
+
+    const reminderMsg = `¡Hola, *${pushName}*! 👋 Te recuerdo que tienes apartado tu *${prodName}* en nuestra tienda de San Agustín Norte y te quedan 2 horas de reserva ⏱️.\n\n¿Vienes en camino a retirarlo o prefieres que te coordinemos un motorizado con delivery a tu casa o taller? 🛵\n\n_(Si ya retiraste tu pedido en tienda física, puedes ignorar este mensaje 👍)_`;
+
+    try {
+      console.log(`[Apartados 22h] Enviando aviso de rescate a ${jid} sobre ${prodName}`);
+      await sendWhatsAppMessageCallback(jid, reminderMsg);
+      markReservation22hReminderSent(res.id);
+
+      db.prepare(`
+        INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+        VALUES (?, 'bot', ?, ?)
+      `).run(jid, reminderMsg, Date.now());
+
+      recordMetric('aviso_apartado_22h', prodName, jid);
+    } catch (err) {
+      console.warn(`[Apartados 22h] Error enviando aviso a ${jid}:`, err.message);
+    }
+  }
+}
+
 module.exports = {
-  checkPendingFollowUps
+  checkPendingFollowUps,
+  check22hReservationReminders
 };
