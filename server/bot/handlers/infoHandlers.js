@@ -8,33 +8,31 @@ const { searchProductsFuzzy } = require('../services/searchService');
  */
 function handlePaymentMethodsResponse(tasa, settings) {
   const tasaFormatted = formatRate(tasa);
-  let msg = `💳 *Métodos de Pago Aceptados en Crastur* 🛞🏍️\n\n`;
+  let msg = `💳 *Métodos de Pago Autorizados en Crastur* 🛞🏍️\n\n`;
   msg += `En nuestra tienda aceptamos los siguientes métodos de pago autorizados:\n\n`;
-  msg += `💵 *Efectivo en Divisas / Dólares* (🔥 *¡Con descuento especial por pago en divisas!*)\n`;
+  msg += `💵 *Precio Promoción en Divisas:* Aplica pagando en *Efectivo ($)* o *Binance Pay (USDT)* 🪙🔥 _(¡Sin recargos ni comisiones!)_\n`;
   msg += `✅ *Pago Móvil* (a tasa oficial BCV del día, sin recargos)\n`;
-  msg += `✅ *Transferencia Bancaria*\n`;
+  msg += `✅ *Transferencia Bancaria Nacional* (Banesco, Mercantil, BDV a tasa BCV)\n`;
   msg += `✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n`;
-  msg += `💛 *Cashea* (Pagas solo la inicial hoy y el resto en 3 cuotas quincenales sin interés)\n\n`;
+  msg += `💛 *Cashea en Tienda Física* (Pagas solo la inicial hoy y el resto en 3 cuotas quincenales a 0% de interés)\n\n`;
   msg += `🇻🇪 *Tasa oficial BCV hoy:* *Bs. ${tasaFormatted} / USD*\n\n`;
-  msg += `👉 Escribe el repuesto que deseas cotizar o escribe *VENDEDOR* si deseas consultar el descuento exacto de tu pieza.`;
+  msg += `👉 Escribe el repuesto, combo o insumo que deseas cotizar o escribe *VENDEDOR* para atención personalizada.`;
   return msg;
 }
 
 /**
- * Información sobre descuento especial en divisas
+ * Información sobre Precio Promoción en Divisas
  */
 function handleDiscountResponse(tasa, settings) {
   const tasaFormatted = formatRate(tasa);
-  let msg = `🔥 *¡Descuento Especial en Divisas en Crastur!* 💵🏷️\n\n`;
-  msg += `¡Sí! Al pagar tus repuestos y accesorios en *efectivo en divisas*, cuentas con un *descuento especial* directo en tienda 🏷️.\n\n`;
-  msg += `📌 *Métodos de pago disponibles:*\n`;
-  msg += `💵 *Efectivo en Divisas* (🔥 *¡Con descuento especial directo!*)\n`;
-  msg += `✅ *Pago Móvil* (a tasa oficial BCV sin recargos)\n`;
-  msg += `✅ *Transferencia Bancaria*\n`;
-  msg += `✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n`;
-  msg += `💛 *Cashea* (Inicial + 3 cuotas quincenales a 0% interés)\n\n`;
-  msg += `🇻🇪 *Tasa oficial BCV hoy:* *Bs. ${tasaFormatted} / USD*\n\n`;
-  msg += `👉 Escribe qué repuesto buscas (ej: *"pastillas"*, *"aceite"*, *"batería"*) o escribe *VENDEDOR* para darte el precio con descuento directo de tu pieza.`;
+  let msg = `🔥 *¡Precio Promoción en Divisas en Crastur!* 💵🪙🏷️\n\n`;
+  msg += `¡Sí! Al pagar tus compras en divisas cuentas con un **descuento especial y Precio Promoción** pagando en:\n\n`;
+  msg += `💵 *Efectivo en Dólares ($)* en tienda física o delivery.\n`;
+  msg += `🪙 *Binance Pay / USDT* (acreditación instantánea y sin comisiones).\n\n`;
+  msg += `📌 *Otros métodos de pago:*\n`;
+  msg += `✅ *Pago Móvil y Transferencia:* A tasa oficial BCV sin recargos (Bs. ${tasaFormatted} / USD)\n`;
+  msg += `💛 *Cashea:* Paga hoy solo la inicial y el resto en 3 cuotas a 0% interés.\n\n`;
+  msg += `👉 Escribe qué repuesto o combo buscas (ej: *"pastillas"*, *"aceite 20w50"*, *"parches"*, *"combos"*) o escribe *VENDEDOR*.`;
   return msg;
 }
 
@@ -210,19 +208,49 @@ function handleCaucheraQueryResponse() {
 }
 
 /**
+ * Respuesta a consulta de Binance Pay
+ */
+function handleBinancePaymentResponse(tasa, settings) {
+  const tasaFormatted = formatRate(tasa);
+  let msg = `🪙 *¡Sí, Aceptamos Binance Pay / USDT en Crastur!* ⚡\n\n`;
+  msg += `Puedes pagar tus compras, combos e insumos directamente con **Binance** sin recargos ni comisiones extra:\n\n`;
+  msg += `🔥 *Aprovechas el Precio Promoción en Divisas* en todos nuestros productos y combos.\n`;
+  msg += `📲 *Transferencia Binance Pay:* Pagas directo por correo, Pay ID o escaneando nuestro código QR de Binance.\n`;
+  msg += `⚡ *Acreditación inmediata:* Verificamos el pago en segundos y te despachamos o apartamos tu pedido.\n\n`;
+  msg += `🇻🇪 *Tasa oficial BCV del día:* Bs. ${tasaFormatted} / USD (también aceptamos Pago Móvil y Bolívares).\n\n`;
+  msg += `👉 Escribe qué producto o combo deseas comprar o escribe *VENDEDOR* para recibir los datos de Binance Pay de la tienda.`;
+  return msg;
+}
+
+/**
+ * Respuesta a consultas de Ventas al Mayor (caucheras, lubricantes, talleres)
+ */
+function handleWholesaleQueryResponse(pushName, settings) {
+  let msg = `📦 *Ventas al Mayor en Crastur - Insumos de Cauchera & Lubricantes* 🛞🛢️\n\n`;
+  msg += `¡Hola, *${pushName}*! 👋 ¡Sí, somos distribuidores y vendemos **al mayor** con precios especiales para talleres, caucheras y negocios!\n\n`;
+  msg += `🔥 *Beneficios Mayoristas:*\n`;
+  msg += `• 📦 *Precios por bulto y caja cerrada* en parches, cemento químico/pega azul, válvulas TR414, mechas, plomos y herramientas.\n`;
+  msg += `• 🛢️ *Cajas y tambores de lubricantes* (20W50 mineral, semi-sintético, 4T, 2T, valvulinas y grasas).\n`;
+  msg += `• 💵 *Precio Promoción en Divisas:* Pagando en Efectivo ($) o Binance Pay (USDT) 🪙.\n`;
+  msg += `• 🇻🇪 *Facturación y nota de entrega oficial* con tasa BCV.\n`;
+  msg += `• 🛵 *Despacho y entrega* directa a tu taller o negocio en Caracas.\n\n`;
+  msg += `👉 Escribe *VENDEDOR* o escribe la lista de insumos que necesitas por cantidad para que nuestro asesor de ventas al mayor te prepare una cotización con descuento por volumen.`;
+  return msg;
+}
+
+/**
  * Aclaratoria sobre medios de pago específicos no aceptados
  */
 function handleNonAcceptedPaymentsResponse(tasa, settings) {
   const tasaFormatted = formatRate(tasa);
-  let msg = `💳 *Métodos de Pago Aceptados en Crastur* 🛞🏍️\n\n`;
-  msg += `En nuestra tienda aceptamos los siguientes métodos de pago autorizados:\n\n`;
-  msg += `💵 *Efectivo en Dólares / Divisas* (🔥 *¡Con descuento especial en tienda!*)\n`;
+  let msg = `💳 *Formas de Pago Autorizadas en Crastur* 🛞🏍️\n\n`;
+  msg += `En Crastur aceptamos cómodamente:\n`;
+  msg += `💵 *Precio Promoción en Divisas:* Pagando en **Efectivo ($)** o por **Binance Pay (USDT)** 🪙🔥\n`;
   msg += `✅ *Pago Móvil* (a tasa oficial BCV del día, sin recargos)\n`;
   msg += `✅ *Transferencia Bancaria Nacional* (a tasa oficial BCV)\n`;
   msg += `✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n`;
-  msg += `💛 *Cashea* (Pagas solo la inicial hoy y el resto en 3 cuotas quincenales a 0% interés)\n\n`;
-  msg += `🇻🇪 *Tasa oficial BCV hoy:* *Bs. ${tasaFormatted} / USD*\n\n`;
-  msg += `⚠️ *Nota aclaratoria:* Actualmente no aceptamos Zelle, Binance USDT, Banesco Panamá ni tarjetas por punto de venta. Puedes pagar cómodamente con *Pago Móvil*, *Efectivo* (con descuento en divisas) o *Cashea*.\n\n`;
+  msg += `💛 *Cashea en Tienda Física* (Inicial + 3 cuotas quincenales sin interés)\n\n`;
+  msg += `⚠️ *Nota aclaratoria:* Actualmente no aceptamos Zelle, Banesco Panamá ni tarjetas por punto de venta. Te recomendamos pagar cómodamente con *Binance USDT*, *Pago Móvil* o *Efectivo en divisas* con precio promoción.\n\n`;
   msg += `👉 Escribe el producto que deseas cotizar o escribe *VENDEDOR* si deseas comunicarte con un asesor.`;
   return msg;
 }
@@ -419,6 +447,7 @@ function handleCategoryBrowseResponse(categoryName, settings, tasa, session, jid
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `💡 *Opciones:*\n`;
   msg += `👉 Responde con el *número* (ej: *1*) para ver ficha detallada y fotos.\n`;
+  msg += `👉 Escribe *PDF* para recibir este catálogo oficial en PDF 📄.\n`;
   msg += `👉 Escribe *APARTAR* para reservar un producto por 24h sin costo.\n`;
   msg += `👉 Escribe *DELIVERY* para cotizar envío en moto en Caracas 🛵.\n`;
   msg += `👉 Escribe *VENDEDOR* para hablar con nuestro mostrador.`;
@@ -439,6 +468,8 @@ module.exports = {
   handleMotoQueryResponse,
   handleCaucheraQueryResponse,
   handleNonAcceptedPaymentsResponse,
+  handleBinancePaymentResponse,
+  handleWholesaleQueryResponse,
   handleInvoicingQueryResponse,
   handleStoreHoursResponse,
   handleWarrantyResponse,

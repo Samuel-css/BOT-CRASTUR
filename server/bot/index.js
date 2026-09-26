@@ -34,6 +34,8 @@ const {
   handleMotoQueryResponse,
   handleCaucheraQueryResponse,
   handleNonAcceptedPaymentsResponse,
+  handleBinancePaymentResponse,
+  handleWholesaleQueryResponse,
   handleInvoicingQueryResponse,
   handleStoreHoursResponse,
   handleWarrantyResponse,
@@ -49,10 +51,15 @@ const {
   handleProductResults,
   handleSingleProductDetail,
   handleMultiProductResults,
-  handleContextualSelection
+  handleContextualSelection,
+  handleInstagramCombosResponse
 } = require('./handlers/productHandlers');
 const { handleSellersResponse } = require('./handlers/advisoryHandlers');
 const { handleDefaultFallback } = require('./handlers/fallbackHandlers');
+const {
+  handleCatalogMenuResponse,
+  handleCatalogPdfDelivery
+} = require('./handlers/catalogHandlers');
 
 // Flujo de Apartados y Seguimiento
 const {
@@ -68,25 +75,6 @@ const { checkPendingFollowUps, check22hReservationReminders } = require('./follo
  * Procesa el mensaje recibido y genera la respuesta adecuada
  */
 function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = null) {
-  // 0. Si el bot está pausado globalmente desde la interfaz, no responder
-  if (isBotGloballyPaused()) {
-    console.log('[Bot] Silenciado globalmente por el panel administrativo.');
-    return null;
-  }
-
-  // 1. Si el bot fue pausado manualmente por un asesor en este chat, no responder
-  if (isBotPaused(jid)) {
-    console.log(`[Bot] Chat ${jid} está pausado manualmente. Silenciando respuesta automática.`);
-    return null;
-  }
-
-  // 2. Protección anti-spam
-  if (isSpamming(jid)) {
-    return null; // Silenciar sin responder para no alimentar el spam
-  }
-
-  const settings = getSettings();
-  const tasa = getEffectiveRate();
   const now = Date.now();
 
   // Limitar tamaño de entrada por seguridad (máx 2000 caracteres)
@@ -98,19 +86,7 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
   const text = safeRawText.trim();
   const norm = normalizeText(text);
 
-  // Si el mensaje son puros signos de interrogación o confusión ("???", "¿?")
-  const onlyQuestionMarks = rawText && /^[\?\¿\s]+$/.test(rawText.trim());
-  if (onlyQuestionMarks) {
-    recordMetric('consulta_persona_mayor_confundida', rawText, jid);
-    return handleElderlyOrConfusedResponse(pushName, settings);
-  }
-
-  // Si el mensaje está vacío (y no es multimedia)
-  if (!text && (!mediaInfo || !mediaInfo.isMedia)) {
-    return `¡Hola, *${pushName}*! 😊 ¿En qué repuesto o insumo para tu moto o cauchera te podemos ayudar hoy? Puedes escribir el nombre del repuesto o escribir *MENU* para ver opciones.`;
-  }
-
-  // Obtener o inicializar sesión
+  // Obtener o inicializar sesión de chat
   let session = db.prepare('SELECT * FROM chat_sessions WHERE jid = ?').get(jid);
   if (!session) {
     db.prepare(`
@@ -124,6 +100,59 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
       SET push_name = ?, ultimo_mensaje_at = ?
       WHERE jid = ?
     `).run(pushName, now, jid);
+  }
+
+  // Auto-capturar teléfono de contacto si el cliente escribe un número telefónico en su mensaje
+  if (text) {
+    const { extractVenezuelanPhones } = require('./utils/formatters');
+    const autoExtracted = extractVenezuelanPhones(text);
+    if (autoExtracted && autoExtracted.summary && (!session.telefono_contacto || session.telefono_contacto === 'Cuenta de WhatsApp')) {
+      try {
+        db.prepare('UPDATE chat_sessions SET telefono_contacto = ? WHERE jid = ?').run(autoExtracted.summary, jid);
+        session.telefono_contacto = autoExtracted.summary;
+      } catch (e) {}
+    }
+  }
+
+  // Guardar mensaje en el registro (SIEMPRE se almacena para que el asesor pueda leerlo en Live Inbox aunque el bot esté pausado)
+  const contentToStore = text || (mediaInfo && mediaInfo.isMedia ? `[Mensaje ${mediaInfo.type || 'Multimedia'}]` : '');
+  if (contentToStore) {
+    db.prepare(`
+      INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+      VALUES (?, 'cliente', ?, ?)
+    `).run(jid, contentToStore, now);
+  }
+
+  // 0. Si el bot está pausado globalmente desde la interfaz, registrar mensaje pero no responder
+  if (isBotGloballyPaused()) {
+    console.log('[Bot] Silenciado globalmente por el panel administrativo. Mensaje guardado en Live Inbox.');
+    return null;
+  }
+
+  // 1. Si el bot fue pausado manualmente por un asesor en este chat, registrar mensaje pero no responder
+  if (isBotPaused(jid)) {
+    console.log(`[Bot] Chat ${jid} está pausado manualmente. Mensaje de cliente guardado en Live Inbox para el asesor.`);
+    return null;
+  }
+
+  // 2. Protección anti-spam
+  if (isSpamming(jid)) {
+    return null; // Silenciar sin responder para no alimentar el spam
+  }
+
+  const settings = getSettings();
+  const tasa = getEffectiveRate();
+
+  // Si el mensaje son puros signos de interrogación o confusión ("???", "¿?")
+  const onlyQuestionMarks = rawText && /^[\?\¿\s]+$/.test(rawText.trim());
+  if (onlyQuestionMarks) {
+    recordMetric('consulta_persona_mayor_confundida', rawText, jid);
+    return handleElderlyOrConfusedResponse(pushName, settings);
+  }
+
+  // Si el mensaje está vacío (y no es multimedia)
+  if (!text && (!mediaInfo || !mediaInfo.isMedia)) {
+    return `¡Hola, *${pushName}*! 😊 ¿En qué repuesto o insumo para tu moto o cauchera te podemos ayudar hoy? Puedes escribir el nombre del repuesto o escribir *MENU* para ver opciones.`;
   }
 
   // 3. Manejo de Mensajes Multimedia (Audios, Notas de voz, Fotos, Stickers)
@@ -142,12 +171,6 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
 
     return handleMediaResponse(pushName, mediaInfo.type);
   }
-
-  // Guardar mensaje en el registro
-  db.prepare(`
-    INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-    VALUES (?, 'cliente', ?, ?)
-  `).run(jid, text, now);
 
   // 4. Manejo de cancelación de flujos
   const isCancel =
@@ -235,6 +258,33 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleApartadoTelefono(jid, text, session, tasa, settings);
   }
 
+  // 5b. Máquina de estados para selección interactiva de Catálogo en PDF
+  if (session.step === 'menu_catalogo_pdf') {
+    if (norm === '1' || norm === '1️⃣' || norm.includes('cauchera') || norm.includes('caucho') || norm.includes('parche')) {
+      recordMetric('catalogo_pdf_cauchera', text, jid);
+      return handleCatalogPdfDelivery('Insumos Cauchera', settings, tasa, session, jid);
+    }
+    if (norm === '2' || norm === '2️⃣' || norm.includes('repuesto') || norm.includes('moto') || norm.includes('arrastre')) {
+      recordMetric('catalogo_pdf_repuestos', text, jid);
+      return handleCatalogPdfDelivery('Repuestos Moto', settings, tasa, session, jid);
+    }
+    if (norm === '3' || norm === '3️⃣' || norm.includes('accesorio') || norm.includes('casco') || norm.includes('luz')) {
+      recordMetric('catalogo_pdf_accesorios', text, jid);
+      return handleCatalogPdfDelivery('Accesorios Moto', settings, tasa, session, jid);
+    }
+    if (norm === '4' || norm === '4️⃣' || norm.includes('otro') || norm.includes('aceite') || norm.includes('lubricante') || norm.includes('motul')) {
+      recordMetric('catalogo_pdf_otros', text, jid);
+      return handleCatalogPdfDelivery('Otros Productos', settings, tasa, session, jid);
+    }
+    if (norm === '5' || norm === '5️⃣' || norm.includes('todo') || norm.includes('completo') || norm.includes('general')) {
+      recordMetric('catalogo_pdf_todos', text, jid);
+      return handleCatalogPdfDelivery('Todos', settings, tasa, session, jid);
+    }
+    // Si no fue una opción 1..5, restablecer step a 'start' y permitir que el router procese la consulta
+    db.prepare("UPDATE chat_sessions SET step = 'start' WHERE jid = ?").run(jid);
+    session.step = 'start';
+  }
+
   // 6. Agradecimientos, Despedidas y Cortesía ("gracias", "chévere", "fino", etc.)
   if (
     norm === 'gracias' ||
@@ -292,11 +342,117 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleNegativeResponse();
   }
 
-  // 8. Aclaratoria de Medios de Pago no aceptados (Zelle, Binance, Banesco Panamá, Punto de Venta)
+  // 7b. Consulta de Binance Pay / USDT / Cripto
   if (
-    norm.includes('zelle') ||
     norm.includes('binance') ||
     norm.includes('usdt') ||
+    norm.includes('binance pay') ||
+    norm.includes('cripto') ||
+    norm.includes('crypto')
+  ) {
+    recordMetric('consulta_binance', text, jid);
+    return handleBinancePaymentResponse(tasa, settings);
+  }
+
+  // 7c. Consulta de Ventas al Mayor / Cajas / Bultos / Talleres / Caucheras
+  if (
+    norm.includes('al mayor') ||
+    norm.includes('por mayor') ||
+    norm.includes('precio al mayor') ||
+    norm.includes('precios al mayor') ||
+    norm.includes('por bulto') ||
+    norm.includes('por caja') ||
+    norm.includes('cajas cerradas') ||
+    norm.includes('para taller') ||
+    norm.includes('para cauchera') ||
+    norm.includes('descuento por cantidad') ||
+    norm.includes('descuento por volumen') ||
+    norm.includes('catalogo mayorista') ||
+    norm.includes('somos taller') ||
+    norm.includes('somos cauchera') ||
+    norm.includes('tengo una cauchera') ||
+    norm.includes('tengo un taller')
+  ) {
+    recordMetric('consulta_mayorista', text, jid);
+    return handleWholesaleQueryResponse(pushName, settings);
+  }
+
+  // 7d. Consulta de Combos, Kits y Promociones de Instagram
+  if (
+    norm.includes('combo') ||
+    norm.includes('combos') ||
+    norm.includes('kit') ||
+    norm.includes('kits') ||
+    norm.includes('instagram') ||
+    norm.includes('promo') ||
+    norm.includes('promos') ||
+    norm.includes('promocion') ||
+    norm.includes('promociones') ||
+    norm.includes('vi en ig') ||
+    norm.includes('vi en instagram') ||
+    norm.includes('publicacion')
+  ) {
+    recordMetric('consulta_combos_instagram', text, jid);
+    return handleInstagramCombosResponse(text, tasa, settings, session, jid);
+  }
+
+  // 7e. Solicitud de Catálogos Oficiales en PDF (Por Categoría o Menú Guiado)
+  const isCatalogPdfQuery =
+    norm.includes('catalogo') ||
+    norm.includes('catalogos') ||
+    norm.includes('lista de precios') ||
+    norm.includes('listado de precios') ||
+    norm === 'pdf' ||
+    norm === 'en pdf' ||
+    norm === 'el pdf' ||
+    norm.includes('en pdf') ||
+    norm.includes('el pdf');
+
+  if (isCatalogPdfQuery) {
+    recordMetric('consulta_catalogo_pdf', text, jid);
+
+    // 1. Si especificó Insumos de Cauchera
+    if (norm.includes('cauchera') || norm.includes('caucho') || norm.includes('parche') || norm.includes('valvula')) {
+      return handleCatalogPdfDelivery('Insumos Cauchera', settings, tasa, session, jid);
+    }
+
+    // 2. Si especificó Repuestos de Moto
+    if (norm.includes('repuesto') || norm.includes('moto') || norm.includes('arrastre') || norm.includes('freno')) {
+      return handleCatalogPdfDelivery('Repuestos Moto', settings, tasa, session, jid);
+    }
+
+    // 3. Si especificó Accesorios de Moto
+    if (norm.includes('accesorio') || norm.includes('casco') || norm.includes('guante') || norm.includes('luz')) {
+      return handleCatalogPdfDelivery('Accesorios Moto', settings, tasa, session, jid);
+    }
+
+    // 4. Si especificó Lubricantes / Otros
+    if (norm.includes('otro') || norm.includes('aceite') || norm.includes('lubricante') || norm.includes('motul')) {
+      return handleCatalogPdfDelivery('Otros Productos', settings, tasa, session, jid);
+    }
+
+    // 5. Si especificó Catálogo Completo / General
+    if (norm.includes('todo') || norm.includes('completo') || norm.includes('general')) {
+      return handleCatalogPdfDelivery('Todos', settings, tasa, session, jid);
+    }
+
+    // 6. Si solo escribió "pdf" y estaba viendo productos previamente en el chat
+    if ((norm === 'pdf' || norm === 'en pdf' || norm === 'el pdf' || norm === 'descargar pdf') && session.contexto_productos) {
+      try {
+        const parsed = JSON.parse(session.contexto_productos);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].categoria) {
+          return handleCatalogPdfDelivery(parsed[0].categoria, settings, tasa, session, jid);
+        }
+      } catch (e) {}
+    }
+
+    // 7. En cualquier otro caso genérico ("catalogo", "pásame el catálogo", "tienen catálogo?"):
+    return handleCatalogMenuResponse(settings, tasa, session, jid);
+  }
+
+  // 8. Aclaratoria de Medios de Pago no aceptados (Zelle, Banesco Panamá, Punto de Venta)
+  if (
+    norm.includes('zelle') ||
     norm.includes('banesco panama') ||
     norm.includes('punto de venta') ||
     norm.includes('tienen punto') ||
@@ -522,7 +678,11 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     return handleMultiProductResults(multiProducts, tasa, settings, session, text);
   }
 
-  // 19. Delivery y Envíos (Solo delivery a Caracas y retiro en local)
+  // 19. Delivery y Envíos (Solo delivery a Caracas y retiro en local) o Dirección de Entrega
+  const { detectCaracasZone } = require('./utils/caracasDelivery');
+  const detectedDeliveryZone = detectCaracasZone(text, settings);
+  const isAddressText = /\b(av|avenida|esquina|calle|torre|edificio|residencia|edif|piso|apto|apartamento|baralt)\b/i.test(text);
+
   if (
     norm.includes('delivery') ||
     norm.includes('envio') ||
@@ -536,7 +696,8 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm.includes('flete') ||
     norm.includes('a domicilio') ||
     norm.includes('a toda caracas') ||
-    norm.includes('a todas caracas')
+    norm.includes('a todas caracas') ||
+    (detectedDeliveryZone && isAddressText)
   ) {
     recordMetric('consulta_delivery', text, jid);
     return handleDeliveryResponse(settings, session, tasa, text);
@@ -810,7 +971,6 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm === 'buenas' ||
     norm === 'menu' ||
     norm === 'inicio' ||
-    norm === 'catalogo' ||
     norm === 'ayuda' ||
     norm === 'info' ||
     norm === 'informacion' ||
@@ -844,6 +1004,8 @@ module.exports = {
   handleSellersResponse,
   handleLocationResponse,
   handleCarInquiryResponse,
+  handleCatalogMenuResponse,
+  handleCatalogPdfDelivery,
   checkPendingFollowUps,
   check22hReservationReminders
 };

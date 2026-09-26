@@ -2,6 +2,7 @@
 
 @theme {
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -12,13 +13,66 @@
 body {
   margin: 0;
   background-color: #090d16;
+  background-image: 
+    radial-gradient(circle at 12% 8%, rgba(249, 115, 22, 0.045) 0%, transparent 40%),
+    radial-gradient(circle at 88% 92%, rgba(99, 102, 241, 0.035) 0%, transparent 45%);
+  background-attachment: fixed;
   color: #f1f5f9;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Custom scrollbar */
+/* Tipografía de Encabezados */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+  letter-spacing: -0.022em;
+}
+
+.font-display {
+  font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================== */
+/* MICRO-INTERACCIONES EN BOTONES Y ELEMENTOS CLICABLES           */
+/* ============================================================== */
+
+button, [role="button"], a[role="button"] {
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s ease,
+              border-color 0.2s ease,
+              color 0.15s ease,
+              opacity 0.2s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Efecto elástico al presionar / tocar */
+button:active:not(:disabled),
+[role="button"]:active:not(:disabled) {
+  transform: scale(0.952) translateY(1px);
+}
+
+button:hover:not(:disabled),
+[role="button"]:hover:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Custom scrollbar ultra elegante */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -31,35 +85,64 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
   border-radius: 9999px;
+  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #f97316;
 }
 
-/* Card hover lift & glow */
+/* ============================================================== */
+/* TARJETAS CON EFECTO VIDRIO Y ELEVACIÓN SUAVE                  */
+/* ============================================================== */
+
 .card-hover {
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease;
 }
 .card-hover:hover {
   transform: translateY(-3px);
   border-color: rgba(249, 115, 22, 0.45);
-  box-shadow: 0 12px 28px -8px rgba(249, 115, 22, 0.12), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 14px 32px -8px rgba(249, 115, 22, 0.14), 0 6px 16px -4px rgba(0, 0, 0, 0.6);
 }
 
 .card-hover-subtle {
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease;
 }
 .card-hover-subtle:hover {
   transform: translateY(-1.5px);
   border-color: rgba(249, 115, 22, 0.35);
 }
 
-/* ===================== ANIMACIONES GLOBALES ===================== */
+.glass-panel {
+  background: rgba(10, 15, 29, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-panel-glow {
+  background: rgba(10, 15, 29, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(249, 115, 22, 0.25);
+  box-shadow: 0 12px 36px -10px rgba(249, 115, 22, 0.15);
+}
+
+/* ============================================================== */
+/* ANIMACIONES FLUIDAS Y TRANSICIONES                            */
+/* ============================================================== */
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes fadeIn {
@@ -68,23 +151,29 @@ body {
 }
 
 @keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-24px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(24px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.85); opacity: 0; }
+  70% { transform: scale(1.04); }
+  100% { transform: none; opacity: 1; }
 }
 
 @keyframes pulseGlow {
   0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 0px rgba(249,115,22,0)); }
-  50% { opacity: 0.9; transform: scale(1.02); filter: drop-shadow(0 0 12px rgba(249,115,22,0.45)); }
+  50% { opacity: 0.92; transform: scale(1.02); filter: drop-shadow(0 0 12px rgba(249,115,22,0.45)); }
 }
 
 @keyframes toastSlide {
@@ -92,15 +181,17 @@ body {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.animate-fade-in-up     { animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-fade-in        { animation: fadeIn 0.25s ease both; }
-.animate-slide-in-left  { animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-scale-in       { animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-in-up     { animation: fadeInUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-fade-in        { animation: fadeIn 0.22s ease both; }
+.animate-slide-in-left  { animation: slideInLeft 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-slide-in-right { animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-scale-in       { animation: scaleIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-pop-in         { animation: popIn 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; }
 .animate-pulse-glow     { animation: pulseGlow 2.5s ease-in-out infinite; }
-.animate-toast          { animation: toastSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-toast          { animation: toastSlide 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
-/* Delays escalonados para cards del dashboard */
+/* Delays escalonados */
+.delay-75  { animation-delay: 0.06s; }
 .delay-100 { animation-delay: 0.08s; }
 .delay-150 { animation-delay: 0.12s; }
 .delay-200 { animation-delay: 0.16s; }

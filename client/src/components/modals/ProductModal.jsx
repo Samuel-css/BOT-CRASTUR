@@ -1,7 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Search, DollarSign, Package, Upload } from 'lucide-react';
+import { X, Search, DollarSign, Package, Upload, Copy, Check } from 'lucide-react';
+import { toast } from 'sonner';
 import { AUTOMOTIVE_CATEGORIES } from '../../constants/categories';
 import { formatBs, formatRate } from '../../utils/formatters';
+
+function InstagramIcon({ size = 14, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
+    </svg>
+  );
+}
 
 export default function ProductModal({ isOpen, onClose, onSave, editingProduct, bcvRate }) {
   const [form, setForm] = useState({
@@ -94,9 +105,37 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
     }
   };
 
+  const handleCopyInstagramCaption = () => {
+    if (!form.marca.trim() || !form.modelo.trim() || !form.precio_usd) {
+      toast.error('Completa marca, modelo y precio para generar el texto de Instagram.');
+      return;
+    }
+    const precio = parseFloat(form.precio_usd) || 0;
+    const bs = precio * bcvRate;
+    const isCombo = form.categoria.toLowerCase().includes('combo') || form.categoria.toLowerCase().includes('kit');
+
+    let caption = `🔥 ${isCombo ? 'COMBO CRASTUR' : 'DISPONIBLE EN CRASTUR'} 🛞🏍️\n`;
+    caption += `📌 *${form.marca.trim().toUpperCase()} - ${form.modelo.trim().toUpperCase()}*\n\n`;
+    if (form.descripcion.trim()) {
+      caption += `📝 *Incluye:*\n${form.descripcion.trim()}\n\n`;
+    }
+    caption += `💵 *Precio Promoción en Divisas:* *$${precio.toFixed(2)} USD* (Efectivo / Binance Pay 🪙)\n`;
+    caption += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(bs)}* (Tasa oficial BCV)\n`;
+    if (precio >= 25) {
+      caption += `💛 *Disponible con Cashea en Tienda Física*\n`;
+    }
+    caption += `\n📍 *Tienda física:* San Agustín Norte, Caracas (Lun-Sáb 8am-8pm)\n`;
+    caption += `🛵 *Delivery disponible* a toda Caracas\n\n`;
+    caption += `👉 ¡Escríbenos al WhatsApp en el link de la bio para apartarlo por 24 horas sin costo!\n\n`;
+    caption += `#cauchera #insumosdecauchera #lubricantes #repuestosmoto #caracas #venezuela #ventasalmayor #crastur`;
+
+    navigator.clipboard.writeText(caption);
+    toast.success('¡Texto para Instagram copiado al portapapeles! Listo para pegar 📸');
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-[#0a0f1d] border border-slate-800 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl shadow-black/80 my-8">
+      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl shadow-black/80 my-8 animate-scale-in">
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#070b14]">
           <div className="flex items-center gap-3">
@@ -270,7 +309,7 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
                   </>
                 ) : (
                   <p className="text-[10px] text-orange-400/80 mt-1">
-                    No aplica individual (&lt;$25). Puede combinarse en combo en tienda.
+                    Disponible para compras a partir de $25 USD en tienda física.
                   </p>
                 )}
               </div>
@@ -331,20 +370,32 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
           </div>
 
           {/* Footer */}
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition"
+              onClick={handleCopyInstagramCaption}
+              title="Copiar texto formateado listo para publicar en Instagram"
+              className="px-3.5 py-2.5 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
             >
-              Cancelar
+              <InstagramIcon size={14} className="text-purple-400" />
+              <span>Copy Instagram</span>
             </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95"
-            >
-              {editingProduct ? 'Guardar Cambios' : 'Registrar Repuesto'}
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95"
+              >
+                {editingProduct ? 'Guardar Cambios' : 'Registrar Repuesto'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

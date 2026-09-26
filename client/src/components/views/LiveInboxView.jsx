@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MessageSquare,
   Search,
@@ -70,7 +71,23 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       categoria: 'Pagos',
       icono: DollarSign,
       color: 'emerald',
-      texto: `💳 *Formas de Pago Autorizadas en Crastur:*\n💵 *Efectivo en Divisas / Dólares* (🔥 ¡Con descuento especial por pago en divisas en tienda!)\n✅ *Pago Móvil* (a tasa oficial BCV del día, sin recargos)\n✅ *Transferencia Bancaria (Banesco / Mercantil / Banco de Venezuela)*\n✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n💛 *Cashea* (Disponible en tienda física a partir de $25 USD)\n🇻🇪 *Tasa oficial BCV hoy:* Bs. ${formatRate(effectiveRate)} / USD`
+      texto: `💳 *Formas de Pago Autorizadas en Crastur:*\n💵 *Precio Promoción en Divisas:* Pagando en *Efectivo ($)* o por *Binance Pay (USDT)* 🪙🔥\n✅ *Pago Móvil y Transferencia Bancaria* (a tasa oficial BCV del día, sin recargos)\n✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n💛 *Cashea en Tienda Física* (Disponible a partir de $25 USD)\n🇻🇪 *Tasa oficial BCV hoy:* Bs. ${formatRate(effectiveRate)} / USD`
+    },
+    {
+      id: 'binance',
+      titulo: 'Datos de Binance Pay',
+      categoria: 'Pagos',
+      icono: DollarSign,
+      color: 'amber',
+      texto: `🪙 *Pago por Binance Pay / USDT - Crastur* ⚡\n¡Aprovecha nuestro *Precio Promoción en Divisas* pagando con Binance sin comisiones!\n📲 *Pay ID / Correo:* (Consulta con nuestro asesor en caja)\n💡 *Instrucciones:* Abre tu app Binance > Pay > Enviar, ingresa el monto exacto en USDT y envíanos la captura o ID de transacción por aquí para procesar tu pedido de inmediato.`
+    },
+    {
+      id: 'mayor',
+      titulo: 'Atención Venta al Mayor',
+      categoria: 'Ventas',
+      icono: CheckCircle2,
+      color: 'emerald',
+      texto: `📦 *Ventas al Mayor en Crastur - Caucheras & Talleres* 🛞🛢️\n¡Saludos! Con gusto te atendemos como cliente mayorista:\n• Precios especiales por bulto y caja cerrada en insumos de cauchera y lubricantes.\n• Aceptamos Efectivo ($), Binance Pay (USDT) y Pago Móvil tasa BCV.\n• Despacho directo a tu taller o negocio en Caracas.\n👉 Indícanos qué productos y qué cantidades estimas para prepararte la cotización formal con descuento por volumen.`
     },
     {
       id: 'cashea',
@@ -122,8 +139,8 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       const data = await res.json();
       if (Array.isArray(data)) {
         setSessions(data);
-        // Si no hay chat seleccionado y hay chats disponibles, seleccionar el primero
-        if (!selectedJid && data.length > 0) {
+        // En Desktop/Tablet seleccionar el primero automáticamente; en teléfonos móviles mostrar la lista completa
+        if (!selectedJid && data.length > 0 && typeof window !== 'undefined' && window.innerWidth >= 768) {
           setSelectedJid(data[0].jid);
         }
       }
@@ -132,6 +149,41 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     } finally {
       setLoadingChats(false);
     }
+  };
+
+  // Helper de deduplicación robusto (evita duplicados entre WebSocket y envío optimista)
+  const appendDeduplicatedMessage = (prevList, newMsg) => {
+    if (!newMsg || !newMsg.contenido) return prevList;
+    const newNorm = String(newMsg.contenido).replace(/\r\n/g, '\n').trim();
+    const newTime = Number(newMsg.timestamp) || Date.now();
+
+    const existingIndex = prevList.findIndex((m) => {
+      // 1. Mismo ID oficial de BD
+      if (m.id && newMsg.id && typeof m.id === 'number' && typeof newMsg.id === 'number' && m.id === newMsg.id) {
+        return true;
+      }
+      // 2. Mismo remitente y contenido en una ventana de 15 segundos
+      const mNorm = String(m.contenido || '').replace(/\r\n/g, '\n').trim();
+      if (m.remitente === newMsg.remitente && mNorm === newNorm) {
+        const mTime = Number(m.timestamp) || 0;
+        if (Math.abs(mTime - newTime) < 15000) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (existingIndex !== -1) {
+      const updated = [...prevList];
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        ...newMsg,
+        id: (typeof newMsg.id === 'number' ? newMsg.id : updated[existingIndex].id)
+      };
+      return updated;
+    }
+
+    return [...prevList, newMsg];
   };
 
   // Cargar mensajes del chat seleccionado
@@ -143,7 +195,18 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       const data = await res.json();
       if (data) {
         setActiveSession(data.session || null);
-        setMessages(data.messages || []);
+        const raw = data.messages || [];
+        const clean = [];
+        for (const m of raw) {
+          const isDup = clean.some(c => 
+            (c.id === m.id) ||
+            (c.remitente === m.remitente && 
+             String(c.contenido).replace(/\r\n/g, '\n').trim() === String(m.contenido).replace(/\r\n/g, '\n').trim() && 
+             Math.abs((Number(c.timestamp) || 0) - (Number(m.timestamp) || 0)) < 3000)
+          );
+          if (!isDup) clean.push(m);
+        }
+        setMessages(clean);
       }
     } catch (err) {
       console.error('Error cargando mensajes de chat:', err);
@@ -179,29 +242,32 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
         try {
           const { type, data } = JSON.parse(event.data);
           if (type === 'live_chat_message') {
-            loadInbox();
-
-            if (data?.action === 'cleared' && data.jid === selectedJid) {
-              setMessages([]);
+            if (data?.action === 'deleted') {
+              setSessions((prev) => prev.filter((s) => s.jid !== data.jid));
+              if (selectedJid === data.jid) {
+                setSelectedJid(null);
+                setActiveSession(null);
+                setMessages([]);
+              }
               return;
             }
-            if (data?.action === 'all_cleared') {
+            if (data?.action === 'all_deleted' || data?.action === 'all_cleared') {
               setSessions([]);
               setMessages([]);
+              setSelectedJid(null);
+              setActiveSession(null);
               return;
             }
+            loadInbox();
 
             if (data && data.jid === selectedJid) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: Date.now(),
-                  jid: data.jid,
-                  remitente: data.remitente,
-                  contenido: data.contenido,
-                  timestamp: data.timestamp || Date.now()
-                }
-              ]);
+              setMessages((prev) => appendDeduplicatedMessage(prev, {
+                id: data.id || Date.now(),
+                jid: data.jid,
+                remitente: data.remitente,
+                contenido: data.contenido,
+                timestamp: data.timestamp || Date.now()
+              }));
             }
           } else if (type === 'chat_pause_changed') {
             if (data && data.jid === selectedJid) {
@@ -249,32 +315,43 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     }
   };
 
-  // Limpiar mensajes del chat actual
-  const handleClearCurrentChat = () => {
-    if (!selectedJid) return;
-    const clientName = activeSession?.push_name || formatPhone(selectedJid);
+  // Eliminar un chat individual por JID con confirmación segura
+  const handleDeleteChatByJid = (jidToDelete, clientName) => {
+    if (!jidToDelete) return;
+    const name = clientName || formatPhone(jidToDelete);
 
     if (onRequestConfirm) {
       onRequestConfirm({
-        title: '¿Limpiar historial de este chat?',
-        message: `Se eliminarán los mensajes guardados de la conversación con "${clientName}". El chat quedará limpio y el bot reiniciará su flujo de atención.`,
-        confirmText: 'Sí, Limpiar Conversación',
+        title: '¿Eliminar esta conversación?',
+        message: `Se eliminará definitivamente la conversación con "${name}" de la bandeja de entrada. Si el cliente vuelve a escribir, entrará como una nueva conversación normal sin perder nada.`,
+        confirmText: 'Sí, Eliminar Chat',
         isDanger: true,
         onConfirm: async () => {
           try {
-            const res = await fetch(`/api/inbox/${encodeURIComponent(selectedJid)}`, { method: 'DELETE' });
+            const res = await fetch(`/api/inbox/${encodeURIComponent(jidToDelete)}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) {
-              setMessages([]);
-              loadInbox();
-              toast.info('Conversación limpiada con éxito.');
+              setSessions((prev) => prev.filter((s) => s.jid !== jidToDelete));
+              if (selectedJid === jidToDelete) {
+                setSelectedJid(null);
+                setActiveSession(null);
+                setMessages([]);
+              }
+              toast.info(`Chat con "${name}" eliminado de la bandeja.`);
             }
           } catch (e) {
-            toast.error('Error al limpiar la conversación');
+            toast.error('Error al eliminar la conversación');
           }
         }
       });
     }
+  };
+
+  // Limpiar mensajes del chat actual abierto
+  const handleClearCurrentChat = () => {
+    if (!selectedJid) return;
+    const clientName = activeSession?.push_name || formatPhone(selectedJid);
+    handleDeleteChatByJid(selectedJid, clientName);
   };
 
   // Vaciar todas las conversaciones del inbox
@@ -330,16 +407,14 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       const data = await res.json();
       if (data.success) {
         setInputText('');
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now(),
-            jid: selectedJid,
-            remitente: 'asesor',
-            contenido: text,
-            timestamp: Date.now()
-          }
-        ]);
+        const sentMsg = {
+          id: data.id || `manual_${Date.now()}`,
+          jid: selectedJid,
+          remitente: 'asesor',
+          contenido: text,
+          timestamp: data.timestamp || Date.now()
+        };
+        setMessages((prev) => appendDeduplicatedMessage(prev, sentMsg));
         toast.success('Mensaje enviado al cliente ✅');
       } else {
         toast.error(data.error || 'Error al enviar mensaje');
@@ -352,9 +427,18 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
   };
 
   // Formateador de teléfono para mostrar
-  const formatPhone = (jid) => {
+  const formatPhone = (jid, session = null) => {
+    if (session?.telefono_contacto) {
+      return session.telefono_contacto;
+    }
     if (!jid) return '';
+    if (jid.endsWith('@lid')) {
+      return 'Cuenta de WhatsApp';
+    }
     const num = jid.split('@')[0];
+    if (num.startsWith('58') && num.length >= 12) {
+      return `+58 ${num.slice(2, 5)} ${num.slice(5, 8)} ${num.slice(8)}`;
+    }
     return `+${num}`;
   };
 
@@ -363,6 +447,22 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     if (!ts) return '';
     const date = new Date(Number(ts));
     return date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
+  // Formateador de tiempo relativo inteligente para la lista de chats
+  const formatChatTime = (ts) => {
+    if (!ts) return '';
+    const now = Date.now();
+    const diff = now - Number(ts);
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'Ahora';
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    const d = Math.floor(h / 24);
+    if (d === 1) return 'Ayer';
+    if (d < 7) return `${d}d`;
+    return new Date(Number(ts)).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' });
   };
 
   const handleCopyPhone = (phone) => {
@@ -496,15 +596,16 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
               filteredSessions.map((session) => {
                 const isSelected = selectedJid === session.jid;
                 const isPaused = session.bot_pausado === 1 || session.bot_pausado === '1';
-                const phone = formatPhone(session.jid);
+                const phone = formatPhone(session.jid, session);
                 const lastMsg = session.ultimo_mensaje_texto || 'Consulta recibida';
                 const isClient = session.ultimo_remitente === 'cliente';
+                const hasApartado = (session.tiene_apartado_activo && session.tiene_apartado_activo > 0) || !!session.apartado_producto;
 
                 return (
                   <div
                     key={session.jid}
                     onClick={() => setSelectedJid(session.jid)}
-                    className={`p-3 cursor-pointer transition flex items-start gap-3 select-none ${
+                    className={`p-3 cursor-pointer transition flex items-start gap-3 select-none group ${
                       isSelected
                         ? 'bg-gradient-to-r from-orange-500/15 via-orange-500/5 to-transparent border-l-4 border-orange-500'
                         : 'hover:bg-slate-900/60'
@@ -532,16 +633,48 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
 
                     {/* Información del chat */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-1">
                         <h4 className="text-xs font-bold text-white truncate">
                           {session.push_name || phone}
                         </h4>
-                        <span className="text-[10px] text-slate-500 font-mono shrink-0 ml-1">
-                          {formatMsgTime(session.ultimo_mensaje_at)}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0 ml-1">
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {formatChatTime(session.ultimo_mensaje_at)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteChatByJid(session.jid, session.push_name || phone);
+                            }}
+                            title={`Eliminar conversación con ${session.push_name || phone}`}
+                            className="opacity-70 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-all ml-0.5"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
 
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5 font-sans">
+                      {/* BADGES DE ESTADO (Limpios y sin falsos positivos de palabras clave) */}
+                      <div className="flex items-center gap-1.5 flex-wrap my-1">
+                        {hasApartado && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-0.5 shrink-0">
+                            🏷️ Apartado Activo
+                          </span>
+                        )}
+                        {isClient ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                            Por Responder
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/50 shrink-0">
+                            ✓ Respondido
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 truncate font-sans">
                         {isClient ? '' : '↪ '}
                         {lastMsg}
                       </p>
@@ -594,26 +727,37 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                       {activeSession?.push_name || 'Cliente de WhatsApp'}
                     </h4>
                     {activeSession?.bot_pausado ? (
-                      <span className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap">
-                        Pausado
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                        Modo Manual (Bot Pausado)
                       </span>
                     ) : (
-                      <span className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <span className="hidden xs:inline">Bot</span> Activo
+                        Bot Automático Activo
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                    <span className="font-mono">{formatPhone(selectedJid)}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPhone(formatPhone(selectedJid))}
-                      className="text-slate-500 hover:text-slate-300 transition cursor-pointer"
-                      title="Copiar número de teléfono"
-                    >
-                      {copiedPhone ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                    </button>
+                    {(() => {
+                      const phoneVal = formatPhone(selectedJid, activeSession);
+                      const isRealPhone = phoneVal && !phoneVal.includes('Cuenta de WhatsApp');
+                      return (
+                        <>
+                          <span className="font-mono">{phoneVal}</span>
+                          {isRealPhone && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPhone(phoneVal)}
+                              className="text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                              title="Copiar número de teléfono"
+                            >
+                              {copiedPhone ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                     {activeSession?.ultimo_producto_nombre && (
                       <>
                         <span className="text-slate-600">•</span>
@@ -668,6 +812,38 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                 </button>
               </div>
             </div>
+
+            {/* Banner de Apartado Activo si el cliente tiene una reserva vigente */}
+            {activeSession?.apartado_producto && (
+              <div className="bg-gradient-to-r from-orange-500/20 via-orange-500/10 to-[#070b14] border-b border-orange-500/30 px-4 py-2.5 flex items-center justify-between gap-3 text-xs shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-orange-500/20 border border-orange-500/40 text-orange-400 flex items-center justify-center shrink-0">
+                    <Clock size={15} className="animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-orange-300 font-bold truncate">
+                        Apartado Activo: {activeSession.apartado_producto}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-500/30 text-orange-200 border border-orange-500/40 font-mono">
+                        24 Horas
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono block mt-0.5">
+                      ${parseFloat(activeSession.apartado_monto || 0).toFixed(2)} USD (Bs. {formatRate(parseFloat(activeSession.apartado_monto || 0) * effectiveRate)})
+                      {activeSession.apartado_cedula && ` • CI: ${activeSession.apartado_cedula}`}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate && onNavigate('reservations')}
+                  className="text-xs font-bold px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-slate-950 transition shrink-0 cursor-pointer shadow-md shadow-orange-500/20 active:scale-95 whitespace-nowrap"
+                >
+                  Ver en Apartados
+                </button>
+              </div>
+            )}
 
             {/* Banner de Estado del Bot */}
             {activeSession?.bot_pausado ? (
@@ -862,7 +1038,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       </div>
 
       {/* MODAL / BANCO COMPLETO DE ATAJOS COMERCIALES */}
-      {shortcutsModalOpen && (
+      {shortcutsModalOpen && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             onClick={() => setShortcutsModalOpen(false)}
@@ -925,7 +1101,8 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
               })}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

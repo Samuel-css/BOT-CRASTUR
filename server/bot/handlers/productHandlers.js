@@ -14,13 +14,13 @@ function handleSingleProductDetail(p, tasa, settings, session) {
   if (p.descripcion) {
     msg += `📝 ${p.descripcion}\n`;
   }
-  msg += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD* _(🔥 ¡Descuento especial en divisas en efectivo! 🏷️)_\n`;
+  msg += `💵 *Precio Promoción en Divisas:* *$${precioUsd.toFixed(2)} USD* _(Efectivo / Binance Pay 🪙)_\n`;
   msg += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(precioBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n`;
   msg += `📦 *Disponibilidad:* ${p.stock > 0 ? '✅ Disponible para entrega inmediata' : '⚠️ Consultar stock'}\n\n`;
 
   // Cashea resumido y claro
   if (precioUsd < 25) {
-    msg += `💛 *Cashea en Tienda Física:* Aplica desde *$25 USD*. (Si agregas otro producto y llegas a $25, ¡lo pagas en cuotas!).\n\n`;
+    msg += `💛 *Cashea en Tienda Física:* Disponible para compras a partir de *$25 USD*.\n\n`;
   } else {
     msg += `💛 *Cashea en Tienda Física:* Inicial desde *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) y ${cuotasCashea} cuotas quincenales de *$${((precioUsd - n1) / cuotasCashea).toFixed(2)} USD*.\n\n`;
   }
@@ -45,10 +45,10 @@ function handleSingleProductDetail(p, tasa, settings, session) {
   msg += `👉 Escribe *VENDEDOR* para hablar con un asesor humano 👨‍🔧.`;
 
   if (p.imagen_url && typeof p.imagen_url === 'string' && p.imagen_url.trim().length > 5) {
-    return {
-      text: msg,
-      image: p.imagen_url.trim()
-    };
+    const wrapped = new String(msg);
+    wrapped.text = msg;
+    wrapped.image = p.imagen_url.trim();
+    return wrapped;
   }
 
   return msg;
@@ -74,10 +74,10 @@ function handleProductResults(products, tasa, settings, session) {
     if (p.descripcion) {
       msg += `   📝 ${p.descripcion}\n`;
     }
-    msg += `   💵 Precio: *$${precioUsd.toFixed(2)} USD* _(🔥 ¡Con descuento en divisas!)_\n`;
+    msg += `   💵 Precio Promo Divisas: *$${precioUsd.toFixed(2)} USD* _(Efectivo / Binance)_\n`;
     msg += `   🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}*\n`;
     if (precioUsd < 25) {
-      msg += `   💛 Cashea: Aplica a partir de $25 (¡agrega otro producto y paga en cuotas en tienda!)\n`;
+      msg += `   💛 Cashea en Tienda: Disponible para compras a partir de $25 USD\n`;
     } else {
       msg += `   💛 Cashea en Tienda: Inicial *$${inicialUsd.toFixed(2)}* + ${cuotasCashea} cuotas de *$${cuotaUsd.toFixed(2)}*\n`;
     }
@@ -86,9 +86,9 @@ function handleProductResults(products, tasa, settings, session) {
 
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `💡 *Opciones rápidas:*\n`;
-  msg += `👉 Responde con el *número* (ej: *1*) para ver detalles y descuentos.\n`;
+  msg += `👉 Responde con el *número* (ej: *1*) para ver detalles y fotos.\n`;
   msg += `👉 Escribe *APARTAR* para reservarlo por 24 horas.\n`;
-  msg += `👉 Escribe *VENDEDOR* si deseas consultar precio con descuento en divisas.`;
+  msg += `👉 Escribe *VENDEDOR* para precio al mayor o atención de asesor.`;
 
   return msg;
 }
@@ -161,13 +161,13 @@ function handleMultiProductResults(products, tasa, settings, session, text = '')
   msg += `📊 *Resumen Total del Pedido:*\n`;
   msg += `💵 *Total a Pagar:* *$${totalUsd.toFixed(2)} USD*\n`;
   msg += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(totalBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n`;
-  msg += `🔥 *¡Descuento en Divisas!* Cuentas con precio especial pagando en efectivo en tienda física 🏷️\n\n`;
+  msg += `🔥 *¡Precio Promoción en Divisas!* Aplica pagando en Efectivo ($) o Binance Pay (USDT) 🪙🏷️\n\n`;
 
   if (totalUsd >= 25) {
     const n1 = totalUsd * 0.40;
     msg += `💛 *Cashea en Tienda Física:* Inicial desde *$${n1.toFixed(2)} USD* (Bs. ${formatBs(n1 * tasa)}) y ${cuotasCashea} cuotas quincenales de *$${((totalUsd - n1) / cuotasCashea).toFixed(2)} USD*.\n\n`;
   } else {
-    msg += `💛 *Cashea en Tienda:* Requiere compra mínima de $25 (¡agrega otro producto para financiar en cuotas!).\n\n`;
+    msg += `💛 *Cashea en Tienda Física:* Disponible para compras a partir de *$25 USD*.\n\n`;
   }
 
   const { detectCaracasZone } = require('../utils/caracasDelivery');
@@ -184,9 +184,83 @@ function handleMultiProductResults(products, tasa, settings, session, text = '')
   return msg;
 }
 
+/**
+ * Manejador especializado para consultas de Combos & Kits de Instagram
+ */
+function handleInstagramCombosResponse(text, tasa, settings, session, jid) {
+  // Buscar combos registrados en base de datos
+  const combos = db.prepare(`
+    SELECT * FROM products 
+    WHERE activo = 1 
+      AND (categoria LIKE '%Combo%' OR categoria LIKE '%Kit%' OR modelo LIKE '%Combo%' OR modelo LIKE '%Kit%' OR descripcion LIKE '%combo%' OR descripcion LIKE '%kit%')
+    ORDER BY id DESC
+    LIMIT 6
+  `).all();
+
+  const nombreNegocio = settings.nombre_negocio || 'Crastur';
+
+  if (!combos || combos.length === 0) {
+    let msg = `🔥 *Combos & Promociones de Instagram - ${nombreNegocio}* 🛞🏍️📸\n\n`;
+    msg += `¡Hola! Con gusto te atendemos con nuestras promociones publicadas en Instagram.\n\n`;
+    msg += `📦 Armamos combos semanales para caucheras, talleres y cambios de aceite con **Precio Promoción en Divisas** (Efectivo / Binance Pay) y financiamiento Cashea.\n\n`;
+    msg += `👉 ¿Qué repuesto, aceite o insumo viste en nuestras redes? Escríbenos o escribe *VENDEDOR* para darte el precio exacto del combo publicado.`;
+    return msg;
+  }
+
+  // Si hay exactamente 1 combo activo
+  if (combos.length === 1) {
+    const c = combos[0];
+    const precioUsd = parseFloat(c.precio_usd);
+    const precioBs = precioUsd * tasa;
+    let msg = `🔥 *Combo Promocional Oficial - ${c.marca} ${c.modelo}* 🛞📸\n\n`;
+    if (c.descripcion) {
+      msg += `📝 *Incluye:*\n${c.descripcion}\n\n`;
+    }
+    msg += `💵 *Precio Promoción en Divisas:* *$${precioUsd.toFixed(2)} USD* _(Efectivo / Binance Pay 🪙)_\n`;
+    msg += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(precioBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n`;
+    if (precioUsd >= 25) {
+      msg += `💛 *Cashea en Tienda Física:* Disponible en cuotas quincenales sin interés.\n`;
+    }
+    msg += `📦 *Disponibilidad:* ${c.stock > 0 ? '✅ Disponible para entrega hoy' : '⚠️ Consultar stock'}\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `👉 Escribe *APARTAR* para reservarlo 24h sin costo y retirar en tienda física.\n`;
+    msg += `👉 Escribe *DELIVERY* para cotizar envío en moto a tu ubicación en Caracas.\n`;
+    msg += `👉 Escribe *VENDEDOR* para hablar con nuestro asesor.`;
+
+    if (c.imagen_url && typeof c.imagen_url === 'string' && c.imagen_url.trim().length > 5) {
+      const wrapped = new String(msg);
+      wrapped.text = msg;
+      wrapped.image = c.imagen_url.trim();
+      return wrapped;
+    }
+    return msg;
+  }
+
+  // Varios combos activos
+  let msg = `🔥 *Combos & Kits Oficiales de Instagram - ${nombreNegocio}* 🛞📸\n\n`;
+  msg += `Aquí tienes los combos vigentes publicados en nuestras redes sociales:\n\n`;
+
+  combos.forEach((c, idx) => {
+    const precioUsd = parseFloat(c.precio_usd);
+    const precioBs = precioUsd * tasa;
+    msg += `*${idx + 1}️⃣ ${c.marca} - ${c.modelo}*\n`;
+    if (c.descripcion) {
+      msg += `   📝 ${c.descripcion}\n`;
+    }
+    msg += `   💵 Precio Promo: *$${precioUsd.toFixed(2)} USD* (Efectivo / Binance 🪙)\n`;
+    msg += `   🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}*\n\n`;
+  });
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `👉 Escribe el *número del combo* (ej: *1*) para ver detalles y apartarlo.\n`;
+  msg += `👉 Escribe *VENDEDOR* para armar un combo personalizado a tu medida.`;
+  return msg;
+}
+
 module.exports = {
   handleSingleProductDetail,
   handleProductResults,
   handleMultiProductResults,
-  handleContextualSelection
+  handleContextualSelection,
+  handleInstagramCombosResponse
 };

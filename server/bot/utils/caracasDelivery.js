@@ -3,7 +3,7 @@ const { normalizeText } = require('./textUtils');
 const DEFAULT_ZONES = [
   {
     id: 'centro',
-    keywords: ['san agustin', 'centro', 'candelaria', 'bellas artes', 'parque central', 'silencio', 'av bolivar', 'av lecuna', 'av urdaneta', 'la hoyada', 'quinta crespo', 'plaza venezuela', 'plaza vzla', 'plz vzla', 'parque carabobo'],
+    keywords: ['san agustin', 'centro', 'candelaria', 'bellas artes', 'parque central', 'silencio', 'av bolivar', 'av lecuna', 'av urdaneta', 'la hoyada', 'quinta crespo', 'plaza venezuela', 'plaza vzla', 'plz vzla', 'parque carabobo', 'baralt', 'av baralt', 'capitolio', 'la pastora', 'san jose'],
     nombre: 'Centro / San Agustín / Bellas Artes / Candelaria / Plaza Venezuela',
     tarifa: '$2 a $3 USD'
   },

@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
-import { Package, Plus, Search, Grid, List, Copy, Check, Edit2, Trash2, ShoppingBag, Download, Upload, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { Package, Plus, Search, Grid, List, Copy, Check, Edit2, Trash2, ShoppingBag, Sparkles, ChevronDown, Car } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatBs } from '../../utils/formatters';
 import { PRODUCT_CATEGORIES } from '../../constants/categories';
+import BulkPriceModal from '../modals/BulkPriceModal';
 
 export default function CatalogView({
   products,
@@ -17,57 +18,41 @@ export default function CatalogView({
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef(null);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [editingPriceId, setEditingPriceId] = useState(null);
+  const [editingPriceVal, setEditingPriceVal] = useState('');
+  const [savingInline, setSavingInline] = useState(false);
 
-  const handleExport = () => {
-    window.location.href = '/api/catalog/export';
-    toast.success('Descargando archivo de respaldo del catálogo...');
+  const startInlineEdit = (p) => {
+    setEditingPriceId(p.id);
+    setEditingPriceVal(String(p.precio_usd || ''));
   };
 
-  const handleImportFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setImporting(true);
+  const handleSaveInlinePrice = async (p) => {
+    const parsed = parseFloat(editingPriceVal);
+    if (isNaN(parsed) || parsed <= 0) {
+      toast.error('Precio inválido');
+      return;
+    }
+    setSavingInline(true);
     try {
-      const text = await file.text();
-      let parsed;
-      try {
-        parsed = JSON.parse(text);
-      } catch (pe) {
-        toast.error('El archivo no tiene un formato JSON válido');
-        setImporting(false);
-        return;
-      }
-
-      const list = Array.isArray(parsed)
-        ? parsed
-        : (Array.isArray(parsed.productos) ? parsed.productos : null);
-
-      if (!list || list.length === 0) {
-        toast.error('No se encontraron productos en el archivo');
-        setImporting(false);
-        return;
-      }
-
-      const res = await fetch('/api/catalog/import', {
-        method: 'POST',
+      const res = await fetch(`/api/products/${p.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productos: list })
+        body: JSON.stringify({ precio_usd: parsed })
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`¡${data.count} repuestos importados correctamente!`);
+        toast.success(`Precio actualizado a $${parsed.toFixed(2)} USD`);
+        setEditingPriceId(null);
         if (onReload) onReload();
       } else {
-        toast.error(data.error || 'Error al importar catálogo');
+        toast.error(data.error || 'Error al actualizar precio');
       }
-    } catch (err) {
-      toast.error('Error procesando el archivo: ' + err.message);
+    } catch (e) {
+      toast.error('Error de conexión');
     } finally {
-      setImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setSavingInline(false);
     }
   };
 
@@ -123,51 +108,33 @@ export default function CatalogView({
             />
           </div>
 
-          {/* Filtro de Categoría */}
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="w-full sm:w-auto bg-[#070b14] border border-slate-800 rounded-2xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-orange-500 transition"
-          >
-            <option value="all">Todas las Categorías ({products.length})</option>
-            {categories.map((c, i) => (
-              <option key={i} value={c}>{c}</option>
-            ))}
-          </select>
+          {/* Filtro de Categoría con diseño estilizado */}
+          <div className="relative w-full sm:w-auto">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full sm:w-auto h-10 bg-[#070b14] border border-slate-800 hover:border-slate-700 rounded-xl pl-3.5 pr-8 text-xs text-slate-300 focus:outline-none focus:border-orange-500 transition appearance-none cursor-pointer"
+            >
+              <option value="all">Todas las Categorías ({products.length})</option>
+              {categories.map((c, i) => (
+                <option key={i} value={c}>{c}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-3 text-slate-400 pointer-events-none" />
+          </div>
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
-          {/* Botones de Exportar e Importar Catálogo */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleExport}
-              title="Descargar copia de seguridad del catálogo en JSON"
-              className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-[#070b14] border border-slate-800 hover:border-orange-500/50 text-slate-300 hover:text-orange-400 text-xs font-semibold transition active:scale-95 cursor-pointer"
-            >
-              <Download size={14} />
-              <span className="hidden md:inline">Exportar</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              title="Cargar catálogo desde un archivo JSON"
-              className="flex items-center gap-1 px-3 py-2 rounded-2xl bg-[#070b14] border border-slate-800 hover:border-orange-500/50 text-slate-300 hover:text-orange-400 text-xs font-semibold transition active:scale-95 disabled:opacity-50 cursor-pointer"
-            >
-              {importing ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
-              <span className="hidden md:inline">Importar</span>
-            </button>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".json"
-              onChange={handleImportFile}
-              className="hidden"
-            />
-          </div>
+          {/* Botón Ajuste Masivo de Precios en 1 Clic */}
+          <button
+            type="button"
+            onClick={() => setBulkModalOpen(true)}
+            title="Ajustar precios masivamente en 1 clic (+% o monto)"
+            className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/40 text-orange-300 hover:text-orange-200 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-orange-500/10"
+          >
+            <Sparkles size={14} className="text-orange-400" />
+            <span>Ajuste Masivo</span>
+          </button>
 
           {/* Alternador Grid / Table */}
           <div className="flex items-center bg-[#070b14] rounded-2xl p-1 border border-slate-800">
@@ -233,16 +200,35 @@ export default function CatalogView({
                 className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl p-5 shadow-xl flex flex-col justify-between card-hover group"
               >
                 <div className="space-y-3">
-                  {p.imagen_url && (
-                    <div className="h-44 rounded-2xl overflow-hidden bg-[#070b14] border border-slate-800/80">
+                  {/* Contenedor Adaptativo de Imagen (Cualquier resolución sin recorte) */}
+                  <div className="h-48 w-full rounded-2xl overflow-hidden bg-[#060913] border border-slate-800/80 relative flex items-center justify-center p-2.5 group-hover:border-slate-700 transition">
+                    {p.imagen_url ? (
                       <img
                         src={p.imagen_url}
                         alt={p.modelo}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="max-h-full max-w-full object-contain drop-shadow-md group-hover:scale-105 transition-transform duration-300 select-none"
                         loading="lazy"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
                       />
-                    </div>
-                  )}
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1.5 text-slate-600 select-none">
+                        <div className="w-11 h-11 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 group-hover:text-orange-400 group-hover:border-orange-500/30 transition-colors">
+                          {p.categoria === 'Combos & Kits' ? (
+                            <Sparkles size={20} />
+                          ) : p.categoria === 'Lubricantes & Fluidos' ? (
+                            <Package size={20} />
+                          ) : (
+                            <Car size={20} />
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {p.categoria}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -356,12 +342,69 @@ export default function CatalogView({
 
                   return (
                     <tr key={p.id} className="hover:bg-slate-900/40 transition">
-                      <td className="py-3.5 px-4 font-bold text-white">
-                        {p.marca} {p.modelo}
+                      <td className="py-3 px-4 font-bold text-white">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#060913] border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
+                            {p.imagen_url ? (
+                              <img src={p.imagen_url} alt={p.modelo} className="max-w-full max-h-full object-contain" />
+                            ) : (
+                              <span className="text-[10px] text-slate-500 font-bold">CR</span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-white block truncate">{p.marca ? `${p.marca} - ` : ''}{p.modelo}</span>
+                            {p.descripcion && <span className="text-[11px] text-slate-500 font-normal line-clamp-1">{p.descripcion}</span>}
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 text-slate-300">{p.categoria}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-300">{p.stock}</td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-white">${precioUsd.toFixed(2)}</td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-white">
+                        {editingPriceId === p.id ? (
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-orange-400 font-bold">$</span>
+                            <input
+                              type="number"
+                              step="any"
+                              autoFocus
+                              value={editingPriceVal}
+                              onChange={(e) => setEditingPriceVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveInlinePrice(p);
+                                if (e.key === 'Escape') setEditingPriceId(null);
+                              }}
+                              className="w-20 bg-slate-900 border border-orange-500 rounded-lg px-2 py-1 text-xs text-white font-mono focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveInlinePrice(p)}
+                              disabled={savingInline}
+                              className="px-1.5 py-1 rounded bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold text-xs"
+                              title="Guardar (Enter)"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingPriceId(null)}
+                              className="px-1.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white text-xs"
+                              title="Cancelar (Esc)"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startInlineEdit(p)}
+                            title="Haz clic para editar precio al instante (Enter para guardar)"
+                            className="group/price flex items-center gap-1.5 hover:text-orange-300 px-2 py-1 -mx-2 rounded-lg hover:bg-slate-800/80 transition cursor-pointer"
+                          >
+                            <span>${precioUsd.toFixed(2)}</span>
+                            <Edit2 size={11} className="opacity-0 group-hover/price:opacity-100 text-slate-400" />
+                          </button>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 font-mono text-orange-400">Bs. {formatBs(precioBs)}</td>
                       <td className="py-3.5 px-4 font-mono text-orange-300 font-semibold">
                         {precioUsd >= 25 ? (
@@ -403,6 +446,17 @@ export default function CatalogView({
           </div>
         </div>
       )}
+      {/* Modal de Ajuste Masivo de Precios */}
+      <BulkPriceModal
+        isOpen={bulkModalOpen}
+        onClose={() => setBulkModalOpen(false)}
+        products={products}
+        categories={categories}
+        bcvRate={bcvRate}
+        onSuccess={() => {
+          if (onReload) onReload();
+        }}
+      />
     </div>
   );
 }

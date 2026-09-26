@@ -59,8 +59,57 @@ function isFuzzyMatch(userToken, targetWord) {
   return dist <= maxDist;
 }
 
+/**
+ * Estandariza y pule la ortografía y estilo de los mensajes salientes del bot:
+ * - Asegura mayúscula inicial en oraciones y tras saltos de línea.
+ * - Estandariza marcas y nombres comerciales reconocidos (Motul, Bera, Yamaha, Tip Top, etc.).
+ * - Asegura mayúscula tras puntos y seguidos.
+ */
+function standardizeBotMessage(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  let formatted = text.trim();
+
+  // Asegurar que la primera letra del mensaje o de cada párrafo comience con mayúscula
+  formatted = formatted.replace(/(^|\n+)([a-záéíóúñ])/g, (match, prefix, letter) => {
+    return prefix + letter.toUpperCase();
+  });
+
+  // Asegurar mayúscula después de punto y seguido (. palabra)
+  formatted = formatted.replace(/(\.\s+)([a-záéíóúñ])/g, (match, sep, letter) => {
+    return sep + letter.toUpperCase();
+  });
+
+  // Estandarización de marcas y nombres comerciales
+  const brandReplacements = [
+    [/\bmotul\b/gi, 'Motul'],
+    [/\bbera\b/gi, 'Bera'],
+    [/\bempire\b/gi, 'Empire'],
+    [/\byamaha\b/gi, 'Yamaha'],
+    [/\bchoho\b/gi, 'Choho'],
+    [/\bngk\b/gi, 'NGK'],
+    [/\btip top\b/gi, 'Tip Top'],
+    [/\brema\b/gi, 'Rema'],
+    [/\bcastrol\b/gi, 'Castrol'],
+    [/\bvenoco\b/gi, 'Venoco'],
+    [/\bshell\b/gi, 'Shell'],
+    [/\bbinance pay\b/gi, 'Binance Pay'],
+    [/\bbinance\b/gi, 'Binance'],
+    [/\busdt\b/gi, 'USDT'],
+    [/\bcashea\b/gi, 'Cashea'],
+    [/\bbcv\b/gi, 'BCV']
+  ];
+
+  for (const [regex, replacement] of brandReplacements) {
+    formatted = formatted.replace(regex, replacement);
+  }
+
+  return formatted;
+}
+
 module.exports = {
   normalizeText,
   levenshteinDistance,
-  isFuzzyMatch
+  isFuzzyMatch,
+  standardizeBotMessage
 };

@@ -1,6 +1,6 @@
 const { db, createReservation, recordMetric } = require('../../database');
 const { searchProductsFuzzy, searchMultipleProducts } = require('../services/searchService');
-const { formatBs, formatRate, formatVenezuelanPhone } = require('../utils/formatters');
+const { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } = require('../utils/formatters');
 const { normalizeText } = require('../utils/textUtils');
 
 /**
@@ -188,9 +188,9 @@ function handleInterruptionResponse(jid, text, norm, session, tasa, settings, in
     } else {
       itemsDesc = `   📦 ${currentMetadata.producto_nombre || 'Repuesto'}: *$${totalUsd.toFixed(2)} USD*\n`;
     }
-    answer = `📊 *Resumen Actual de tu Pedido:* 🛞🏍️\n${itemsDesc}\n💵 *Total a Pagar:* *$${totalUsd.toFixed(2)} USD* (Bs. ${formatBs(totalBs)} a tasa oficial BCV: ${formatRate(tasa)})\n🔥 _(¡Aprovecha precio especial con descuento pagando en efectivo en divisas!)_`;
-  } else if (norm.includes('pago') || norm.includes('punto') || norm.includes('transferencia') || norm.includes('efectivo')) {
-    answer = `💳 *Formas de Pago:* Efectivo en divisas (¡con descuento especial!), Pago Móvil o transferencia a tasa oficial BCV (Bs. ${formatRate(tasa)}), y Cashea en tienda física.`;
+    answer = `📊 *Resumen Actual de tu Pedido:* 🛞🏍️\n${itemsDesc}\n💵 *Total a Pagar:* *$${totalUsd.toFixed(2)} USD* (Bs. ${formatBs(totalBs)} a tasa oficial BCV: ${formatRate(tasa)})\n🔥 _(¡Aprovecha nuestro Precio Promoción en Divisas pagando en Efectivo o Binance Pay!)_`;
+  } else if (norm.includes('pago') || norm.includes('punto') || norm.includes('transferencia') || norm.includes('efectivo') || norm.includes('binance')) {
+    answer = `💳 *Formas de Pago:* Precio Promoción en Divisas (Efectivo $ y Binance Pay USDT 🪙), Pago Móvil o transferencia a tasa oficial BCV (Bs. ${formatRate(tasa)}), y Cashea en tienda física.`;
   } else if (norm.includes('donde') || norm.includes('ubicacion') || norm.includes('direccion')) {
     answer = `🏢 *Tienda física:* ${settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas'}.\n🗺️ *Maps:* ${settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA'}`;
   } else if (norm.includes('horario') || norm.includes('hora') || norm.includes('abren')) {
@@ -551,20 +551,24 @@ function handleApartadoTelefono(jid, text, session, tasa, settings) {
   }
 
   let telefono = null;
+  let primaryPhone = null;
 
   if (isAffirmative) {
     if (isLid) {
       return `Para que el equipo de tienda pueda registrar tu apartado correctamente, por favor escribe tu número de teléfono de contacto (ejemplo: *0412 123 4567*):\n_(Escribe *cancelar* si deseas salir)_`;
     } else {
       const rawPhone = jid.split('@')[0];
-      telefono = formatVenezuelanPhone(rawPhone) || `+${rawPhone}`;
+      const extracted = extractVenezuelanPhones(rawPhone);
+      telefono = extracted.summary || formatVenezuelanPhone(rawPhone) || `+${rawPhone}`;
+      primaryPhone = extracted.primary || telefono;
     }
   } else {
-    const validated = formatVenezuelanPhone(text);
-    if (!validated) {
+    const extracted = extractVenezuelanPhones(text);
+    if (!extracted || !extracted.summary) {
       return `Por favor, indícanos un número de teléfono válido (por ejemplo: *0412 123 4567* o *0414 765 4321*):\n_(Escribe *cancelar* para salir)_`;
     }
-    telefono = validated;
+    telefono = extracted.summary;
+    primaryPhone = extracted.primary;
   }
 
   const nombre = metadata.nombre || session.push_name || 'Cliente';
@@ -592,13 +596,14 @@ function handleApartadoTelefono(jid, text, session, tasa, settings) {
     return `⚠️ ${err.message}\n\nPuedes escribir *VENDEDOR* si deseas consultar alternativas con nuestro personal de tienda física o escribir qué otro repuesto buscas.`;
   }
 
-  // Resetear el estado de la sesión
+  // Resetear el estado de la sesión y guardar el teléfono de contacto para el Live Inbox
   db.prepare(`
     UPDATE chat_sessions
     SET step = 'start',
-        apartado_metadata = NULL
+        apartado_metadata = NULL,
+        telefono_contacto = ?
     WHERE jid = ?
-  `).run(jid);
+  `).run(primaryPhone || telefono, jid);
 
   recordMetric('apartado_creado', prodNombre, jid);
 

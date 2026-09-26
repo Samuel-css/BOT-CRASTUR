@@ -10,6 +10,7 @@ if (!fs.existsSync(dataDir)) {
 const dbPath = path.join(dataDir, 'crastur.db');
 
 let rawDb = null;
+let SQLInstance = null;
 let saveScheduled = false;
 let isReady = false;
 let readyResolvers = [];
@@ -150,6 +151,7 @@ async function initDB() {
   if (isReady) return;
 
   const SQL = await initSqlJs();
+  SQLInstance = SQL;
 
   // 1. Intentar cargar base de datos existente o restaurar desde backup si está dañada
   if (fs.existsSync(dbPath)) {
@@ -301,6 +303,24 @@ async function initDB() {
     rawDb.exec('ALTER TABLE chat_sessions ADD COLUMN apartado_metadata TEXT;');
   } catch {}
 
+  // Migración: agregar columna telefono_contacto a chat_sessions si no existe
+  try {
+    rawDb.exec('ALTER TABLE chat_sessions ADD COLUMN telefono_contacto TEXT;');
+  } catch {}
+
+  // Sincronizar telefono_contacto desde reservations previas si estuviera vacío
+  try {
+    rawDb.exec(`
+      UPDATE chat_sessions
+      SET telefono_contacto = (
+        SELECT telefono FROM reservations WHERE jid = chat_sessions.jid ORDER BY id DESC LIMIT 1
+      )
+      WHERE (telefono_contacto IS NULL OR telefono_contacto = '') AND EXISTS (
+        SELECT 1 FROM reservations WHERE jid = chat_sessions.jid
+      );
+    `);
+  } catch {}
+
   // Migración: agregar columna aviso_22h_enviado si no existe
   try {
     rawDb.exec('ALTER TABLE reservations ADD COLUMN aviso_22h_enviado INTEGER DEFAULT 0;');
@@ -331,7 +351,7 @@ async function initDB() {
     'insistencia_minutos': '15',
     'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM',
     'politica_envios': 'Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.',
-    'metodos_pago': 'Transferencia Bancaria, Pago Móvil, Efectivo ($ y Bs a tasa BCV oficial) y Cashea.',
+    'metodos_pago': 'Precio Promoción en Divisas (Efectivo $ y Binance Pay USDT), Pago Móvil y Transferencia (tasa BCV), Efectivo Bs y Cashea en tienda.',
     'mensaje_insistencia': '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.',
     'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nInsumos para caucheras, repuestos y accesorios para moto, y otros productos con financiamiento Cashea.',
     'fuera_horario_activo': '0',
@@ -418,11 +438,19 @@ function recordMetric(evento, detalle = '', jid = '') {
 }
 
 function toggleBotPause(jid, paused) {
-  db.prepare(`
-    UPDATE chat_sessions
-    SET bot_pausado = ?
-    WHERE jid = ?
-  `).run(paused ? 1 : 0, jid);
+  const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
+  if (!exists) {
+    db.prepare(`
+      INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
+      VALUES (?, 'Cliente', 'start', ?, 0, ?, 1)
+    `).run(jid, Date.now(), paused ? 1 : 0);
+  } else {
+    db.prepare(`
+      UPDATE chat_sessions
+      SET bot_pausado = ?
+      WHERE jid = ?
+    `).run(paused ? 1 : 0, jid);
+  }
 }
 
 function isBotPaused(jid) {
@@ -458,11 +486,29 @@ function getMetricsSummary() {
     LIMIT 5
   `).all();
 
+  // Métricas de alto impacto comercial
+  cleanExpiredReservations();
+  const resStats = db.prepare("SELECT COUNT(*) as count, SUM(precio_usd) as total_usd FROM reservations WHERE estado = 'activo'").get() || {};
+  const totalApartados = resStats.count || 0;
+  const montoApartadosUsd = parseFloat(resStats.total_usd || 0);
+
+  const stockBajoItems = db.prepare("SELECT id, marca, modelo, categoria, stock, precio_usd FROM products WHERE activo = 1 AND stock IS NOT NULL AND stock <= 3 ORDER BY stock ASC LIMIT 6").all();
+  const totalStockBajo = db.prepare("SELECT COUNT(*) as count FROM products WHERE activo = 1 AND stock IS NOT NULL AND stock <= 3").get()?.count || 0;
+
+  const totalCombos = db.prepare("SELECT COUNT(*) as count FROM products WHERE activo = 1 AND categoria = 'Combos & Kits'").get()?.count || 0;
+  const totalProductosActivos = db.prepare("SELECT COUNT(*) as count FROM products WHERE activo = 1").get()?.count || 0;
+
   return {
     consultas_hoy: totalHoy,
     total_mensajes: totalMensajes,
     total_clientes: totalSesiones,
-    top_busquedas: topBusquedas
+    top_busquedas: topBusquedas,
+    apartados_activos_total: totalApartados,
+    monto_apartados_usd: montoApartadosUsd,
+    stock_bajo_total: totalStockBajo,
+    stock_bajo_items: stockBajoItems,
+    combos_total: totalCombos,
+    total_productos_activos: totalProductosActivos
   };
 }
 
@@ -510,6 +556,42 @@ function importCatalog(productsList) {
   // Respaldo inmediato tras importar
   persistDB();
   return { success: true, count };
+}
+
+function restoreDatabaseFromBuffer(buffer) {
+  if (!SQLInstance) return { success: false, error: 'Motor SQLite no inicializado.' };
+  try {
+    if (!buffer || buffer.length < 100) {
+      return { success: false, error: 'El archivo está vacío o dañado.' };
+    }
+    const header = buffer.slice(0, 16).toString('utf8');
+    if (!header.startsWith('SQLite format 3')) {
+      return { success: false, error: 'El archivo no tiene el formato SQLite válido.' };
+    }
+
+    const testDb = new SQLInstance.Database(buffer);
+    const integrityResult = testDb.exec('PRAGMA integrity_check;');
+    const integrityStatus = integrityResult[0]?.values[0]?.[0];
+    if (integrityStatus !== 'ok') {
+      try { testDb.close(); } catch {}
+      return { success: false, error: `Integridad SQLite fallida (${integrityStatus})` };
+    }
+
+    // Respaldo preventivo antes de sobrescribir
+    persistDB();
+    const backupPre = path.join(backupDir, `crastur_pre_restore_${Date.now()}.db`);
+    if (fs.existsSync(dbPath)) {
+      fs.copyFileSync(dbPath, backupPre);
+    }
+
+    fs.writeFileSync(dbPath, buffer);
+    try { if (rawDb) rawDb.close(); } catch {}
+    rawDb = testDb;
+    console.log('[DB] ¡Base de datos restaurada exitosamente desde archivo de respaldo!');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 function getReservations(onlyActive = false) {
@@ -671,5 +753,6 @@ module.exports = {
   getReservationsNeeding22hReminder,
   markReservation22hReminderSent,
   persistDB,
-  performDailyBackup
+  performDailyBackup,
+  restoreDatabaseFromBuffer
 };

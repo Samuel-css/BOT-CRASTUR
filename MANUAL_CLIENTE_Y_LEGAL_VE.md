@@ -144,8 +144,9 @@ El panel incluye la pestaña **Live Inbox**, diseñada para que los asesores de 
    - **✅ Disponibilidad Inmediata:** Confirmación de stock para retiro hoy o delivery.
    - **🛡️ Garantía & Política de Cambios:** Especificación de garantía y conservación de empaque original.
 5. **Limpieza y Mantenimiento del Inbox:**  
-   - **Limpiar Chat:** Puedes hacer clic en el botón con icono de papelera en la barra superior del chat para eliminar los mensajes de esa conversación y reiniciar el flujo del bot.
-   - **Vaciar Todo el Inbox:** Botón en la lista de chats para limpiar todos los historiales y dejar la bandeja limpia al inicio de jornada.
+   - **Borrado Individual de Chats en la Lista:** Cada conversación en la lista izquierda cuenta con su propio icono de papelera. Al hacer clic o tocarlo, se muestra una ventana de confirmación segura para eliminar esa conversación específica sin afectar al resto de clientes ni tocar tus productos. Si el cliente vuelve a escribir más adelante, entrará como una nueva conversación sin problemas.
+   - **Limpiar Chat Abierto:** También dispones del botón de papelera en la barra superior del chat activo para limpiar los mensajes de la conversación que tienes en pantalla.
+   - **Vaciar Todo el Inbox:** Botón en la lista de chats para limpiar todos los historiales y dejar la bandeja completamente limpia al inicio de jornada.
 6. **Reanudar Bot:**  
    Cuando termines de atender al cliente, haz clic en **"Reanudar Bot"** para que el asistente virtual vuelva a encargarse de responderle.
 
@@ -182,9 +183,13 @@ Este comando despliega un menú interactivo en consola con las siguientes opcion
 9. **⚡ Mantenimiento Completo Automático (`--all`):**
    - Ejecuta el diagnóstico, verificación de Node.js, optimización SQLite, depuración de respaldos y compilación web en una sola acción.
 
-### B. Respaldo e Importación Masiva del Catálogo (1 Clic)
-- **Exportar Catálogo:** En la pestaña **Catálogo Productos**, haz clic en el botón **"Exportar"**. Se descargará un archivo `.json` con todos los repuestos, precios y stock.
-- **Importar Catálogo:** Si necesitas cargar un inventario masivo o migrar datos desde otra computadora, haz clic en **"Importar"** y selecciona el archivo `.json`. El sistema normaliza automáticamente las categorías a las 4 canónicas (`Insumos Cauchera`, `Repuestos Moto`, `Accesorios Moto`, `Otros Productos`) y actualiza el inventario al instante.
+### B. Respaldo Integral y Restauración Segura de la Base de Datos (.db)
+- **Copia de Seguridad del Negocio (1 Clic):**  
+  En el menú lateral, dirígete a **Configuración** ➔ pestaña **🛡️ Copia de Seguridad** y presiona el botón **"Descargar Copia de Seguridad"**. Se guardará en tu computadora un archivo `.db` que contiene el 100% de tus productos, precios en dólares, combos, clientes, apartados y configuración de tienda.
+- **Restaurar desde una Copia:**  
+  Si necesitas restaurar una copia previa o migrar datos desde otra computadora (por ejemplo, desde la PC de Windows), presiona **"Restaurar desde Copia"** y selecciona tu archivo `.db`. El sistema valida la integridad de la base de datos y crea automáticamente una copia de seguridad de emergencia previa antes de aplicar los datos nuevos.
+- **Protección del Negocio:**  
+  Para evitar que operadores inexpertos borren o corrompan datos por descuido, la exportación e importación se gestiona de forma centralizada y segura en la sección de Copia de Seguridad bajo confirmaciones protegidas.
 
 ### C. Protección Atómica Contra Apagones y Fallas Eléctricas
 - El motor de almacenamiento de Crastur utiliza **escritura atómica en disco** mediante archivos temporales antes de consolidar `crastur.db`.

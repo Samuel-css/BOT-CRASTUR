@@ -31,6 +31,7 @@ async function runAllTests() {
   console.log('================================================================\n');
 
   await db.whenReady();
+  db.updateSetting('bot_pausado_global', '0');
   resetSpam();
 
   // -------------------------------------------------------------
@@ -130,7 +131,8 @@ async function runAllTests() {
     assert(res1 && res1.includes('Crastur') && res1.includes('BCV'), 'Responde saludo coloquial "epale mano" con saludo y tasa');
 
     const res2 = processIncomingMessage(jid, 'chamo tienes pastillas de freno?', 'Yorman');
-    assert(res2 && res2.includes('Pastillas') && res2.includes('USD'), 'Entiende modismo "chamo tienes pastillas..." y cotiza');
+    const res2Str = typeof res2 === 'object' && res2 !== null ? res2.text : String(res2 || '');
+    assert(res2Str && res2Str.includes('Pastillas') && res2Str.includes('USD'), 'Entiende modismo "chamo tienes pastillas..." y cotiza');
 
     const resCaucho = processIncomingMessage(jid, 'chamo tienes caucho?', 'Yorman');
     assert(resCaucho && resCaucho.includes('Cauchera'), 'Consulta por caucho devuelve insumos de cauchera');
@@ -144,13 +146,34 @@ async function runAllTests() {
   {
     const jid = '584149990004@s.whatsapp.net';
     const res1 = processIncomingMessage(jid, 'kiero pastiya d freno', 'Luis');
-    assert(res1 && (res1.includes('Pastilla') || res1.includes('Freno')), 'Fuzzy match encuentra pastillas ante "pastiya d freno"');
+    const res1Str = typeof res1 === 'object' && res1 !== null ? res1.text : String(res1 || '');
+    assert(res1Str && (res1Str.includes('Pastilla') || res1Str.includes('Freno')), 'Fuzzy match encuentra pastillas ante "pastiya d freno"');
 
     const res2 = processIncomingMessage(jid, 'q vale la bujya', 'Luis');
     assert(res2 && (res2.includes('Bujía') || res2.includes('Bujia')), 'Fuzzy match encuentra bujía ante "bujya"');
 
     const res3 = processIncomingMessage(jid, 'kuanto sale la valvula d aire', 'Luis');
     assert(res3 && res3.includes('Válvula'), 'Fuzzy match encuentra válvulas ante "valvula d aire"');
+
+    // Búsqueda de alta precisión: calificador vehicular no debe mezclar repuestos no solicitados
+    const resAceite = processIncomingMessage(jid, 'Tienes aceite para moto ? Y cuáles tienes ?', 'Luis');
+    assert(
+      resAceite &&
+      resAceite.includes('Aceite') &&
+      !resAceite.includes('Bujía') &&
+      !resAceite.includes('Kit de Arrastre') &&
+      !resAceite.includes('Pastillas de Freno'),
+      'Consulta específica de "aceite para moto" devuelve solo aceite y no mezcla bujías ni frenos'
+    );
+
+    const resBujia = processIncomingMessage(jid, 'Tienes bujias para moto ?', 'Luis');
+    assert(
+      resBujia &&
+      resBujia.includes('Bujía') &&
+      !resBujia.includes('Aceite') &&
+      !resBujia.includes('Pastillas de Freno'),
+      'Consulta específica de "bujías para moto" devuelve solo bujías y no mezcla aceites'
+    );
   }
 
   // PERFIL 5: Métodos de Pago Venezolanos
@@ -165,6 +188,15 @@ async function runAllTests() {
 
     const res3 = processIncomingMessage(jid, 'si pago en efectivo en dolares me dan descuento?', 'Maria');
     assert(res3 && res3.includes('descuento especial') && res3.includes('divisas'), 'Informa descuento especial por pago en divisas en tienda');
+
+    const res4 = processIncomingMessage(jid, 'aceptan binance usdt?', 'Maria');
+    assert(res4 && res4.includes('Binance') && res4.includes('Precio Promoción'), 'Informa aceptación de Binance Pay con Precio Promoción en Divisas');
+
+    const res5 = processIncomingMessage(jid, 'venden al mayor para cauchera?', 'Maria');
+    assert(res5 && res5.includes('Ventas al Mayor') && res5.includes('caja cerrada'), 'Atiende consulta de Venta al Mayor para caucheras y talleres');
+
+    const res6 = processIncomingMessage(jid, 'vi un combo en instagram que tienen?', 'Maria');
+    assert(res6 && res6.includes('Combo') && res6.includes('Precio Promo'), 'Responde consultas de Combos & Kits de Instagram');
   }
 
   // PERFIL 6: El Comprador Cashea
@@ -242,6 +274,17 @@ async function runAllTests() {
     // Verificar en la BD que la reserva fue creada y el stock descontado
     const resBD = db.db.prepare("SELECT * FROM reservations WHERE nombre LIKE '%Ramon%'").get();
     assert(resBD && resBD.estado === 'activo' && resBD.id > 0, 'Reserva guardada en base de datos como activa');
+
+    // Prueba de apartado con múltiples teléfonos (caso "04126137652 o 04241881126")
+    const jidMulti = '584129990099@lid';
+    db.toggleBotPause(jidMulti, false);
+    processIncomingMessage(jidMulti, 'apartar aceite', 'Eliezer');
+    processIncomingMessage(jidMulti, 'Eliezer Pinto', 'Eliezer');
+    processIncomingMessage(jidMulti, 'V-20123456', 'Eliezer');
+    const resMultiPhone = processIncomingMessage(jidMulti, '04126137652 o 04241881126', 'Eliezer');
+    assert(resMultiPhone && resMultiPhone.includes('APARTADO CONFIRMADO') && resMultiPhone.includes('CRA-'), 'Apartado acepta múltiples números de teléfono ("0412... o 0424...")');
+    const resEliezer = db.db.prepare("SELECT * FROM reservations WHERE jid = '584129990099@lid' ORDER BY id DESC LIMIT 1").get();
+    assert(resEliezer && resEliezer.telefono.includes('0412-6137652') && resEliezer.telefono.includes('0424-1881126'), 'Teléfonos múltiples almacenados y formateados en la reserva');
   }
 
   // PERFIL 11: Interrupciones y Cancelación durante Apartado
@@ -352,7 +395,7 @@ async function runAllTests() {
     // Opción 6: Asesor de Ventas
     processIncomingMessage(jid, 'menu', 'Tester');
     const res6 = processIncomingMessage(jid, '6', 'Tester');
-    assert(typeof res6 === 'string' && (res6.includes('equipo de ventas') || res6.includes('mostrador') || res6.includes('tienda física')), 'Opción 6 ofrece atención de vendedor humano');
+    assert(typeof res6 === 'string' && (res6.includes('asesores de ventas') || res6.includes('equipo de ventas') || res6.includes('mostrador') || res6.includes('tienda física') || res6.includes('asesor')), 'Opción 6 ofrece atención de vendedor humano');
 
     // Consultas directas por texto de categoría
     const resCat1 = processIncomingMessage(jid, 'cauchera', 'Tester');

@@ -41,19 +41,19 @@ export default function Header({
   const status = waStatus?.status || 'disconnected';
 
   return (
-    <header className="h-16 border-b border-slate-800/80 bg-[#090d16]/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between shrink-0 z-20">
-      <div className="flex items-center gap-3">
+    <header className="h-16 border-b border-slate-800/80 bg-[#090d16]/90 backdrop-blur-md px-2.5 sm:px-6 flex items-center justify-between shrink-0 z-20">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Botón menú móvil (hamburguesa) */}
         <button
           onClick={onToggleMobileMenu}
-          className="md:hidden p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-orange-500/50 transition"
+          className="md:hidden p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-orange-500/50 transition shrink-0"
           aria-label="Abrir menú"
         >
           <Menu size={18} />
         </button>
 
         <div className="min-w-0">
-          <h2 className="text-xs sm:text-base font-bold text-white tracking-wide flex items-center gap-2 truncate max-w-[130px] sm:max-w-none">
+          <h2 className="text-xs sm:text-base font-bold text-white tracking-wide flex items-center gap-2 truncate max-w-[100px] xs:max-w-[140px] sm:max-w-none">
             {getTabTitle()}
           </h2>
           <p className="text-[10px] sm:text-[11px] text-slate-400 hidden lg:block">
@@ -62,7 +62,7 @@ export default function Header({
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0 overflow-x-auto no-scrollbar py-1 max-w-[calc(100vw-140px)] xs:max-w-[calc(100vw-180px)] sm:max-w-none">
         {/* Botón Modo Mostrador Rápido */}
         {onOpenQuickPrice && (
           <button

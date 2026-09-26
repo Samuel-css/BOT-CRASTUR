@@ -21,7 +21,9 @@ const {
   createReservation,
   updateReservationStatus,
   deleteReservation,
-  cleanExpiredReservations
+  cleanExpiredReservations,
+  persistDB,
+  restoreDatabaseFromBuffer
 } = require('./database');
 const fs = require('fs');
 
@@ -122,8 +124,15 @@ app.post('/api/whatsapp/start', async (req, res) => {
 
 app.post('/api/whatsapp/logout', async (req, res) => {
   try {
+    const { clearHistory } = req.body || {};
     await logoutWhatsApp();
-    res.json({ success: true, message: 'Sesión de WhatsApp cerrada exitosamente' });
+    if (clearHistory) {
+      db.prepare('DELETE FROM chat_messages').run();
+      db.prepare('DELETE FROM chat_sessions').run();
+      broadcast('live_chat_message', { action: 'all_deleted' });
+      console.log('[WhatsApp] Sesión cerrada y chats eliminados de la base de datos.');
+    }
+    res.json({ success: true, message: 'Sesión de WhatsApp cerrada exitosamente', cleared: !!clearHistory });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -293,6 +302,67 @@ app.delete('/api/products/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Ajuste Masivo de Precios (100% en el Sistema)
+app.post('/api/products/bulk-price-adjustment', (req, res) => {
+  try {
+    const { tipo = 'percentage', valor, categoria = 'all', productIds, direccion = 'aumentar' } = req.body;
+
+    const numVal = parseFloat(valor);
+    if (isNaN(numVal) || numVal <= 0) {
+      return res.status(400).json({ error: 'El valor de ajuste debe ser un número mayor a 0' });
+    }
+
+    let query = 'SELECT id, marca, modelo, categoria, precio_usd FROM products WHERE activo = 1';
+    const params = [];
+
+    if (categoria && categoria !== 'all') {
+      query += ' AND (categoria = ? OR categoria LIKE ?)';
+      params.push(categoria, `${categoria} -%`);
+    }
+
+    if (Array.isArray(productIds) && productIds.length > 0) {
+      const placeholders = productIds.map(() => '?').join(',');
+      query += ` AND id IN (${placeholders})`;
+      params.push(...productIds);
+    }
+
+    const prods = db.prepare(query).all(...params);
+    if (prods.length === 0) {
+      return res.json({ success: true, count: 0, message: 'No hay productos que coincidan con el filtro' });
+    }
+
+    const updateStmt = db.prepare('UPDATE products SET precio_usd = ? WHERE id = ?');
+    let updatedCount = 0;
+
+    for (const p of prods) {
+      let nuevoPrecio = parseFloat(p.precio_usd) || 0;
+      if (tipo === 'percentage') {
+        const factor = numVal / 100;
+        if (direccion === 'disminuir') {
+          nuevoPrecio = Math.max(0.01, nuevoPrecio * (1 - factor));
+        } else {
+          nuevoPrecio = nuevoPrecio * (1 + factor);
+        }
+      } else {
+        if (direccion === 'disminuir') {
+          nuevoPrecio = Math.max(0.01, nuevoPrecio - numVal);
+        } else {
+          nuevoPrecio = nuevoPrecio + numVal;
+        }
+      }
+
+      nuevoPrecio = Math.round(nuevoPrecio * 100) / 100;
+      updateStmt.run(nuevoPrecio, p.id);
+      updatedCount++;
+    }
+
+    broadcast('products_updated', { action: 'bulk_price_updated', count: updatedCount });
+    res.json({ success: true, count: updatedCount, message: `Se actualizaron los precios de ${updatedCount} productos.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 5. Vendedores (CRUD)
 app.get('/api/sellers', (req, res) => {
   const sellers = db.prepare('SELECT * FROM sellers ORDER BY id ASC').all();
@@ -384,6 +454,7 @@ app.post('/api/reservations', (req, res) => {
     });
 
     broadcast('reservations_updated', { action: 'created', reservation });
+    broadcast('products_updated', { action: 'stock_changed' });
     res.json({ success: true, reservation });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -396,6 +467,7 @@ app.put('/api/reservations/:id/status', (req, res) => {
     const { estado } = req.body;
     updateReservationStatus(id, estado);
     broadcast('reservations_updated', { action: 'status_changed', id, estado });
+    broadcast('products_updated', { action: 'stock_changed' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -407,6 +479,7 @@ app.delete('/api/reservations/:id', (req, res) => {
     const { id } = req.params;
     deleteReservation(id);
     broadcast('reservations_updated', { action: 'deleted', id });
+    broadcast('products_updated', { action: 'stock_changed' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -429,10 +502,15 @@ app.get('/api/inbox', (req, res) => {
   const sessions = db.prepare(`
     SELECT s.*, 
       (SELECT contenido FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_mensaje_texto,
-      (SELECT remitente FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_remitente
+      (SELECT remitente FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_remitente,
+      (SELECT COUNT(*) FROM reservations WHERE jid = s.jid AND estado = 'activo') as tiene_apartado_activo,
+      (SELECT producto_nombre FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_producto,
+      (SELECT precio_usd FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_monto,
+      (SELECT expira_en FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_expira_en,
+      (SELECT telefono FROM reservations WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as telefono_contacto
     FROM chat_sessions s
     ORDER BY s.ultimo_mensaje_at DESC
-    LIMIT 50
+    LIMIT 60
   `).all();
   res.json(sessions);
 });
@@ -440,7 +518,17 @@ app.get('/api/inbox', (req, res) => {
 app.get('/api/inbox/:jid', (req, res) => {
   const { jid } = req.params;
   const messages = db.prepare('SELECT * FROM chat_messages WHERE jid = ? ORDER BY id ASC').all(jid);
-  const session = db.prepare('SELECT * FROM chat_sessions WHERE jid = ?').get(jid);
+  const session = db.prepare(`
+    SELECT s.*,
+      (SELECT COUNT(*) FROM reservations WHERE jid = s.jid AND estado = 'activo') as tiene_apartado_activo,
+      (SELECT producto_nombre FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_producto,
+      (SELECT precio_usd FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_monto,
+      (SELECT expira_en FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_expira_en,
+      (SELECT cedula FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_cedula,
+      (SELECT telefono FROM reservations WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as telefono_contacto
+    FROM chat_sessions s
+    WHERE s.jid = ?
+  `).get(jid);
   res.json({ session, messages });
 });
 
@@ -460,32 +548,32 @@ app.post('/api/chat/send-manual', async (req, res) => {
   if (!jid || !text) return res.status(400).json({ error: 'JID y texto son requeridos' });
 
   try {
-    await sendManualMessage(jid, text);
-    res.json({ success: true });
+    const result = await sendManualMessage(jid, text);
+    res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Limpiar mensajes de un chat específico
+// Limpiar y eliminar un chat específico (borrado definitivo de mensajes y sesión)
 app.delete('/api/inbox/:jid', (req, res) => {
   try {
     const { jid } = req.params;
     db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
-    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
-    broadcast('live_chat_message', { jid, action: 'cleared' });
+    db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
+    broadcast('live_chat_message', { jid, action: 'deleted' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Vaciar historial general del inbox
+// Vaciar historial general del inbox (borrado definitivo total)
 app.post('/api/inbox/clear-all', (req, res) => {
   try {
     db.prepare('DELETE FROM chat_messages').run();
-    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL").run();
-    broadcast('live_chat_message', { action: 'all_cleared' });
+    db.prepare('DELETE FROM chat_sessions').run();
+    broadcast('live_chat_message', { action: 'all_deleted' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -515,13 +603,55 @@ app.post('/api/catalog/import', (req, res) => {
   }
 });
 
+// 11. Respaldo Integral y Restauración Segura de Base de Datos (.db)
+app.get('/api/database/backup', (req, res) => {
+  try {
+    persistDB();
+    const dbFilePath = path.join(__dirname, '..', 'data', 'crastur.db');
+    if (!fs.existsSync(dbFilePath)) {
+      return res.status(404).json({ error: 'Archivo de base de datos no encontrado.' });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const filename = `crastur_respaldo_${today}.db`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    const fileStream = fs.createReadStream(dbFilePath);
+    fileStream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/database/restore', express.raw({ type: ['application/octet-stream', 'application/x-sqlite3', 'multipart/form-data', '*/*'], limit: '60mb' }), (req, res) => {
+  try {
+    const buffer = req.body;
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ success: false, error: 'No se recibieron datos de archivo.' });
+    }
+    const result = restoreDatabaseFromBuffer(buffer);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json({ success: true, message: 'Base de datos restaurada exitosamente.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Servir frontend compilado en producción
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.join(clientDist, 'index.html'));
+      const indexPath = path.join(clientDist, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath, (err) => {
+          if (err && !res.headersSent) {
+            next();
+          }
+        });
+      }
     }
     next();
   });

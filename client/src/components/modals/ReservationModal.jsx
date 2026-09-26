@@ -10,7 +10,7 @@ export default function ReservationModal({ isOpen, onClose, reservation, bcvRate
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-[#0a0f1d] border border-slate-800 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl shadow-black/80">
+      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl shadow-black/80 animate-scale-in">
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#070b14]">
           <div className="flex items-center gap-3">

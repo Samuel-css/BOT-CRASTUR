@@ -34,10 +34,8 @@ function handleCasheaSmart(text, norm, settings, tasa, session) {
     msg += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD* (Bs. ${formatBs(precioUsd * tasa)})\n\n`;
 
     if (precioUsd < 25) {
-      msg += `⚠️ *Nota sobre compra mínima Cashea:*\n`;
-      msg += `El financiamiento con Cashea aplica exclusivamente para compras a partir de *$25.00 USD*.\n\n`;
-      msg += `💡 *¿Cómo pagarlo con Cashea?*\n`;
-      msg += `Esta pieza cuesta *$${precioUsd.toFixed(2)} USD*. Puedes agregar otro repuesto o accesorio (como aceite, bujías, filtros o aditivos) a tu pedido para sumar *$25 USD o más*. Al retirar en nuestra tienda física, ¡lo pagas financiado en cuotas con tu app Cashea! 🛞✨\n\n`;
+      msg += `📌 *Condiciones de Financiamiento Cashea:*\n`;
+      msg += `El financiamiento con Cashea aplica exclusivamente para compras a partir de *$25.00 USD* en nuestra tienda física.\n\n`;
     } else {
       msg += `📌 *Cálculo para tu Nivel ${nivelNum} (Inicial ${(inicialPct * 100).toFixed(0)}%):*\n`;
       msg += `• *Inicial a pagar en tienda:* *$${inicialUsd.toFixed(2)} USD* (Bs. ${formatBs(inicialUsd * tasa)})\n`;
@@ -69,7 +67,7 @@ function handleCasheaResponse(settings, tasa, session, nivelExplicit = null) {
   let msg = `💛 *Financiamiento con CASHEA en Crastur (Tienda Física)* 🛞🏍️✨\n\n`;
   msg += `¡Llévate hoy tus repuestos y accesorios pagando solo una inicial y el resto en cuotas quincenales sin interés!\n\n`;
   msg += `📌 *Condiciones y Niveles de Cashea:*\n`;
-  msg += `• 🏷️ *Monto Mínimo:* Aplica para compras a partir de *$25.00 USD* (puedes combinar varios repuestos para llegar al monto).\n`;
+  msg += `• 🏷️ *Monto Mínimo:* Aplica para compras a partir de *$25.00 USD* en tienda física.\n`;
   msg += `• *Nivel 1:* Pagas el *40%* de inicial en tienda física.\n`;
   msg += `• *Nivel 2:* Pagas el *30%* de inicial en tienda física.\n`;
   msg += `• *Nivel 3 o superior:* Pagas únicamente el *20%* de inicial en tienda física.\n`;

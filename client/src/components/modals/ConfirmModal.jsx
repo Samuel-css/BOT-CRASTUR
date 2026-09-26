@@ -1,11 +1,11 @@
 import { AlertTriangle, X } from 'lucide-react';
 
-export default function ConfirmModal({ isOpen, title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', isDanger = true, onConfirm, onCancel }) {
+export default function ConfirmModal({ isOpen, title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', isDanger = true, checkboxLabel, checkboxChecked, onCheckboxChange, onConfirm, onCancel }) {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-[#0a0f1d] border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl shadow-black/80 scale-100 transition-all">
+      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl shadow-black/80 animate-scale-in transition-all">
         {/* Header */}
         <div className="p-5 border-b border-slate-800/80 flex items-center justify-between bg-[#070b14]">
           <div className="flex items-center gap-3">
@@ -26,10 +26,22 @@ export default function ConfirmModal({ isOpen, title, message, confirmText = 'Co
         </div>
 
         {/* Body */}
-        <div className="p-6 bg-[#0a0f1d]">
+        <div className="p-6 bg-[#0a0f1d] space-y-4">
           <p className="text-sm text-slate-300 leading-relaxed">
             {message}
           </p>
+
+          {checkboxLabel && (
+            <label className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 cursor-pointer hover:border-slate-700 transition">
+              <input
+                type="checkbox"
+                checked={!!checkboxChecked}
+                onChange={(e) => onCheckboxChange && onCheckboxChange(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-700 text-orange-500 focus:ring-0 focus:ring-offset-0 bg-slate-800 cursor-pointer"
+              />
+              <span className="select-none font-medium">{checkboxLabel}</span>
+            </label>
+          )}
         </div>
 
         {/* Footer */}
@@ -43,7 +55,7 @@ export default function ConfirmModal({ isOpen, title, message, confirmText = 'Co
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={() => onConfirm && onConfirm(checkboxChecked)}
             className={`px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-lg active:scale-95 ${
               isDanger
                 ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-rose-500/25'

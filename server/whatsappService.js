@@ -5,6 +5,7 @@ const fs = require('fs');
 const pino = require('pino');
 const { processIncomingMessage, checkPendingFollowUps, check22hReservationReminders } = require('./botEngine');
 const { db, recordMetric, cleanExpiredReservations } = require('./database');
+const { standardizeBotMessage } = require('./bot/utils/textUtils');
 
 const authFolder = path.join(__dirname, '..', 'data', 'auth_info_baileys');
 
@@ -15,6 +16,8 @@ let currentUser = null;
 let statusChangeCallbacks = [];
 let liveMessageCallbacks = [];
 let followUpInterval = null;
+let qrTimeoutCount = 0;
+let reconnectTimer = null;
 
 // Buffer de Debounce Anti-Spam para ráfagas de mensajes rápidos
 const messageDebounceTimers = new Map();
@@ -23,6 +26,14 @@ const messageDebounceQueues = new Map();
 // Buffer para mensajes acumulados mientras la PC estuvo apagada (anoche / cortes de luz)
 let overnightCatchupTimer = null;
 const overnightCatchupMap = new Map();
+
+// Registro de IDs de mensajes enviados por el sistema para evitar duplicados y ecos de fromMe
+const knownSentMessageIds = new Set();
+function trackSentMessageId(msgId) {
+  if (!msgId) return;
+  knownSentMessageIds.add(msgId);
+  setTimeout(() => knownSentMessageIds.delete(msgId), 60000);
+}
 
 /**
  * Desempaqueta capas anidadas de Baileys (ephemeralMessage, viewOnce, etc.)
@@ -140,6 +151,10 @@ async function startWhatsApp() {
     console.log('[WhatsApp] Ya hay un intento de conexión en curso. Esperando o forzando renovación...');
   }
 
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   connectionStatus = 'connecting';
   currentQR = null;
   notifyStatusChange();
@@ -223,13 +238,27 @@ async function startWhatsApp() {
           followUpInterval = null;
         }
 
+        // Freno inteligente al bucle de escaneo QR (error 408)
+        if (statusCode === 408) {
+          qrTimeoutCount++;
+          console.log(`[WhatsApp] Tiempo de espera de escaneo QR agotado (${qrTimeoutCount}/3).`);
+          if (qrTimeoutCount >= 3) {
+            console.log('[WhatsApp] ⏸️ Reconexión de QR pausada tras 3 intentos para ahorrar recursos. Genera un nuevo código desde la app.');
+            return;
+          }
+        } else if (statusCode !== undefined) {
+          qrTimeoutCount = 0;
+        }
+
         if (shouldReconnect) {
-          setTimeout(() => {
+          const delay = statusCode === 408 ? 8000 : 4000;
+          reconnectTimer = setTimeout(() => {
             startWhatsApp();
-          }, 4000);
+          }, delay);
         }
       } else if (connection === 'open') {
         if (connectingTimeout) clearTimeout(connectingTimeout);
+        qrTimeoutCount = 0;
         connectionStatus = 'connected';
         currentQR = null;
         const jid = sock.user?.id || '';
@@ -381,16 +410,41 @@ async function startWhatsApp() {
         const senderPhone = jid.split(':')[0].split('@')[0];
         const isSelfChat = botPhone && senderPhone && (botPhone === senderPhone);
 
-        // Si el mensaje fue enviado por la cuenta pero NO en auto-chat, es el asesor humano atendiendo a un cliente
+        // Si el mensaje fue enviado por la cuenta pero NO en auto-chat
         if (msg.key.fromMe && !isSelfChat) {
+          const msgId = msg.key?.id;
+          if (msgId && knownSentMessageIds.has(msgId)) {
+            // Ya fue registrado por sendTextMessage, sendProductMessage o sendManualMessage
+            knownSentMessageIds.delete(msgId);
+            continue;
+          }
+
           const info = extractMessageInfo(msg);
           if (info && (info.text || info.isMedia)) {
-            try {
-              db.prepare(`
-                INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-                VALUES (?, 'asesor', ?, ?)
-              `).run(jid, info.text || `[${info.mediaType || 'Multimedia'}]`, Date.now());
-            } catch (e) {}
+            const rawContent = info.text || `[${info.mediaType || 'Multimedia'}]`;
+            // Comprobar si ya existe un mensaje idéntico registrado en los últimos 4 segundos
+            const recent = db.prepare(`
+              SELECT id FROM chat_messages 
+              WHERE jid = ? AND contenido = ? AND timestamp >= ?
+              LIMIT 1
+            `).get(jid, rawContent, Date.now() - 4000);
+
+            if (!recent) {
+              try {
+                db.prepare(`
+                  INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+                  VALUES (?, 'asesor', ?, ?)
+                `).run(jid, rawContent, Date.now());
+
+                notifyLiveMessage({
+                  jid,
+                  pushName: 'Asesor Humano',
+                  remitente: 'asesor',
+                  contenido: rawContent,
+                  timestamp: Date.now()
+                });
+              } catch (e) {}
+            }
           }
           continue;
         }
@@ -448,7 +502,7 @@ async function startWhatsApp() {
 
           try {
             const mediaParam = hasMediaOnly ? { isMedia: true, type: firstMedia.mediaType } : null;
-            const response = processIncomingMessage(jid, combinedText, activePushName, mediaParam);
+            const response = await processIncomingMessage(jid, combinedText, activePushName, mediaParam);
 
             if (response) {
               console.log(`[WhatsApp Bot] 🤖 Simulando presencia de escritura para ${jid}...`);
@@ -465,16 +519,20 @@ async function startWhatsApp() {
 
               console.log(`[WhatsApp Bot] 🤖 Despachando respuesta a ${jid}...`);
 
-              if (typeof response === 'object' && response !== null && response.text) {
+              if (typeof response === 'object' && response !== null && response.document) {
+                await sendDocumentMessage(jid, response.document, response.fileName, response.caption, response.mimetype);
+              } else if (typeof response === 'object' && response !== null && response.text) {
                 await sendProductMessage(jid, response.text, response.image);
               } else if (typeof response === 'string') {
                 await sendTextMessage(jid, response);
               }
 
-              const responseText = typeof response === 'object' && response !== null ? response.text : String(response);
+              const responseText = typeof response === 'object' && response !== null 
+                ? (response.text || response.caption || '') 
+                : (response ? String(response) : '');
 
               // 1. Si es respuesta de ubicación física, enviar además el Pin de mapa interactivo de WhatsApp
-              if (responseText.includes('Liberalba') && responseText.includes('Google Maps')) {
+              if (responseText && responseText.includes('Liberalba') && responseText.includes('Google Maps')) {
                 try {
                   if (sock && connectionStatus === 'connected') {
                     await sock.sendMessage(jid, {
@@ -553,17 +611,19 @@ async function sendProductMessage(jid, text, imageUrl) {
     throw new Error('WhatsApp no está conectado');
   }
 
+  const cleanText = standardizeBotMessage(text);
   let sent = false;
+  let sentMsg = null;
 
   if (imageUrl && typeof imageUrl === 'string') {
     try {
       if (imageUrl.startsWith('data:image/')) {
         const base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, '');
         const imageBuffer = Buffer.from(base64Data, 'base64');
-        await sock.sendMessage(jid, { image: imageBuffer, caption: text });
+        sentMsg = await sock.sendMessage(jid, { image: imageBuffer, caption: cleanText });
         sent = true;
       } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-        await sock.sendMessage(jid, { image: { url: imageUrl }, caption: text });
+        sentMsg = await sock.sendMessage(jid, { image: { url: imageUrl }, caption: cleanText });
         sent = true;
       }
     } catch (imgErr) {
@@ -572,16 +632,100 @@ async function sendProductMessage(jid, text, imageUrl) {
   }
 
   if (!sent) {
-    await sock.sendMessage(jid, { text });
+    sentMsg = await sock.sendMessage(jid, { text: cleanText });
   }
 
+  if (sentMsg?.key?.id) {
+    trackSentMessageId(sentMsg.key.id);
+  }
+
+  // Guardar en base de datos como mensaje del BOT
+  const now = Date.now();
+  let insertId = null;
+  try {
+    const res = db.prepare(`
+      INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+      VALUES (?, 'bot', ?, ?)
+    `).run(jid, cleanText, now);
+    insertId = res?.lastInsertRowid;
+
+    db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
+  } catch (e) {}
+
   notifyLiveMessage({
+    id: insertId,
     jid,
     pushName: 'Crastur Bot',
     remitente: 'bot',
-    contenido: text,
-    timestamp: Date.now()
+    contenido: cleanText,
+    timestamp: now
   });
+}
+
+/**
+ * Envía documento (PDF) por WhatsApp con nombre de archivo y pie de foto opcional.
+ */
+async function sendDocumentMessage(jid, documentPathOrBuffer, fileName = 'Catalogo_Crastur.pdf', caption = '', mimetype = 'application/pdf') {
+  if (!sock || connectionStatus !== 'connected') {
+    throw new Error('WhatsApp no está conectado');
+  }
+
+  const cleanCaption = caption ? standardizeBotMessage(caption) : '';
+  let docBuffer;
+
+  if (Buffer.isBuffer(documentPathOrBuffer)) {
+    docBuffer = documentPathOrBuffer;
+  } else if (typeof documentPathOrBuffer === 'string') {
+    const fs = require('fs');
+    if (fs.existsSync(documentPathOrBuffer)) {
+      docBuffer = fs.readFileSync(documentPathOrBuffer);
+    } else {
+      throw new Error(`Archivo de documento no encontrado: ${documentPathOrBuffer}`);
+    }
+  } else {
+    throw new Error('Formato de documento inválido');
+  }
+
+  const messagePayload = {
+    document: docBuffer,
+    mimetype: mimetype || 'application/pdf',
+    fileName: fileName || 'Catalogo_Crastur.pdf'
+  };
+
+  if (cleanCaption) {
+    messagePayload.caption = cleanCaption;
+  }
+
+  const sentMsg = await sock.sendMessage(jid, messagePayload);
+
+  if (sentMsg?.key?.id) {
+    trackSentMessageId(sentMsg.key.id);
+  }
+
+  const now = Date.now();
+  let insertId = null;
+  const loggedText = cleanCaption ? `[Documento PDF: ${fileName}] ${cleanCaption}` : `[Documento PDF: ${fileName}]`;
+
+  try {
+    const res = db.prepare(`
+      INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+      VALUES (?, 'bot', ?, ?)
+    `).run(jid, loggedText, now);
+    insertId = res?.lastInsertRowid;
+
+    db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
+  } catch (e) {}
+
+  notifyLiveMessage({
+    id: insertId,
+    jid,
+    pushName: 'Crastur Bot',
+    remitente: 'bot',
+    contenido: loggedText,
+    timestamp: now
+  });
+
+  return sentMsg;
 }
 
 async function sendTextMessage(jid, text) {
@@ -589,14 +733,33 @@ async function sendTextMessage(jid, text) {
     throw new Error('WhatsApp no está conectado');
   }
 
-  await sock.sendMessage(jid, { text });
+  const cleanText = standardizeBotMessage(text);
+  const sentMsg = await sock.sendMessage(jid, { text: cleanText });
+
+  if (sentMsg?.key?.id) {
+    trackSentMessageId(sentMsg.key.id);
+  }
+
+  // Guardar en base de datos como mensaje del BOT
+  const now = Date.now();
+  let insertId = null;
+  try {
+    const res = db.prepare(`
+      INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+      VALUES (?, 'bot', ?, ?)
+    `).run(jid, cleanText, now);
+    insertId = res?.lastInsertRowid;
+
+    db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
+  } catch (e) {}
 
   notifyLiveMessage({
+    id: insertId,
     jid,
     pushName: 'Crastur Bot',
     remitente: 'bot',
-    contenido: text,
-    timestamp: Date.now()
+    contenido: cleanText,
+    timestamp: now
   });
 }
 
@@ -605,23 +768,35 @@ async function sendManualMessage(jid, text) {
     throw new Error('WhatsApp no está conectado');
   }
 
-  await sock.sendMessage(jid, { text });
+  const sentMsg = await sock.sendMessage(jid, { text });
+
+  if (sentMsg?.key?.id) {
+    trackSentMessageId(sentMsg.key.id);
+  }
 
   // Guardar en base de datos como mensaje de asesor humano
-  db.prepare(`
-    INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-    VALUES (?, 'asesor', ?, ?)
-  `).run(jid, text, Date.now());
+  const now = Date.now();
+  let insertId = null;
+  try {
+    const res = db.prepare(`
+      INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+      VALUES (?, 'asesor', ?, ?)
+    `).run(jid, text, now);
+    insertId = res?.lastInsertRowid;
+
+    db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
+  } catch (e) {}
 
   notifyLiveMessage({
+    id: insertId,
     jid,
     pushName: 'Asesor Humano',
     remitente: 'asesor',
     contenido: text,
-    timestamp: Date.now()
+    timestamp: now
   });
 
-  return { success: true };
+  return { success: true, id: insertId, timestamp: now };
 }
 
 async function logoutWhatsApp() {
@@ -653,6 +828,11 @@ async function logoutWhatsApp() {
  */
 async function resetWhatsApp() {
   console.log('[WhatsApp] 🔄 Ejecutando reseteo forzoso de WhatsApp...');
+  qrTimeoutCount = 0;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (connectingTimeout) clearTimeout(connectingTimeout);
 
   try {
@@ -697,6 +877,7 @@ module.exports = {
   getStatus,
   sendTextMessage,
   sendProductMessage,
+  sendDocumentMessage,
   sendManualMessage,
   subscribeStatusChange,
   subscribeLiveMessages

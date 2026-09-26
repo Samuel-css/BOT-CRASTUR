@@ -17,8 +17,8 @@ auth_info_baileys/
 data/*.db
 data/*.db-journal
 data/backups/*.db
-data/*.log
-*.db
+data/catalogs/*.pdf
+!data/catalogs/.gitkeep
 
 # Mantener carpetas de datos
 !data/.gitkeep
