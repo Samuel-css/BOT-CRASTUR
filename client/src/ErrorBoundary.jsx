@@ -36,11 +36,11 @@ export default class ErrorBoundary extends React.Component {
             <div className="space-y-2">
               <h2 className="text-xl font-bold text-white">Interrupción Visual Protegida</h2>
               <p className="text-xs text-slate-400 leading-relaxed">
-                El sistema detectó una excepción visual y protegió la sesión. La base de datos, tus productos y el bot de WhatsApp permanecen intactos.
+                El sistema encontró un problema visual y se protegió automáticamente. Tu información, productos y el bot de WhatsApp están intactos.
               </p>
               {this.state.error?.message && (
                 <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-left">
-                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Detalle técnico:</p>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Información de ayuda:</p>
                   <p className="text-xs font-mono text-amber-300 break-all">{this.state.error.message}</p>
                 </div>
               )}

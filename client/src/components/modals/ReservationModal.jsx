@@ -9,10 +9,10 @@ export default function ReservationModal({ isOpen, onClose, reservation, bcvRate
   const waUrl = `https://wa.me/${cleanPhone}`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl shadow-black/80 animate-scale-in">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden shadow-2xl shadow-black/80 animate-scale-in">
         {/* Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#070b14]">
+        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-[#070b14] shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/25 flex items-center justify-center">
               <Clock size={20} />
@@ -31,7 +31,7 @@ export default function ReservationModal({ isOpen, onClose, reservation, bcvRate
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-4 flex-1 overflow-y-auto">
           {/* Banner de Tiempo Restante */}
           <div className={`p-4 rounded-2xl border flex items-center justify-between ${
             time.statusColor === 'emerald'
@@ -108,11 +108,11 @@ export default function ReservationModal({ isOpen, onClose, reservation, bcvRate
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-[#070b14] border-t border-slate-800 flex items-center justify-between gap-3">
+        <div className="p-3.5 sm:p-4 bg-[#070b14] border-t border-slate-800 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
           <button
             type="button"
             onClick={() => onCancel(reservation.id)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-rose-400 hover:bg-rose-950/40 text-xs font-semibold transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-950/40 text-xs font-semibold transition"
           >
             <Trash2 size={14} /> Liberar Apartado
           </button>
@@ -121,14 +121,14 @@ export default function ReservationModal({ isOpen, onClose, reservation, bcvRate
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition"
+              className="px-3.5 py-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition"
             >
               Cerrar
             </button>
             <button
               type="button"
               onClick={() => onMarkDelivered(reservation.id)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition shadow-lg shadow-emerald-500/20 active:scale-95"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition shadow-lg shadow-emerald-500/20 active:scale-95"
             >
               <CheckCircle size={14} /> Marcar como Retirado
             </button>

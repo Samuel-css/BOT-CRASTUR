@@ -21,7 +21,6 @@ import {
   AlertTriangle,
   QrCode,
   Layers,
-  ExternalLink,
   ChevronRight,
   Sparkles,
   ArrowLeft,
@@ -359,8 +358,9 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     if (onRequestConfirm) {
       onRequestConfirm({
         title: '¿Vaciar todo el Live Inbox?',
-        message: 'Esta acción borrará el registro de mensajes de todos los chats para dejar la bandeja completamente limpia. Las reservas vigentes no se verán afectadas.',
+        message: 'Esta acción borrará el historial de mensajes de todas las conversaciones para dejar la bandeja completamente limpia. Los repuestos y apartados no serán afectados.',
         confirmText: 'Sí, Vaciar Todo el Inbox',
+        checkboxLabel: 'Confirmo que deseo vaciar todos los mensajes de la bandeja',
         isDanger: true,
         onConfirm: async () => {
           try {
@@ -524,7 +524,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       {/* Main Inbox Container */}
       <div className="flex-1 min-h-0 bg-[#0a0f1d] border border-slate-800/80 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row">
         {/* COLUMNA IZQUIERDA: Lista de Conversaciones (Oculta en móvil si hay chat seleccionado) */}
-        <div className={`w-full md:w-80 lg:w-96 border-b md:border-b-0 md:border-r border-slate-800/80 flex flex-col shrink-0 bg-[#070b14] ${
+        <div className={`w-full md:w-72 lg:w-80 xl:w-96 border-b md:border-b-0 md:border-r border-slate-800/80 flex flex-col shrink-0 bg-[#070b14] ${
           selectedJid ? 'hidden md:flex' : 'flex'
         }`}>
           {/* Header de la lista */}
@@ -729,12 +729,14 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                     {activeSession?.bot_pausado ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                        Modo Manual (Bot Pausado)
+                        <span className="hidden xl:inline">Modo Manual (Bot Pausado)</span>
+                        <span className="xl:hidden">Manual</span>
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Bot Automático Activo
+                        <span className="hidden xl:inline">Bot Automático Activo</span>
+                        <span className="xl:hidden">Bot Activo</span>
                       </span>
                     )}
                   </div>
@@ -806,7 +808,8 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                   ) : (
                     <>
                       <PauseCircle size={15} />
-                      <span>Pausar Bot (Atender Yo)</span>
+                      <span className="hidden xl:inline">Pausar Bot (Atender Yo)</span>
+                      <span className="xl:hidden">Pausar Bot</span>
                     </>
                   )}
                 </button>
@@ -870,7 +873,6 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
               ) : (
                 messages.map((msg, index) => {
                   const isFromClient = msg.remitente === 'cliente';
-                  const isFromBot = msg.remitente === 'bot';
                   const isFromAdvisor = msg.remitente === 'asesor';
 
                   return (

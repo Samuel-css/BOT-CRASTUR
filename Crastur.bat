@@ -15,6 +15,7 @@ if %errorlevel% equ 0 goto start_launcher
 
 if exist "C:\Program Files\nodejs\node.exe" goto add_path_64
 if exist "C:\Program Files (x86)\nodejs\node.exe" goto add_path_32
+if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" goto add_path_local
 goto error_no_node
 
 :add_path_64
@@ -23,6 +24,10 @@ goto check_again
 
 :add_path_32
 set "PATH=%PATH%;C:\Program Files (x86)\nodejs"
+goto check_again
+
+:add_path_local
+set "PATH=%PATH%;%LOCALAPPDATA%\Programs\nodejs"
 goto check_again
 
 :check_again

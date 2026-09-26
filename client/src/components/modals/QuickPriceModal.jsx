@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, Copy, Check, Package, Sparkles } from 'lucide-react';
 import { formatBs, formatRate } from '../../utils/formatters';
+import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
 
 export default function QuickPriceModal({ isOpen, onClose, products = [], bcvData }) {
   const [query, setQuery] = useState('');
@@ -47,13 +48,13 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-start justify-center p-3 sm:p-6 overflow-y-auto pt-10 sm:pt-16">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 animate-fade-in">
       <div 
-        className="w-full max-w-2xl bg-[#0b101b] border border-orange-500/30 rounded-2xl shadow-2xl shadow-orange-500/10 overflow-hidden animate-scale-in"
+        className="w-full max-w-2xl max-h-[92vh] flex flex-col bg-[#0b101b] border border-orange-500/30 rounded-2xl shadow-2xl shadow-orange-500/10 overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ENCABEZADO DEL BUSCADOR */}
-        <div className="p-4 bg-slate-900/90 border-b border-slate-800 flex items-center gap-3">
+        <div className="p-3.5 sm:p-4 bg-slate-900/90 border-b border-slate-800 flex items-center gap-3 shrink-0">
           <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400 shrink-0">
             <Search size={18} />
           </div>
@@ -64,7 +65,7 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Escribe bujía, sbr, pastillas, aceite, parches..."
-              className="w-full bg-transparent text-white text-base sm:text-lg font-bold placeholder-slate-500 focus:outline-none"
+              className="w-full bg-transparent text-white text-sm sm:text-base font-bold placeholder-slate-500 focus:outline-none"
             />
           </div>
           {query && (
@@ -77,7 +78,7 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
           )}
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition text-xs font-mono"
+            className="p-1.5 sm:p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition text-xs font-mono"
             title="Cerrar (Esc)"
           >
             ESC
@@ -85,18 +86,18 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
         </div>
 
         {/* BARRA INFORMATIVA DE TASA EN VIVO */}
-        <div className="px-4 py-2 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between text-xs">
-          <span className="text-slate-400 flex items-center gap-1.5">
-            <Sparkles size={12} className="text-orange-400" />
-            <strong className="text-slate-300">Modo Mostrador Rápido</strong> - Consulta en 1 segundo
+        <div className="px-3.5 sm:px-4 py-2 bg-slate-950/60 border-b border-slate-800/80 flex items-center justify-between text-xs shrink-0">
+          <span className="text-slate-400 flex items-center gap-1.5 truncate">
+            <Sparkles size={12} className="text-orange-400 shrink-0" />
+            <strong className="text-slate-300">Modo Mostrador Rápido</strong> <span className="hidden sm:inline">- Consulta en 1 seg</span>
           </span>
-          <span className="font-mono font-bold text-orange-300">
-            Tasa BCV: Bs. {formatRate(tasa)}
+          <span className="font-mono font-bold text-orange-300 shrink-0">
+            Tasa: Bs. {formatRate(tasa)}
           </span>
         </div>
 
         {/* LISTADO DE RESULTADOS EN GRANDE */}
-        <div className="max-h-[60vh] overflow-y-auto p-3 space-y-2">
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {filtered.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-sm">
               <Package size={32} className="mx-auto text-slate-600 mb-2 opacity-60" />
@@ -177,9 +178,19 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
                       ) : (
                         <>
                           <Copy size={14} />
-                          <span className="hidden sm:inline">Copiar</span>
+                          <span className="hidden sm:inline">WhatsApp</span>
                         </>
                       )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => copyInstagramCaption(p, tasa)}
+                      title="Copiar texto listo para Instagram"
+                      className="h-9 px-2.5 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-600 text-purple-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+                    >
+                      <InstagramIcon size={14} />
+                      <span className="hidden sm:inline">Instagram</span>
                     </button>
                   </div>
                 </div>

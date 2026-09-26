@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { formatBs } from '../../utils/formatters';
 import { PRODUCT_CATEGORIES } from '../../constants/categories';
 import BulkPriceModal from '../modals/BulkPriceModal';
+import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
 
 export default function CatalogView({
   products,
@@ -299,15 +300,22 @@ export default function CatalogView({
 
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => copyInstagramCaption(p, bcvRate)}
+                      className="p-2 hover:bg-purple-950/40 rounded-xl text-purple-400 hover:text-purple-300 border border-transparent hover:border-purple-500/30 transition cursor-pointer"
+                      title="Copiar texto listo para Instagram"
+                    >
+                      <InstagramIcon size={14} />
+                    </button>
+                    <button
                       onClick={() => onEditProduct(p)}
-                      className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition"
+                      className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition cursor-pointer"
                       title="Editar repuesto"
                     >
                       <Edit2 size={14} />
                     </button>
                     <button
                       onClick={() => onDeleteProduct(p.id)}
-                      className="p-2 hover:bg-rose-950/40 rounded-xl text-rose-400 hover:text-rose-300 transition"
+                      className="p-2 hover:bg-rose-950/40 rounded-xl text-rose-400 hover:text-rose-300 transition cursor-pointer"
                       title="Eliminar del catálogo"
                     >
                       <Trash2 size={14} />
@@ -416,8 +424,15 @@ export default function CatalogView({
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
+                            onClick={() => copyInstagramCaption(p, bcvRate)}
+                            className="p-1.5 hover:bg-purple-950/40 rounded-lg text-purple-400 hover:text-purple-300 transition cursor-pointer"
+                            title="Copiar texto para Instagram"
+                          >
+                            <InstagramIcon size={13} />
+                          </button>
+                          <button
                             onClick={() => onCopyQuote(p)}
-                            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition"
+                            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
                             title="Copiar cotización"
                           >
                             <Copy size={13} />

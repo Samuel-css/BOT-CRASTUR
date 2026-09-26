@@ -42,7 +42,37 @@ async function fetchBCVRate() {
       source: 'Oficial Banco Central de Venezuela'
     };
   } catch (error) {
-    console.error('[BCV] Error consultando sitio oficial del BCV:', error.message);
+    console.error('[BCV] Falla al consultar portal bcv.org.ve:', error.message);
+    console.log('[BCV] Intentando consultar espejo de contingencia oficial (DolarApi)...');
+
+    // Nivel 2: Espejo oficial DolarApi
+    try {
+      const mirrorResp = await axios.get('https://ve.dolarapi.com/v1/dolares/oficial', {
+        timeout: 8000,
+        headers: { 'User-Agent': 'CrasturBot/1.0' }
+      });
+      const promedio = parseFloat(mirrorResp.data?.promedio);
+      if (promedio && !isNaN(promedio) && promedio > 0) {
+        const fechaRaw = mirrorResp.data?.fechaActualizacion
+          ? new Date(mirrorResp.data.fechaActualizacion).toLocaleDateString('es-VE')
+          : new Date().toLocaleDateString('es-VE');
+
+        updateSetting('tasa_bcv', promedio.toFixed(4));
+        updateSetting('fecha_tasa', fechaRaw);
+
+        console.log(`[BCV] Tasa oficial sincronizada exitosamente vía espejo: ${promedio} Bs/USD (${fechaRaw})`);
+        return {
+          success: true,
+          tasa: promedio,
+          fecha: fechaRaw,
+          source: 'Espejo Oficial BCV (DolarApi)'
+        };
+      }
+    } catch (mirrorErr) {
+      console.warn('[BCV] Espejo de contingencia no disponible:', mirrorErr.message);
+    }
+
+    // Nivel 3: Caché local guardado en la base de datos
     const currentSettings = getSettings();
     return {
       success: false,

@@ -110,8 +110,9 @@ function handleRateQueryResponse(tasa, settings) {
 function handleImmediatePickupResponse(settings) {
   const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
   const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+  const horario = settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
   let msg = `¡Claro que sí! Estamos activos y atendiendo con gusto en nuestra tienda física 🛞🏍️🏢✨\n\n`;
-  msg += `🕒 *Horario de Atención:* Lunes a Sábado de *8:00 AM a 8:00 PM* (horario corrido).\n`;
+  msg += `🕒 *Horario de Atención:* ${horario}\n`;
   msg += `🏠 *Dirección:* ${direccion}\n`;
   msg += `🗺️ *Google Maps:* ${mapsUrl}\n\n`;
   msg += `💡 *Consejo:* Si ya sabes qué repuesto necesitas, escribe *APARTAR* antes de salir para dejártelo reservado en caja a tu nombre por 24 horas continuas sin costo adicional. ¡Así te aseguras de tenerlo apartado al llegar! 👍\n\n`;
@@ -273,10 +274,19 @@ function handleInvoicingQueryResponse() {
 function handleStoreHoursResponse(settings) {
   const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
   const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+  const rawHorario = settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
+
   let msg = `🕒 *Horario de Atención - Crastur* 🛞🏍️🏢\n\n`;
   msg += `Te atendemos en nuestra tienda física en el siguiente horario:\n\n`;
-  msg += `📅 *Lunes a Sábado:* De *8:00 AM a 8:00 PM* (horario corrido).\n`;
-  msg += `📅 *Domingos:* Cerrados (nuestro bot continúa activo 24/7 para consultas y apartados).\n\n`;
+  if (rawHorario.includes('|')) {
+    const parts = rawHorario.split('|').map(s => s.trim());
+    parts.forEach(p => {
+      msg += `📅 *${p}*\n`;
+    });
+  } else {
+    msg += `📅 *${rawHorario}*\n`;
+  }
+  msg += `\n🤖 Nuestro asistente virtual responde consultas y cotizaciones 24/7.\n\n`;
   msg += `🏠 *Dirección:* ${direccion}\n`;
   msg += `🗺️ *Google Maps:* ${mapsUrl}\n\n`;
   msg += `¡Te esperamos con la mejor atención y productos garantizados! 🛞🏍️✨`;

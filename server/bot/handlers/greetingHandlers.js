@@ -6,7 +6,19 @@ const { formatRate } = require('../utils/formatters');
 function handleGreetingResponse(pushName, settings, tasa) {
   const tasaFormatted = formatRate(tasa);
   let msg = `¡Hola, *${pushName}*! 👋\n\n`;
-  msg += `${settings.mensaje_bienvenida || 'Te damos la bienvenida a *Crastur* 🛞🏍️📦\nTu tienda de insumos para caucheras, repuestos de moto y otros productos en Caracas con Cashea.'}\n\n`;
+
+  if (settings && String(settings.fuera_horario_activo) === '1') {
+    const customNotice = settings.mensaje_fuera_horario;
+    if (customNotice) {
+      msg += `⏰ ${customNotice}\n\n`;
+    } else {
+      msg += `⏰ *Nota de Horario:* Nuestra tienda física se encuentra *cerrada* en este momento (Horario: ${settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM'}).\n\n`;
+    }
+    msg += `💬 *¡Nuestro Asistente Virtual está 100% activo!* Puedes consultar precios, marcas y disponibilidad en cualquier momento:\n\n`;
+  } else {
+    msg += `${settings.mensaje_bienvenida || 'Te damos la bienvenida a *Crastur* 🛞🏍️📦\nTu tienda de insumos para caucheras, repuestos de moto y otros productos en Caracas con Cashea.'}\n\n`;
+  }
+
   msg += `🇻🇪 *Tasa oficial BCV hoy:* *Bs. ${tasaFormatted} / USD*\n\n`;
   msg += `¿Qué estás buscando hoy? Puedes responder con el *número* o escribir directamente el producto:\n\n`;
   msg += `1️⃣ *Insumos Cauchera* 🛞\n_(Parches, pegas, válvulas, mechas para pinchazos, plomos de balanceo, tripas)_\n\n`;
@@ -30,7 +42,8 @@ function handleCourtesyResponse(pushName, settings) {
   msg += `Si necesitas consultar algún otro producto de moto, cauchera o apartar una pieza, estamos para servirte.\n\n`;
   msg += `🏢 *Tienda física:* ${direccion}\n`;
   msg += `🗺️ *Google Maps:* ${mapsUrl}\n`;
-  msg += `🕒 *Horario:* Lunes a Sábado de 8:00 AM a 8:00 PM (horario corrido).\n\n`;
+  const horario = settings?.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
+  msg += `🕒 *Horario:* ${horario}.\n\n`;
   msg += `¡Que tengas un excelente día! 🛞🏍️✨`;
   return msg;
 }

@@ -1,18 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Search, DollarSign, Package, Upload, Copy, Check } from 'lucide-react';
+import { X, Search, DollarSign, Package, Upload, Copy, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AUTOMOTIVE_CATEGORIES } from '../../constants/categories';
 import { formatBs, formatRate } from '../../utils/formatters';
-
-function InstagramIcon({ size = 14, className = '' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
-      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/>
-    </svg>
-  );
-}
+import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
+import {
+  handleNumericKeyDown,
+  sanitizeCurrency,
+  sanitizeInteger,
+  sanitizeText
+} from '../../utils/inputSanitizers';
 
 export default function ProductModal({ isOpen, onClose, onSave, editingProduct, bcvRate }) {
   const [form, setForm] = useState({
@@ -28,6 +25,7 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
   const [categorySearch, setCategorySearch] = useState('');
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -55,6 +53,7 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
     setCategorySearch('');
     setIsCategoryOpen(false);
     setFormError('');
+    setIsSubmitting(false);
   }, [editingProduct, isOpen]);
 
   if (!isOpen) return null;
@@ -67,17 +66,45 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
   const precioBs = precioUsdNum * bcvRate;
   const casheaNivel1 = precioUsdNum * 0.40;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    const marcaTrim = form.marca.trim();
+    const modeloTrim = form.modelo.trim();
     const precio = parseFloat(form.precio_usd);
-    if (!form.marca.trim() || !form.modelo.trim() || !form.precio_usd || isNaN(precio) || precio <= 0) {
-      setFormError('Completa la marca, modelo y un precio en USD mayor a $0.00 para continuar.');
+
+    if (!marcaTrim) {
+      setFormError('La marca o fabricante del repuesto es obligatoria.');
       return;
     }
-    if (form.stock !== undefined && (isNaN(parseInt(form.stock, 10)) || parseInt(form.stock, 10) < 0)) {
+
+    if (!modeloTrim) {
+      setFormError('El modelo o nombre de la pieza es obligatorio.');
+      return;
+    }
+
+    if (!form.precio_usd || isNaN(precio) || precio <= 0) {
+      setFormError('Ingresa un precio en USD válido mayor a $0.00 (ejemplo: 5.50 o 25).');
+      return;
+    }
+
+    if (precio > 50000) {
+      setFormError('El precio ingresado es inusualmente alto (máximo $50,000 USD). Verifica el monto.');
+      return;
+    }
+
+    const stockNum = parseInt(form.stock, 10);
+    if (isNaN(stockNum) || stockNum < 0) {
       setFormError('El stock debe ser un número entero mayor o igual a 0.');
       return;
     }
+
+    if (stockNum > 99999) {
+      setFormError('El stock máximo permitido es 99,999 unidades.');
+      return;
+    }
+
     let cat = (form.categoria || 'Otros Productos').trim();
     if (cat === 'Repuestos para Moto' || cat.startsWith('Repuestos para Moto')) {
       cat = cat.replace('Repuestos para Moto', 'Repuestos Moto');
@@ -85,8 +112,27 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
     if (cat === 'Insumos para Caucheras' || cat.startsWith('Insumos para Caucheras')) {
       cat = cat.replace('Insumos para Caucheras', 'Insumos Cauchera');
     }
+
     setFormError('');
-    onSave({ ...form, categoria: cat });
+    setIsSubmitting(true);
+
+    try {
+      if (onSave) {
+        await onSave({
+          ...form,
+          marca: marcaTrim,
+          modelo: modeloTrim,
+          precio_usd: String(precio.toFixed(2)),
+          stock: stockNum,
+          descripcion: (form.descripcion || '').trim(),
+          categoria: cat
+        });
+      }
+    } catch (err) {
+      setFormError('Error al guardar el repuesto. Intenta nuevamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFileUpload = (e) => {
@@ -110,69 +156,51 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
       toast.error('Completa marca, modelo y precio para generar el texto de Instagram.');
       return;
     }
-    const precio = parseFloat(form.precio_usd) || 0;
-    const bs = precio * bcvRate;
-    const isCombo = form.categoria.toLowerCase().includes('combo') || form.categoria.toLowerCase().includes('kit');
-
-    let caption = `🔥 ${isCombo ? 'COMBO CRASTUR' : 'DISPONIBLE EN CRASTUR'} 🛞🏍️\n`;
-    caption += `📌 *${form.marca.trim().toUpperCase()} - ${form.modelo.trim().toUpperCase()}*\n\n`;
-    if (form.descripcion.trim()) {
-      caption += `📝 *Incluye:*\n${form.descripcion.trim()}\n\n`;
-    }
-    caption += `💵 *Precio Promoción en Divisas:* *$${precio.toFixed(2)} USD* (Efectivo / Binance Pay 🪙)\n`;
-    caption += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(bs)}* (Tasa oficial BCV)\n`;
-    if (precio >= 25) {
-      caption += `💛 *Disponible con Cashea en Tienda Física*\n`;
-    }
-    caption += `\n📍 *Tienda física:* San Agustín Norte, Caracas (Lun-Sáb 8am-8pm)\n`;
-    caption += `🛵 *Delivery disponible* a toda Caracas\n\n`;
-    caption += `👉 ¡Escríbenos al WhatsApp en el link de la bio para apartarlo por 24 horas sin costo!\n\n`;
-    caption += `#cauchera #insumosdecauchera #lubricantes #repuestosmoto #caracas #venezuela #ventasalmayor #crastur`;
-
-    navigator.clipboard.writeText(caption);
-    toast.success('¡Texto para Instagram copiado al portapapeles! Listo para pegar 📸');
+    copyInstagramCaption(form, bcvRate);
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl shadow-black/80 my-8 animate-scale-in">
-        {/* Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#070b14]">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-2xl sm:rounded-3xl w-full max-w-xl flex flex-col max-h-[90vh] overflow-hidden shadow-2xl shadow-black/80 my-auto animate-scale-in">
+        {/* Header Fijo */}
+        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-[#070b14] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/25 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-orange-500/15 text-orange-400 border border-orange-500/25 flex items-center justify-center shrink-0">
               <Package size={20} />
             </div>
-            <div>
-              <h3 className="font-bold text-base text-white">
+            <div className="min-w-0">
+              <h3 className="font-bold text-sm sm:text-base text-white truncate">
                 {editingProduct ? 'Editar Producto' : 'Registrar Nuevo Producto'}
               </h3>
-              <p className="text-xs text-slate-400">Ingresa los datos para cotizaciones en catálogo y WhatsApp</p>
+              <p className="text-xs text-slate-400 truncate">Ingresa los datos para cotizaciones en catálogo y WhatsApp</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition"
+            className="p-1.5 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition shrink-0 cursor-pointer"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {formError && (
-            <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-fade-in">
-              <span>⚠️</span> {formError}
-            </div>
-          )}
+        {/* Form Body con Scroll Interno */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            {formError && (
+              <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                <span>⚠️</span> {formError}
+              </div>
+            )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-slate-300">Marca / Fabricante: *</label>
               <input
                 type="text"
                 required
+                maxLength={40}
                 placeholder="Ej: Tip Top, Bera, Choho, Motul, NGK, SQ"
                 value={form.marca}
-                onChange={(e) => setForm({ ...form, marca: e.target.value })}
+                onChange={(e) => setForm({ ...form, marca: sanitizeText(e.target.value, 40) })}
                 className="w-full mt-1.5 bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-orange-500 focus:outline-none transition"
               />
             </div>
@@ -181,9 +209,10 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
               <input
                 type="text"
                 required
+                maxLength={80}
                 placeholder="Ej: Parches No. 2, Kit Arrastre SBR, Aceite 20W50"
                 value={form.modelo}
-                onChange={(e) => setForm({ ...form, modelo: e.target.value })}
+                onChange={(e) => setForm({ ...form, modelo: sanitizeText(e.target.value, 80) })}
                 className="w-full mt-1.5 bg-[#070b14] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-orange-500 focus:outline-none transition"
               />
             </div>
@@ -262,12 +291,13 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
               <div className="relative mt-1.5">
                 <DollarSign size={14} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   required
                   placeholder="0.00"
                   value={form.precio_usd}
-                  onChange={(e) => setForm({ ...form, precio_usd: e.target.value })}
+                  onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                  onChange={(e) => setForm({ ...form, precio_usd: sanitizeCurrency(e.target.value) })}
                   className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-orange-500 focus:outline-none font-mono transition"
                 />
               </div>
@@ -278,10 +308,11 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
               <div className="relative mt-1.5">
                 <Package size={14} className="absolute left-3.5 top-3 text-slate-400" />
                 <input
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
                   value={form.stock}
-                  onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value, 10) || 0 })}
+                  onKeyDown={(e) => handleNumericKeyDown(e, false)}
+                  onChange={(e) => setForm({ ...form, stock: sanitizeInteger(e.target.value, 0, 99999) })}
                   className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-white focus:border-orange-500 focus:outline-none font-mono transition"
                 />
               </div>
@@ -320,9 +351,10 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
             <label className="text-xs font-semibold text-slate-300">Descripción / Detalles Técnicos:</label>
             <textarea
               rows={2}
+              maxLength={250}
               placeholder="Ej: Incluye láminas silenciadoras y sensor de desgaste. Compatible con motor 1.8L."
               value={form.descripcion}
-              onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
+              onChange={(e) => setForm({ ...form, descripcion: e.target.value.slice(0, 250) })}
               className="w-full mt-1.5 bg-[#070b14] border border-slate-800 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:border-orange-500 focus:outline-none transition"
             />
           </div>
@@ -368,32 +400,37 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
               </div>
             )}
           </div>
+        </div>
 
-          {/* Footer */}
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+        {/* Footer Fijo Siempre Visible en Pantalla */}
+          <div className="p-3.5 sm:p-4 border-t border-slate-800 bg-[#070b14] flex items-center justify-between gap-2 sm:gap-3 shrink-0">
             <button
               type="button"
               onClick={handleCopyInstagramCaption}
               title="Copiar texto formateado listo para publicar en Instagram"
-              className="px-3.5 py-2.5 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+              className="px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0"
             >
-              <InstagramIcon size={14} className="text-purple-400" />
-              <span>Copy Instagram</span>
+              <InstagramIcon size={14} className="text-purple-400 shrink-0" />
+              <span className="hidden sm:inline">Copy Instagram</span>
+              <span className="sm:hidden">Instagram</span>
             </button>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition"
+                disabled={isSubmitting}
+                className="px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition cursor-pointer disabled:opacity-40"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-4 py-2 sm:px-6 sm:py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95 disabled:opacity-50 cursor-pointer whitespace-nowrap"
               >
-                {editingProduct ? 'Guardar Cambios' : 'Registrar Repuesto'}
+                {isSubmitting && <Loader2 size={14} className="animate-spin shrink-0" />}
+                <span>{isSubmitting ? 'Guardando...' : (editingProduct ? 'Guardar Cambios' : 'Registrar')}</span>
               </button>
             </div>
           </div>

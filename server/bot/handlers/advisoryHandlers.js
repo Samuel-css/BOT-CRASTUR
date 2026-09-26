@@ -21,8 +21,13 @@ function handleSellersResponse(pushName) {
   msg += `Aquí tienes la lista de nuestros asesores de ventas en *Crastur* con sus números directos disponibles para llamar o escribir con un toque:\n\n`;
 
   sellers.forEach(s => {
-    const cleanPhone = s.telefono.replace(/[^\d+]/g, '');
-    const waLink = `https://wa.me/${cleanPhone.replace('+', '')}`;
+    let digits = String(s.telefono || '').replace(/\D/g, '');
+    if (digits.startsWith('0')) {
+      digits = '58' + digits.substring(1);
+    } else if (digits.length === 10 && /^(412|414|424|416|426|422)/.test(digits)) {
+      digits = '58' + digits;
+    }
+    const waLink = `https://wa.me/${digits}`;
 
     msg += `👤 *${s.nombre}* (${s.departamento || 'Ventas'})\n`;
     msg += `📞 Número directo: ${s.telefono}\n`;

@@ -1,33 +1,54 @@
 # 🛞🏍️ Crastur - Sistema de Ventas y Bot de WhatsApp
 
-Sistema automatizado de atención y ventas para **Crastur**, tienda física en Caracas especializada en insumos para caucheras, repuestos y accesorios para moto, y productos de mantenimiento.
+Sistema automatizado de atención al cliente, cotización y ventas para **Crastur**, tienda física en Caracas especializada en insumos para caucheras, repuestos y accesorios para moto, lubricantes y productos de mantenimiento.
 
-Incluye conversión en vivo a Bolívares con tasa oficial del **Banco Central de Venezuela (BCV)** a 2 decimales, cotizador de combos, financiamiento con **Cashea**, motor de **apartados por 24 horas**, seguimiento automático educado y panel administrativo web con control de pausas en vivo.
+Incluye conversión en tiempo real a Bolívares con tasa oficial del **Banco Central de Venezuela (BCV)** a 2 decimales, **Calculadora Cashea con Constructor de Combos ($25 USD mínimo)**, control de **horarios de semana y domingos (cierre temprano)**, motor de **apartados por 24 horas**, seguimiento automático educado, gestión de asesores humanos y panel administrativo web con simulador de WhatsApp en vivo.
 
 ---
 
-## 🚀 Cómo Iniciar el Sistema (1 Solo Clic)
+## 🚀 Cómo Iniciar y Apagar el Sistema (1 Solo Clic)
 
-### 🪟 En Windows:
-Haz **doble clic en `Crastur.bat`**. ¡Eso es todo!
+El sistema está diseñado para que cualquier persona en la tienda, sin conocimientos técnicos, pueda encenderlo y apagarlo de forma rápida, limpia y segura:
 
-El sistema realiza automáticamente:
-1. Verifica que Node.js esté instalado.
-2. Comprueba las dependencias y la base de datos.
-3. Inicia el servidor local y abre la aplicación en tu navegador (`http://localhost:3333`).
+### 🟢 CÓMO ABRIR CRASTUR:
+
+#### 🪟 En Windows:
+1. **Primera vez (Instalación):**  
+   Haz doble clic en **`Crastur.bat`**. Comprobará el sistema, verificará la base de datos y **creará automáticamente 1 único acceso directo oficial en el Escritorio de Windows**:
+   - 🛞 **`Crastur`** (con el icono oficial naranja de la tienda).
+2. **Día a día del cliente:**  
+   ¡Listo! El cliente **solo hace doble clic en el acceso directo `Crastur` de su Escritorio**.  
+   - **Si está apagado:** Inicia el bot y el servidor silenciosamente en segundo plano sin dejar ventanas negras de consola abiertas, y abre de inmediato el navegador en `http://localhost:3333`.
+   - **Si ya estaba encendido (ej. cerraron la pestaña por descuido):** Detecta la sesión activa y **simplemente reabre la pestaña en el navegador**, sin dar errores de puerto ocupado.
 
 > [!TIP]
-> **Si Windows 11 bloquea el archivo la primera vez:**  
-> Clic derecho en **`Crastur.bat`** ➔ **Propiedades** ➔ Marca la casilla **☑ Desbloquear** abajo ➔ Clic en **Aceptar**.
+> **Si Windows 11 o SmartScreen bloquea el archivo la primera vez:**  
+> Clic derecho en el archivo (`Crastur.bat`) ➔ **Propiedades** ➔ Marca la casilla **☑ Desbloquear** abajo ➔ Clic en **Aceptar**.
+
+#### 🐧 En Linux / macOS:
+Abre una terminal en la carpeta del proyecto y ejecuta:
+```bash
+./crastur.sh
+# O alternativamente:
+npm start
+```
+Luego el navegador se abrirá en **`http://localhost:3333`**.
 
 ---
 
-### 🐧 En Linux / macOS:
-Abre una terminal en la carpeta del proyecto y ejecuta:
-```bash
-chmod +x scripts/iniciar_crastur.sh
-./scripts/iniciar_crastur.sh
-```
+### 🛑 CÓMO APAGAR CRASTUR:
+
+Al apagar el sistema se guarda la base de datos de inmediato (`persistDB()`), se desconecta la sesión de WhatsApp de forma limpia y se libera el puerto `3333`.
+
+1. **🔴 Desde la propia Interfaz Web (Oficial y más cómoda):**  
+   En la barra superior del panel (esquina superior derecha, al lado del botón de WhatsApp), haz clic en el botón rojo **"Apagar"**.  
+   Aparecerá un mensaje de confirmación de seguridad. Al confirmar:
+   - Se guarda la base de datos y se detiene el servidor.
+   - La pantalla muestra una confirmación de apagado y **puedes cerrar la pestaña con total tranquilidad sin afectar tus demás pestañas del navegador**.
+2. **🛠️ Herramientas de Apagado de Emergencia (Para técnicos):**  
+   - **Windows:** Ejecutar `scripts/apagar_servidor.bat`.  
+   - **Linux / macOS:** Ejecutar `scripts/apagar_servidor.sh`.  
+   - **Terminal:** Ejecutar `npm run stop`.
 
 ---
 
@@ -36,13 +57,12 @@ chmod +x scripts/iniciar_crastur.sh
 # 1. Instalar dependencias
 npm install
 
-# 2. Compilar panel visual (si es la primera vez o hubo cambios)
+# 2. Compilar panel visual (Vite)
 npm run build
 
 # 3. Iniciar el sistema
 npm start
 ```
-Luego ingresa en tu navegador a: **`http://localhost:3333`**.
 
 ---
 
@@ -51,7 +71,7 @@ Luego ingresa en tu navegador a: **`http://localhost:3333`**.
 1. Abre el panel administrativo en **`http://localhost:3333`**.
 2. En el menú lateral izquierdo, haz clic en **Conexión WhatsApp**.
 3. En tu teléfono celular, abre WhatsApp ➔ menú de 3 puntos (o Ajustes) ➔ **Dispositivos vinculados** ➔ **Vincular un dispositivo**.
-4. Apunta la cámara de tu celular y escanea el código **QR** que aparece en la pantalla.
+4. Apunta la cámara de tu celular y escanea el código **QR** que aparece en pantalla.
 5. Una vez conectado, el panel mostrará el estado en verde **Conectado** y el bot comenzará a responder automáticamente a los clientes.
 
 ---
@@ -62,10 +82,10 @@ El bot y el inventario están organizados en 4 líneas comerciales maestras sin 
 
 | Categoría | Productos Principales |
 | :--- | :--- |
-| 🛞 **Insumos Cauchera** | Parches en frío/caliente, pega química azul, válvulas sin tripa TR-414, mechas para pinchazos, plomos de balanceo y terrajas. |
-| 🏍️ **Repuestos Moto** | Kits de arrastre (cadena 428H, piñón, corona), pastillas y bandas de freno, bujías de encendido (NGK), repuestos de motor y tripas. |
+| 🛞 **Insumos Cauchera** | Parches en frío/caliente Tip Top, pega química azul, válvulas sin tripa TR-412/TR-414, mechas para pinchazos, plomos de balanceo y terrajas. |
+| 🏍️ **Repuestos Moto** | Kits de arrastre reforzados (cadena 428H, piñón, corona), pastillas y bandas de freno, bujías de encendido (NGK), repuestos de motor y tripas aro 18/17. |
 | 🎽 **Accesorios Moto** | Puños para manubrio, mallas porta-casco (pulpos), retrovisores, luces exploradoras LED, fundas y spray para cadena. |
-| 📦 **Otros Productos** | Aceites de motor 4T/2T, refrigerantes para radiador, limpiadores de inyectores, aditivos de combustible y bombillos. |
+| 📦 **Otros Productos** | Aceites de motor 4T/2T (Motul 20W50), refrigerantes para radiador, limpiadores de inyectores, aditivos de combustible y bombillos. |
 
 ### 🧭 Menú Numérico de Bienvenida del Bot (1 al 6)
 El bot responde tanto a preguntas en lenguaje natural como a selecciones numéricas directas desde el menú de inicio:
@@ -80,43 +100,53 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 
 ## 🤖 Capacidades Inteligentes del Bot
 
-### 1. 🇻🇪 Tasa Oficial BCV en Vivo (Estricta a 2 Decimales)
-- Conexión directa al Banco Central de Venezuela. Todos los precios se muestran en dólares (`$ USD`) y en bolívares (`Bs.`) calculados con la tasa del día a dos decimales exactos (ej. *Bs. 852,42 / USD*).
-- El bot resalta siempre el beneficio del **precio especial con descuento directo pagando en efectivo en divisas** en tienda física.
+### 1. 🕒 Horario Crastur: Semana vs. Cierre Temprano Dominical
+- **Horario Predeterminado Oficial:** `Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM`.
+- **Motor Horario Inteligente (`businessRules.js`):**
+  - Evalúa la hora oficial en zona de Caracas (UTC-4).
+  - De lunes a sábado opera en horario corrido (8:00 AM a 8:00 PM).
+  - Los domingos aplica el horario especial de cierre temprano (8:30 AM a 2:00 PM) o cerrado si el comerciante lo configura así.
+  - **Atención Continua 24/7:** Si el cliente escribe de noche o un domingo en la tarde, el bot responde cordialmente dudas de catálogo, precios y tasa BCV, e indica con precisión a qué hora abre la tienda física para retiros y apartados.
 
-### 2. 🛒 Cotizador de Combos y Búsqueda Difusa (*Fuzzy Search*)
-- Si el cliente escribe con faltas de ortografía o modismos caraqueños (*"epale bro tnen pastiyas y bujia pa sbr?"*), el motor identifica los repuestos exactos.
-- Cuando el cliente consulta más de un producto, el bot desglosa los subtotales unitarios, calcula el **total combinado en USD y Bs**, aplica Cashea si aplica y estima la tarifa de motorizado.
+### 2. 💛 Calculadora Cashea y Constructor de Combos ($25 USD Mínimo)
+- **Regla Oficial Cashea:** El financiamiento en 3 cuotas sin interés aplica en tienda física para compras a partir de **$25 USD**.
+- **Constructor de Combos en el Panel:**
+  - Si un repuesto cuesta menos de $25 USD (ej. aceite a $6 o bujía a $3.50), el vendedor puede sumar cantidades con `[-] [qty] [+]` o pulsar **"Sumar a Combo Cashea"** para armar un paquete personalizado.
+  - **Barra de Progreso Dinámica:** Muestra en tiempo real cuánto dinero falta para alcanzar los $25 USD y chips con sugerencias rápidas.
+  - **Cotización para WhatsApp en 1 Clic:** Genera un mensaje detallado con subtotales, total en $ y Bs, inicial según el nivel del cliente (Nivel 1: 40%, Nivel 2: 30%, Nivel 3+: 20%), 3 cuotas quincenales exactas y dirección para retirar en San Agustín Norte.
 
-### 3. ⏱️ Flujo de Apartado por 24 Horas sin Costo
-- Los clientes pueden reservar repuestos para retirar en la tienda física de San Agustín Norte:
-  1. **Nombre y Apellido:** Validación de persona real (rechaza apodos o nombres incompletos).
-  2. **Cédula de Identidad:** Validación venezolana (`V-` o `E-`) tolerando formatos coloquiales (*"mi cédula es 28123456"*).
+### 3. 🇻🇪 Tasa Oficial BCV en Vivo (Estricta a 2 Decimales)
+- Conexión directa y automática al Banco Central de Venezuela. Todos los precios se muestran en dólares (`$ USD`) y en bolívares (`Bs.`) calculados con la tasa del día oficial (sin recargos punitivos).
+- Resalta siempre el beneficio del **precio especial con descuento directo pagando en efectivo en divisas** en tienda física.
+
+### 4. 🛒 Búsqueda Difusa (*Fuzzy Search*) y Venezolanismos
+- Si el cliente escribe con faltas de ortografía o modismos (*"chamo tienes pastiyas y bujya?"*), el motor identifica los repuestos exactos sin mezclar categorías ajenas.
+
+### 5. ⏱️ Flujo de Apartado por 24 Horas sin Costo
+- Los clientes pueden reservar repuestos para retirar en tienda física en San Agustín Norte:
+  1. **Nombre y Apellido:** Validación de persona real (rechaza apodos).
+  2. **Cédula de Identidad:** Validación venezolana (`V-` o `E-`).
   3. **Teléfono de Contacto:** Normalización a formato nacional (`0412`, `0414`, `0424`, `0416`, `0426`).
-  4. **Emisión de Comprobante:** Genera un ticket digital oficial con fecha y hora límite estricta de 24 horas continuas.
-- **Sin bloqueos:** Si durante la reserva el cliente pregunta por métodos de pago, horario, delivery o envía una foto/audio, el bot responde su duda y le permite continuar sin reiniciar ni perder sus datos.
-- **Cancelación inmediata:** Si el cliente escribe *"cancela"*, *"ya no quiero apartar"*, *"olvídalo"* o *"déjalo así"*, el bot cancela el proceso cortésmente y libera la sesión.
+  4. **Emisión de Comprobante:** Genera un ticket digital oficial con código único `CRA-` y fecha límite estricta de 24 horas continuas más 12 horas de gracia.
+- **Protección de Datos:** Incorpora leyenda legal conforme al **Art. 28 de la CRBV**.
 
-### 4. 💛 Financiamiento Cashea (Regla $25 USD Mínimo)
-- Si el producto o combo supera los **$25 USD**, desglosa la cuota inicial y 3 cuotas quincenales a 0% de interés según el nivel del cliente (Nivel 1: 40%, Nivel 2: 30%, Nivel 3+: 20%).
-- Si cuesta menos de $25 USD, explica claramente la política y sugiere agregar otro repuesto para alcanzar el monto y financiar en la tienda física.
-
-### 5. 🛵 Delivery en Caracas y Envíos
-- Reconoce sectores de la Gran Caracas (San Agustín, Centro, Chacao, Catia, El Valle, Baruta, Petare, etc.) e informa la tarifa estimada de motorizado el mismo día.
-- Aclara amablemente que las compras fuera de Caracas se entregan a través de familiares o comisionistas en la capital.
-
-### 6. 🛑 Botón de Pausa (Atención Humana / Asesor)
-- **Pausa por Chat:** En la pestaña **Live Inbox**, el asesor puede hacer clic en **Pausar Bot** en cualquier conversación para atender manualmente sin que el bot interfiera.
-- **Pausa Global:** En la barra superior hay un botón para silenciar o reanudar el bot en todos los chats cuando sea necesario.
-- **Seguimiento inteligente sin spam:** El bot realiza un recordatorio educado pasados 15 minutos solo si el cliente no reservó ni dijo *"no gracias"*.
+### 6. 🛵 Delivery en Caracas y Métodos de Pago
+- Reconoce sectores de la Gran Caracas (San Agustín, Centro, Chacao, Catia, El Valle, Baruta, Petare, etc.) e informa tarifas estimadas de motorizado.
+- Métodos configurables con tarjetas interactivas de encendido/apagado en 1 clic (Efectivo $, Binance USDT, Pago Móvil BCV, Cashea, Punto de Venta y Transferencia).
 
 ---
 
 ## 🛠️ Herramientas de Mantenimiento y Pruebas
 
-El sistema incluye una suite de diagnóstico, mantenimiento preventivo y verificación de versiones de Node.js:
+El sistema incluye comandos dedicados para mantenimiento, diagnóstico y verificación:
 
 ```bash
+# 🧪 Ejecutar suite de pruebas de estrés y validación extrema (68 pruebas automáticas)
+npm test
+
+# 🔄 Restablecimiento limpio de fábrica (Opción A: 0 productos para producción)
+npm run reset
+
 # 🔍 Asistente interactivo de mantenimiento (menú visual 0-9)
 npm run maintenance
 
@@ -130,28 +160,26 @@ npm run maintenance -- --prune-backups   # Depurar respaldos antiguos (> 7 días
 npm run maintenance -- --reset-wa        # Reiniciar sesión WhatsApp para nuevo QR
 npm run maintenance -- --build           # Recompilar el panel visual web
 npm run maintenance -- --all             # Mantenimiento completo automatizado
-
-# 🧪 Ejecutar suite de pruebas de estrés y validación extrema (200 reqs concurrentes)
-npm test
 ```
 
 ---
 
-## 📂 Estructura Limpia del Proyecto
+## 📂 Estructura del Proyecto
 
 ```text
 crastur/
-├── Crastur.bat                 # Lanzador de 1 clic para Windows
+├── Crastur.bat                 # Lanzador principal de 1 clic para Windows
+├── Crastur_SegundoPlano.vbs    # Lanzador silencioso en segundo plano para Windows
 ├── launcher.js                 # Verificador inteligente de arranque y auto-respaldo
 ├── crastur.ico                 # Icono oficial del sistema
 ├── package.json                # Scripts de inicio, mantenimiento y pruebas
 ├── scripts/
-│   ├── iniciar_crastur.sh      # Lanzador para entornos Linux / macOS
+│   ├── reset_clean_install.js  # Reseteo de fábrica para producción limpia (0 productos)
 │   ├── maintenance.js          # Script integral de mantenimiento y diagnóstico
 │   ├── clean_data.js           # Limpieza operacional a cero
-│   └── run_stress_and_edge_tests.js # Batería de estrés y 16 perfiles de clientes
+│   └── run_stress_and_edge_tests.js # Batería de estrés y 68 pruebas automatizadas
 │
-├── client/                     # Panel web administrativo (React + Vite)
+├── client/                     # Panel web administrativo (React + Vite + TailwindCSS)
 │   ├── src/                    # Código fuente de vistas responsivas y modales
 │   └── dist/                   # Bundle de producción optimizado
 │
@@ -161,7 +189,7 @@ crastur/
 │   │   ├── apartado/           # Flujo y validaciones de reserva por 24h
 │   │   ├── followUp/           # Seguimiento inteligente sin spam
 │   │   ├── handlers/           # Manejadores de intención (categorías, cashea, info, etc.)
-│   │   ├── services/           # Búsqueda difusa y reglas comerciales
+│   │   ├── services/           # Búsqueda difusa y reglas comerciales (horarios domingo/semana)
 │   │   └── utils/              # Formateadores BCV, delivery de Caracas y anti-spam
 │   ├── database.js             # Base de datos SQLite local (sql.js) con auto-respaldos
 │   ├── whatsappService.js      # Conexión WhatsApp (Baileys) con reconexión automática
@@ -176,21 +204,16 @@ crastur/
 
 ---
 
-## ❓ Preguntas Frecuentes y Solución de Problemas
+## ❓ Preguntas Frecuentes
 
-### 1. ¿Cómo cambio la tasa del dólar manualmente si no hay internet?
-En el panel web, ve a **Configuración** ➔ activa la opción **Tasa Manual Personalizada** ➔ escribe el valor en Bolívares y haz clic en **Guardar Configuración**. El bot comenzará a calcular con ese valor inmediatamente.
+### 1. ¿El sistema viene vacío o con productos de prueba?
+Siguiendo la **Opción A**, el sistema de producción se entrega **100% limpio** (0 productos, 0 chats y 0 apartados) para que la tienda física cargue sus repuestos reales directamente desde el menú Catálogo o mediante importación. Para volver a este estado inicial en cualquier momento, basta con ejecutar `npm run reset`.
 
-### 2. ¿Cómo desvinculo o cambio el número de WhatsApp?
-En el panel web, ve a **Conexión WhatsApp** y haz clic en el botón rojo **Desconectar / Reiniciar Sesión** (o ejecuta `npm run maintenance -- --reset-wa`). El sistema borrará las credenciales anteriores y te generará un nuevo código QR limpio para escanear con otra línea.
+### 2. ¿Qué pasa si la tienda abre un domingo y cierra más temprano?
+En **Configuración** ➔ **1. Mi Tienda & Horario**, puedes seleccionar el preset oficial **Horario Completo Crastur** (`Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM`) o personalizar las horas exactas de apertura y cierre para domingos. El bot respetará el horario de forma autónoma.
 
-### 3. ¿Qué hago si actualizo la versión de Node.js en mi computadora?
-El sistema Crastur incluye auto-detección y soporte para versiones modernas de Node.js (Node 20, 22 o superior). Si actualizaste Node.js, ejecuta:
-```bash
-npm run maintenance -- --node-check
-npm run maintenance -- --rebuild-deps
-```
-El script re-vinculará automáticamente las librerías binarias y de WebAssembly para garantizar máxima compatibilidad y estabilidad.
+### 3. ¿Cómo calculo una venta Cashea si los repuestos cuestan menos de $25 USD?
+Ingresa a **Calculadora Cashea** ➔ pestaña **Elegir o Combinar Repuestos del Catálogo**. Selecciona los repuestos que el cliente llevará (aceite, bujías, parches, etc.) y presiona **"Sumar a Combo Cashea"**. La barra te indicará cuánto falta para los $25 USD y al alcanzarlos podrás copiar la cotización oficial lista para WhatsApp.
 
-### 4. ¿Dónde están los datos de mis productos y clientes?
-Todo se almacena de forma 100% local en tu propia computadora dentro de la carpeta `data/crastur.db`. El sistema crea además copias de seguridad diarias en `data/backups/`, garantizando máxima privacidad sin mensualidades ni dependencias en la nube.
+### 4. ¿Dónde se guardan los datos de mis clientes y precios?
+Todo se almacena de forma **100% local y soberana** en tu propia computadora dentro de `data/crastur.db`. No requiere servidores en la nube ni pagos de mensualidades, y cuenta con copias de seguridad diarias en `data/backups/`.

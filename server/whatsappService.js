@@ -180,7 +180,7 @@ async function startWhatsApp() {
       try {
         sock.ev.removeAllListeners();
         sock.end();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     sock = makeWASocket({
@@ -221,7 +221,7 @@ async function startWhatsApp() {
           console.log('[WhatsApp] Sesión desvinculada (401). Limpiando credenciales obsoletas para permitir nuevo QR...');
           try {
             if (fs.existsSync(authFolder)) {
-              fs.rmSync(authFolder, { recursive: true, force: true });
+              fs.rmSync(authFolder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
             }
           } catch (rmErr) {
             console.error('[WhatsApp] Error limpiando credenciales desvinculadas:', rmErr);
@@ -297,6 +297,74 @@ async function startWhatsApp() {
       }
     });
 
+    // Ingestar historial reciente al conectar (sincronización de WhatsApp multi-dispositivo)
+    sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
+      if (!messages || !Array.isArray(messages)) return;
+      console.log(`[WhatsApp Sync] 📥 Sincronización histórica recibida: ${messages.length} mensajes.`);
+
+      let ingestedCount = 0;
+      for (const msg of messages) {
+        const jid = msg.key?.remoteJid || '';
+        if (!jid) continue;
+
+        if (
+          jid.endsWith('@g.us') ||
+          jid.endsWith('@newsletter') ||
+          jid.includes('@newsletter') ||
+          jid.includes('broadcast') ||
+          jid === 'status@broadcast'
+        ) {
+          continue;
+        }
+
+        if (!jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@lid')) {
+          continue;
+        }
+
+        const info = extractMessageInfo(msg);
+        if (!info || (!info.text && !info.isMedia)) continue;
+
+        const contentText = info.text || `[${info.mediaType || 'Multimedia'}]`;
+        const msgTime = Number(msg.messageTimestamp || Math.floor(Date.now() / 1000)) * 1000;
+        const pushName = msg.pushName || 'Cliente';
+        const isFromMe = !!msg.key.fromMe;
+        const senderType = isFromMe ? 'asesor' : 'cliente';
+
+        // Comprobar si ya existe para no duplicar
+        const existing = db.prepare(`
+          SELECT id FROM chat_messages
+          WHERE jid = ? AND contenido = ? AND ABS(timestamp - ?) < 10000
+          LIMIT 1
+        `).get(jid, contentText, msgTime);
+
+        if (!existing) {
+          try {
+            db.prepare(`
+              INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+              VALUES (?, ?, ?, ?)
+            `).run(jid, senderType, contentText, msgTime);
+
+            const session = db.prepare('SELECT jid, ultimo_mensaje_at FROM chat_sessions WHERE jid = ?').get(jid);
+            if (!session) {
+              db.prepare(`
+                INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
+                VALUES (?, ?, 'start', ?, 0, 0, 1)
+              `).run(jid, pushName, msgTime);
+            } else {
+              db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = MAX(ultimo_mensaje_at, ?), push_name = COALESCE(?, push_name) WHERE jid = ?')
+                .run(msgTime, pushName, jid);
+            }
+            ingestedCount++;
+          } catch (e) { }
+        }
+      }
+
+      if (ingestedCount > 0) {
+        console.log(`[WhatsApp Sync] ✅ ${ingestedCount} mensajes históricos/nocturnos preservados en Live Inbox.`);
+        notifyLiveMessage({ action: 'history_sync', count: ingestedCount });
+      }
+    });
+
     // Escuchar mensajes entrantes
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify' && type !== 'append') return;
@@ -323,55 +391,118 @@ async function startWhatsApp() {
           continue;
         }
 
-        // Si el mensaje llegó mientras la PC estuvo apagada (sincronización de WhatsApp)
-        const messageTimestamp = msg.messageTimestamp;
-        if (messageTimestamp) {
-          const ageSec = Math.floor(Date.now() / 1000) - Number(messageTimestamp);
-          
-          // Si tiene más de 24 horas, ignorar completamente para no desempolvar chats viejos
-          if (ageSec > 24 * 3600) {
+        // Detectar si el usuario se escribió a sí mismo para probar el bot
+        const botPhone = currentUser?.phone || (sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : '');
+        const senderPhone = jid.split(':')[0].split('@')[0];
+        const isSelfChat = botPhone && senderPhone && (botPhone === senderPhone);
+
+        // PRIMERO: Si el mensaje fue enviado por el propio asesor desde el celular o web
+        if (msg.key.fromMe && !isSelfChat) {
+          const msgId = msg.key?.id;
+          if (msgId && knownSentMessageIds.has(msgId)) {
+            knownSentMessageIds.delete(msgId);
             continue;
           }
 
-          // Si tiene más de 5 minutos (llegó mientras la computadora estuvo apagada anoche)
-          if (ageSec > 300) {
+          const info = extractMessageInfo(msg);
+          if (info && (info.text || info.isMedia)) {
+            const rawContent = info.text || `[${info.mediaType || 'Multimedia'}]`;
+            const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now();
+            const recent = db.prepare(`
+              SELECT id FROM chat_messages 
+              WHERE jid = ? AND contenido = ? AND ABS(timestamp - ?) < 6000
+              LIMIT 1
+            `).get(jid, rawContent, msgTime);
+
+            if (!recent) {
+              try {
+                db.prepare(`
+                  INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+                  VALUES (?, 'asesor', ?, ?)
+                `).run(jid, rawContent, msgTime);
+
+                const session = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
+                if (!session) {
+                  db.prepare(`
+                    INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
+                    VALUES (?, 'Cliente', 'start', ?, 0, 0, 1)
+                  `).run(jid, msgTime);
+                } else {
+                  db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = MAX(ultimo_mensaje_at, ?) WHERE jid = ?')
+                    .run(msgTime, jid);
+                }
+
+                notifyLiveMessage({
+                  jid,
+                  pushName: 'Asesor Humano',
+                  remitente: 'asesor',
+                  contenido: rawContent,
+                  timestamp: msgTime
+                });
+              } catch (e) { }
+            }
+          }
+          continue;
+        }
+
+        // Si el mensaje es entrante del cliente y llegó mientras la PC estuvo apagada (sincronización)
+        const messageTimestamp = msg.messageTimestamp;
+        if (messageTimestamp) {
+          const ageSec = Math.floor(Date.now() / 1000) - Number(messageTimestamp);
+
+          // Si tiene más de 48 horas, ignorar para no desempolvar chats muy viejos
+          if (ageSec > 48 * 3600) {
+            continue;
+          }
+
+          // Si tiene más de 3 minutos (llegó mientras la computadora estuvo apagada)
+          if (ageSec > 180) {
             const info = extractMessageInfo(msg);
             if (info && (info.text || info.isMedia)) {
               const pushName = msg.pushName || 'cliente';
               const msgTime = Number(messageTimestamp) * 1000;
               const contentText = info.text || `[${info.mediaType || 'Multimedia'}]`;
 
-              try {
-                db.prepare(`
-                  INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-                  VALUES (?, 'cliente', ?, ?)
-                `).run(jid, `🌙 [Recibido fuera de horario]: ${contentText}`, msgTime);
+              // Deduplicación para no guardar dos veces
+              const existing = db.prepare(`
+                SELECT id FROM chat_messages
+                WHERE jid = ? AND contenido = ? AND ABS(timestamp - ?) < 6000
+                LIMIT 1
+              `).get(jid, contentText, msgTime);
 
-                const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
-                if (!exists) {
+              if (!existing) {
+                try {
                   db.prepare(`
-                    INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
-                    VALUES (?, ?, 'start', ?, 0, 0, 1)
-                  `).run(jid, pushName, msgTime);
-                } else {
-                  db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = MAX(ultimo_mensaje_at, ?), push_name = ? WHERE jid = ?')
-                    .run(msgTime, pushName, jid);
-                }
-              } catch (e) {}
+                    INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+                    VALUES (?, 'cliente', ?, ?)
+                  `).run(jid, contentText, msgTime);
 
-              notifyLiveMessage({
-                jid,
-                pushName,
-                remitente: 'cliente',
-                contenido: `🌙 [Recibido fuera de horario]: ${contentText}`,
-                timestamp: msgTime
-              });
+                  const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
+                  if (!exists) {
+                    db.prepare(`
+                      INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
+                      VALUES (?, ?, 'start', ?, 0, 0, 1)
+                    `).run(jid, pushName, msgTime);
+                  } else {
+                    db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = MAX(ultimo_mensaje_at, ?), push_name = COALESCE(?, push_name) WHERE jid = ?')
+                      .run(msgTime, pushName, jid);
+                  }
+
+                  notifyLiveMessage({
+                    jid,
+                    pushName,
+                    remitente: 'cliente',
+                    contenido: contentText,
+                    timestamp: msgTime
+                  });
+                } catch (e) { }
+              }
 
               if (info.text && info.text.trim().length > 1) {
                 overnightCatchupMap.set(jid, { text: info.text.trim(), pushName });
               }
 
-              // Programar respuesta matutina educada consolidada tras terminar la sincronización de Baileys
+              // Programar respuesta matutina si la tienda abre
               if (overnightCatchupTimer) clearTimeout(overnightCatchupTimer);
               overnightCatchupTimer = setTimeout(async () => {
                 if (overnightCatchupMap.size === 0) return;
@@ -380,7 +511,7 @@ async function startWhatsApp() {
 
                 const { isWithinBusinessHours } = require('./bot/services/businessRules');
                 if (!isWithinBusinessHours()) {
-                  console.log('[WhatsApp] Mensajes nocturnos registrados en Live Inbox. La tienda aún está cerrada.');
+                  console.log('[WhatsApp] Mensajes nocturnos registrados en Live Inbox. La tienda física está fuera de horario.');
                   return;
                 }
 
@@ -403,50 +534,6 @@ async function startWhatsApp() {
             }
             continue;
           }
-        }
-
-        // Detectar si el usuario se escribió a sí mismo para probar el bot
-        const botPhone = currentUser?.phone || (sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : '');
-        const senderPhone = jid.split(':')[0].split('@')[0];
-        const isSelfChat = botPhone && senderPhone && (botPhone === senderPhone);
-
-        // Si el mensaje fue enviado por la cuenta pero NO en auto-chat
-        if (msg.key.fromMe && !isSelfChat) {
-          const msgId = msg.key?.id;
-          if (msgId && knownSentMessageIds.has(msgId)) {
-            // Ya fue registrado por sendTextMessage, sendProductMessage o sendManualMessage
-            knownSentMessageIds.delete(msgId);
-            continue;
-          }
-
-          const info = extractMessageInfo(msg);
-          if (info && (info.text || info.isMedia)) {
-            const rawContent = info.text || `[${info.mediaType || 'Multimedia'}]`;
-            // Comprobar si ya existe un mensaje idéntico registrado en los últimos 4 segundos
-            const recent = db.prepare(`
-              SELECT id FROM chat_messages 
-              WHERE jid = ? AND contenido = ? AND timestamp >= ?
-              LIMIT 1
-            `).get(jid, rawContent, Date.now() - 4000);
-
-            if (!recent) {
-              try {
-                db.prepare(`
-                  INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-                  VALUES (?, 'asesor', ?, ?)
-                `).run(jid, rawContent, Date.now());
-
-                notifyLiveMessage({
-                  jid,
-                  pushName: 'Asesor Humano',
-                  remitente: 'asesor',
-                  contenido: rawContent,
-                  timestamp: Date.now()
-                });
-              } catch (e) {}
-            }
-          }
-          continue;
         }
 
         // Extraer contenido real del mensaje desempacando capas (ephemeral, viewOnce, etc.)
@@ -511,7 +598,7 @@ async function startWhatsApp() {
                 if (sock && connectionStatus === 'connected') {
                   await sock.sendPresenceUpdate('composing', jid);
                 }
-              } catch (pErr) {}
+              } catch (pErr) { }
 
               // Retardo natural humanizado (entre 1.2s y 2.2s según longitud)
               const typingDelay = Math.min(2200, 1200 + Math.floor(Math.random() * 800));
@@ -527,8 +614,8 @@ async function startWhatsApp() {
                 await sendTextMessage(jid, response);
               }
 
-              const responseText = typeof response === 'object' && response !== null 
-                ? (response.text || response.caption || '') 
+              const responseText = typeof response === 'object' && response !== null
+                ? (response.text || response.caption || '')
                 : (response ? String(response) : '');
 
               // 1. Si es respuesta de ubicación física, enviar además el Pin de mapa interactivo de WhatsApp
@@ -582,7 +669,7 @@ async function startWhatsApp() {
                 if (sock && connectionStatus === 'connected') {
                   await sock.sendPresenceUpdate('paused', jid);
                 }
-              } catch (pErr) {}
+              } catch (pErr) { }
 
               console.log(`[WhatsApp Bot] ✅ Respuesta enviada exitosamente a ${jid}`);
             } else {
@@ -596,9 +683,15 @@ async function startWhatsApp() {
     });
 
   } catch (initErr) {
-    console.error('[WhatsApp] Error al inicializar socket:', initErr);
+    console.error('[WhatsApp] Error al inicializar socket (sin internet o conexión inestable):', initErr.message || initErr);
     connectionStatus = 'disconnected';
     notifyStatusChange();
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startWhatsApp();
+      }, 8000);
+    }
   }
 }
 
@@ -650,7 +743,7 @@ async function sendProductMessage(jid, text, imageUrl) {
     insertId = res?.lastInsertRowid;
 
     db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
-  } catch (e) {}
+  } catch (e) { }
 
   notifyLiveMessage({
     id: insertId,
@@ -714,7 +807,7 @@ async function sendDocumentMessage(jid, documentPathOrBuffer, fileName = 'Catalo
     insertId = res?.lastInsertRowid;
 
     db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
-  } catch (e) {}
+  } catch (e) { }
 
   notifyLiveMessage({
     id: insertId,
@@ -751,7 +844,7 @@ async function sendTextMessage(jid, text) {
     insertId = res?.lastInsertRowid;
 
     db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
-  } catch (e) {}
+  } catch (e) { }
 
   notifyLiveMessage({
     id: insertId,
@@ -785,7 +878,7 @@ async function sendManualMessage(jid, text) {
     insertId = res?.lastInsertRowid;
 
     db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(now, jid);
-  } catch (e) {}
+  } catch (e) { }
 
   notifyLiveMessage({
     id: insertId,
@@ -810,7 +903,7 @@ async function logoutWhatsApp() {
 
   try {
     if (fs.existsSync(authFolder)) {
-      fs.rmSync(authFolder, { recursive: true, force: true });
+      fs.rmSync(authFolder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   } catch (rmErr) {
     console.error('[WhatsApp] Error borrando credenciales:', rmErr);
@@ -841,11 +934,14 @@ async function resetWhatsApp() {
       sock.end();
       sock = null;
     }
-  } catch (e) {}
+  } catch (e) { }
+
+  // En Windows: pequeña pausa para que el sistema operativo libere los descriptores de archivo
+  await new Promise(r => setTimeout(r, 400));
 
   try {
     if (fs.existsSync(authFolder)) {
-      fs.rmSync(authFolder, { recursive: true, force: true });
+      fs.rmSync(authFolder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       console.log('[WhatsApp] Carpeta de credenciales auth_info_baileys eliminada.');
     }
   } catch (rmErr) {
@@ -870,8 +966,31 @@ function getStatus() {
   };
 }
 
+function stopWhatsApp() {
+  try {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (connectingTimeout) {
+      clearTimeout(connectingTimeout);
+      connectingTimeout = null;
+    }
+    if (sock) {
+      sock.ev.removeAllListeners();
+      sock.end();
+      sock = null;
+    }
+  } catch (e) {}
+  connectionStatus = 'disconnected';
+  currentQR = null;
+  currentUser = null;
+  notifyStatusChange();
+}
+
 module.exports = {
   startWhatsApp,
+  stopWhatsApp,
   logoutWhatsApp,
   resetWhatsApp,
   getStatus,
@@ -882,3 +1001,4 @@ module.exports = {
   subscribeStatusChange,
   subscribeLiveMessages
 };
+

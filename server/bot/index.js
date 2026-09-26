@@ -645,7 +645,7 @@ function processIncomingMessage(jid, rawText, pushName = 'amigo/a', mediaInfo = 
     norm.includes('lo voy a buscar')
   ) {
     recordMetric('intencion_apartado', text, jid);
-    if (settings.fuera_horario_activo === '1' && !isWithinBusinessHours()) {
+    if (settings.fuera_horario_activo === '1') {
       return handleOutOfHoursTransactionResponse(settings, 'apartar');
     }
     return initiateApartadoFlow(jid, text, norm, session, tasa, settings, pushName);

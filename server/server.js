@@ -23,7 +23,8 @@ const {
   deleteReservation,
   cleanExpiredReservations,
   persistDB,
-  restoreDatabaseFromBuffer
+  restoreDatabaseFromBuffer,
+  whenReady
 } = require('./database');
 const fs = require('fs');
 
@@ -38,6 +39,7 @@ const {
   subscribeStatusChange,
   subscribeLiveMessages
 } = require('./whatsappService');
+const { clearCatalogCache } = require('./bot/services/catalogPdfService');
 
 
 const app = express();
@@ -81,6 +83,15 @@ wss.on('connection', (ws) => {
 });
 
 // ================= RUTAS DE LA API =================
+
+// 0. Endpoint Ultraligero de Salud (Healthcheck)
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: Date.now()
+  });
+});
 
 // 1. Estado General
 app.get('/api/status', (req, res) => {
@@ -162,6 +173,7 @@ app.get('/api/bcv', (req, res) => {
 app.post('/api/bcv/refresh', async (req, res) => {
   try {
     const result = await fetchBCVRate();
+    clearCatalogCache();
     broadcast('bcv_updated', result);
     res.json(result);
   } catch (err) {
@@ -177,6 +189,7 @@ app.post('/api/bcv/override', (req, res) => {
   if (tasa !== undefined) {
     updateSetting('tasa_personalizada', String(tasa));
   }
+  clearCatalogCache();
   const nuevaTasaEfectiva = getEffectiveRate();
   broadcast('bcv_updated', { tasa_efectiva: nuevaTasaEfectiva });
   res.json({ success: true, tasa_efectiva: nuevaTasaEfectiva });
@@ -243,6 +256,8 @@ app.post('/api/products', (req, res) => {
     parsedStock
   );
 
+  clearCatalogCache();
+  broadcast('products_updated', { action: 'created', id: result.lastInsertRowid });
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
@@ -293,12 +308,16 @@ app.put('/api/products/:id', (req, res) => {
     id
   );
 
+  clearCatalogCache();
+  broadcast('products_updated', { action: 'updated', id });
   res.json({ success: true });
 });
 
 app.delete('/api/products/:id', (req, res) => {
   const { id } = req.params;
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  clearCatalogCache();
+  broadcast('products_updated', { action: 'deleted', id });
   res.json({ success: true });
 });
 
@@ -356,6 +375,7 @@ app.post('/api/products/bulk-price-adjustment', (req, res) => {
       updatedCount++;
     }
 
+    clearCatalogCache();
     broadcast('products_updated', { action: 'bulk_price_updated', count: updatedCount });
     res.json({ success: true, count: updatedCount, message: `Se actualizaron los precios de ${updatedCount} productos.` });
   } catch (err) {
@@ -597,6 +617,8 @@ app.post('/api/catalog/import', (req, res) => {
       return res.status(400).json({ error: 'Formato inválido. Se esperaba una lista de productos.' });
     }
     const result = importCatalog(productos);
+    clearCatalogCache();
+    broadcast('products_updated', { action: 'imported' });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -657,12 +679,44 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
+// 12. Apagado limpio y seguro del sistema (Panel Web y Scripts)
+app.post('/api/system/shutdown', (req, res) => {
+  console.log('\n[Sistema] 🛑 Solicitud de apagado seguro recibida...');
+  try {
+    persistDB();
+    console.log('[Sistema] Base de datos guardada correctamente.');
+  } catch (e) {
+    console.error('[Sistema] Error persistiendo base de datos al apagar:', e.message);
+  }
+
+  res.json({
+    success: true,
+    message: 'Sistema Crastur apagado correctamente. Ya puedes cerrar esta pestaña.'
+  });
+
+  try {
+    const { stopWhatsApp } = require('./whatsappService');
+    if (typeof stopWhatsApp === 'function') {
+      stopWhatsApp();
+    }
+  } catch (e) {}
+
+  setTimeout(() => {
+    console.log('[Sistema] Servidor y bot detenidos. ¡Hasta pronto!');
+    process.exit(0);
+  }, 600);
+});
+
 // Manejo Global de Errores para que el servidor NUNCA se cierre inesperadamente
 process.on('uncaughtException', (err) => {
   console.error('[Protección Anti-Fallos] Error no capturado recuperado:', err.message);
   if (err.code === 'EADDRINUSE') {
+    const isWin = process.platform === 'win32';
+    const killCmd = isWin
+      ? `powershell -NoProfile -Command "Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force"`
+      : `fuser -k ${PORT}/tcp`;
     console.error(`\n⚠️  [Puerto Ocupado] El puerto ${PORT} ya está siendo utilizado por otra instancia de Crastur.`);
-    console.error(`💡 Para liberar el puerto puedes ejecutar: fuser -k ${PORT}/tcp o verificar si ya tienes otra terminal con npm start.\n`);
+    console.error(`💡 Para liberar el puerto puedes ejecutar: ${killCmd} o verificar si ya tienes otra terminal abierta.\n`);
     process.exit(1);
   }
   try {
@@ -679,28 +733,37 @@ const PORT = process.env.PORT || 3333;
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
+    const isWin = process.platform === 'win32';
+    const killCmd = isWin
+      ? `powershell -NoProfile -Command "Stop-Process -Id (Get-NetTCPConnection -LocalPort ${PORT}).OwningProcess -Force"`
+      : `fuser -k ${PORT}/tcp`;
     console.error(`\n⚠️  [Puerto Ocupado] El puerto ${PORT} ya está siendo utilizado por otra instancia de Crastur.`);
-    console.error(`💡 Para liberar el puerto puedes ejecutar: fuser -k ${PORT}/tcp o verificar si ya tienes otra terminal abierta.\n`);
+    console.error(`💡 Para liberar el puerto puedes ejecutar: ${killCmd} o verificar si ya tienes otra terminal abierta.\n`);
     process.exit(1);
   } else {
     console.error('[Error de Servidor]', err.message);
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[Servidor Crastur] Escuchando en http://localhost:${PORT}`);
-  // Iniciar servicio BCV en segundo plano
-  initBCVService();
-  // Iniciar automáticamente WhatsApp y reconectar sesión existente
-  startWhatsApp();
-  // Chequeo independiente de apartados vencidos cada 2 minutos (libera inventario aunque WhatsApp no esté conectado)
-  const reservationInterval = setInterval(() => {
-    try {
-      cleanExpiredReservations();
-    } catch (e) {}
-  }, 2 * 60 * 1000);
-  if (reservationInterval.unref) reservationInterval.unref();
-});
+async function startServer() {
+  await whenReady();
+  server.listen(PORT, () => {
+    console.log(`[Servidor Crastur] Escuchando en http://localhost:${PORT}`);
+    // Iniciar servicio BCV en segundo plano
+    initBCVService();
+    // Iniciar automáticamente WhatsApp y reconectar sesión existente
+    startWhatsApp();
+    // Chequeo independiente de apartados vencidos cada 2 minutos (libera inventario aunque WhatsApp no esté conectado)
+    const reservationInterval = setInterval(() => {
+      try {
+        cleanExpiredReservations();
+      } catch (e) {}
+    }, 2 * 60 * 1000);
+    if (reservationInterval.unref) reservationInterval.unref();
+  });
+}
+
+startServer();
 
 module.exports = { app, server };
 

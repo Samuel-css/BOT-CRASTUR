@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRate } from '../../utils/formatters';
+import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
 
 function useRelativeTime(expiraEn) {
   const [label, setLabel] = useState('');
@@ -107,12 +108,7 @@ export default function DashboardView({
   );
 
   const handleCopyComboCaption = (combo) => {
-    const precioUsd = parseFloat(combo.precio_usd || 0).toFixed(2);
-    const precioBs = formatRate(parseFloat(combo.precio_usd || 0) * effectiveRate);
-    const texto = `🔥 *COMBO PROMOCIONAL CRASTUR* 🛞🏍️\n\n📌 *${combo.marca ? combo.marca + ' - ' : ''}${combo.modelo}*\n${combo.descripcion ? `• ${combo.descripcion}\n` : ''}\n💵 *Precio Promoción en Divisas:* $${precioUsd} USD (Efectivo / Binance Pay 🪙)\n🇻🇪 *Al cambio BCV:* Bs. ${precioBs}\n💛 *Financiamiento Cashea:* Disponible en tienda física\n\n📍 *Retiro en tienda física:* San Agustín Norte, Caracas (Lun-Sáb 8am-8pm)\n🛵 *Delivery:* Despacho directo a tu taller o domicilio en Caracas\n\n📲 *Escríbenos al WhatsApp para apartar el tuyo por 24 horas:* https://wa.me/584120000000`;
-
-    navigator.clipboard.writeText(texto);
-    toast.success(`¡Texto de Instagram copiado para "${combo.modelo}"!`);
+    copyInstagramCaption(combo, effectiveRate);
   };
 
   return (
@@ -252,7 +248,7 @@ export default function DashboardView({
           </div>
 
           {/* Tabla de equivalencias rápidas para el mostrador */}
-          <div className="bg-[#070b14] border border-slate-800/80 rounded-2xl p-3 grid grid-cols-4 gap-2 text-center text-xs">
+          <div className="bg-[#070b14] border border-slate-800/80 rounded-2xl p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
             <div className="p-1.5 rounded-xl bg-slate-900/60">
               <span className="text-[10px] text-slate-400 block">$5 USD</span>
               <strong className="text-white font-mono text-[11px] font-bold">Bs. {formatRate(5 * effectiveRate)}</strong>
@@ -450,10 +446,11 @@ export default function DashboardView({
                     </span>
                     <button
                       onClick={() => handleCopyComboCaption(combo)}
-                      title="Copiar texto listo para Instagram"
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-orange-500 hover:text-slate-950 text-slate-300 transition cursor-pointer"
+                      title="Copiar post listo para Instagram"
+                      className="p-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 transition cursor-pointer flex items-center gap-1 text-[11px] font-semibold"
                     >
-                      <Copy size={13} />
+                      <InstagramIcon size={13} />
+                      <span className="hidden sm:inline">Instagram</span>
                     </button>
                   </div>
                 </div>

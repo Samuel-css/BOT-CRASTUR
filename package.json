@@ -9,6 +9,8 @@
     "dev:client": "npm --prefix client run dev",
     "maintenance": "node scripts/maintenance.js",
     "clean": "node scripts/clean_data.js",
+    "reset": "node scripts/reset_clean_install.js",
+    "stop": "node -e \"const http=require('http'); const req=http.request('http://localhost:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",
     "test": "node scripts/run_stress_and_edge_tests.js",
     "test:catalog": "node scripts/test_catalog_pdf.js"
   },

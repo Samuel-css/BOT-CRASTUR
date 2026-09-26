@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Percent,
@@ -9,9 +9,12 @@ import {
   X,
   Check,
   AlertCircle,
-  ChevronDown
+  ChevronDown,
+  Loader2,
+  ShieldAlert
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { handleNumericKeyDown, sanitizeCurrency } from '../../utils/inputSanitizers';
 
 export default function BulkPriceModal({
   isOpen,
@@ -25,7 +28,14 @@ export default function BulkPriceModal({
   const [direccion, setDireccion] = useState('aumentar'); // 'aumentar' | 'disminuir'
   const [tipo, setTipo] = useState('percentage'); // 'percentage' | 'fixed'
   const [valor, setValor] = useState('10');
+  const [confirmedChecked, setConfirmedChecked] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setConfirmedChecked(false);
+    }
+  }, [isOpen, categoria, direccion, tipo, valor]);
 
   // Filtrar productos seleccionados
   const targetProducts = useMemo(() => {
@@ -66,7 +76,28 @@ export default function BulkPriceModal({
   const handleApply = async () => {
     const numVal = parseFloat(valor);
     if (isNaN(numVal) || numVal <= 0) {
-      toast.error('Ingresa un valor mayor a cero');
+      toast.error('Ingresa un valor mayor a cero para el ajuste');
+      return;
+    }
+
+    if (tipo === 'percentage') {
+      if (numVal > 500) {
+        toast.error('El porcentaje máximo permitido de aumento o ajuste es 500%');
+        return;
+      }
+      if (direccion === 'disminuir' && numVal > 90) {
+        toast.error('No puedes disminuir más del 90% del precio (el producto no puede quedar en 0)');
+        return;
+      }
+    } else {
+      if (numVal > 1000) {
+        toast.error('El monto fijo máximo de ajuste es $1,000 USD');
+        return;
+      }
+    }
+
+    if (!confirmedChecked) {
+      toast.warning('Por seguridad, marca la casilla de confirmación antes de aplicar el cambio masivo.');
       return;
     }
 
@@ -231,13 +262,13 @@ export default function BulkPriceModal({
                   {tipo === 'percentage' ? '%' : '$'}
                 </span>
                 <input
-                  type="number"
-                  step="any"
-                  min="0.1"
+                  type="text"
+                  inputMode="decimal"
                   value={valor}
-                  onChange={(e) => setValor(e.target.value)}
+                  onKeyDown={(e) => handleNumericKeyDown(e, true)}
+                  onChange={(e) => setValor(sanitizeCurrency(e.target.value, 0.01, tipo === 'percentage' ? 500 : 1000))}
                   placeholder={tipo === 'percentage' ? 'Ej: 10' : 'Ej: 2.50'}
-                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-8 pr-3.5 py-2 text-sm font-bold text-white focus:outline-none focus:border-orange-500 transition"
+                  className="w-full bg-[#070b14] border border-slate-800 rounded-xl pl-8 pr-3.5 py-2 text-sm font-bold text-white focus:outline-none focus:border-orange-500 transition font-mono"
                 />
               </div>
 
@@ -322,6 +353,27 @@ export default function BulkPriceModal({
               )}
             </div>
           </div>
+
+          {/* 5. Checkbox Preventivo de Confirmación Humana */}
+          <div className="p-3.5 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-1">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmedChecked}
+                disabled={loading || targetProducts.length === 0}
+                onChange={(e) => setConfirmedChecked(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-orange-500 focus:ring-0 bg-slate-800 cursor-pointer shrink-0"
+              />
+              <div className="text-xs text-slate-300 select-none">
+                <span className="font-bold text-white block">Confirmar cambio masivo:</span>
+                <span className="text-slate-400">
+                  Entiendo que esto modificará de forma simultánea el precio en catálogo de{' '}
+                  <strong className="text-orange-400 font-mono font-bold">{targetProducts.length} repuestos</strong>{' '}
+                  {categoria === 'all' ? 'de todo el catálogo' : `de la categoría "${categoria}"`}.
+                </span>
+              </div>
+            </label>
+          </div>
         </div>
 
         {/* Footer Siempre Visible (Sticky Bottom) */}
@@ -333,17 +385,18 @@ export default function BulkPriceModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition cursor-pointer"
+              disabled={loading}
+              className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition cursor-pointer disabled:opacity-40"
             >
               Cancelar
             </button>
             <button
               type="button"
               onClick={handleApply}
-              disabled={loading || targetProducts.length === 0}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95 disabled:opacity-50 cursor-pointer"
+              disabled={loading || targetProducts.length === 0 || !confirmedChecked}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
             >
-              <Check size={16} />
+              {loading ? <Loader2 size={16} className="animate-spin shrink-0" /> : <Check size={16} />}
               <span>
                 {loading ? 'Aplicando...' : `Aplicar a ${targetProducts.length} Productos`}
               </span>

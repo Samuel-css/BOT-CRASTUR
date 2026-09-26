@@ -11,8 +11,8 @@ if (!fs.existsSync(catalogsDir)) {
   fs.mkdirSync(catalogsDir, { recursive: true });
 }
 
-// Ruta al logo de la empresa
-const logoPath = path.join(__dirname, '..', '..', '..', 'client', 'public', 'icon_256.png');
+// Ruta al logo oficial de la empresa
+const logoPath = path.join(__dirname, '..', '..', '..', 'client', 'public', 'logo_icon.png');
 
 /**
  * Normaliza y mapea categorías del bot a nombres canónicos oficiales

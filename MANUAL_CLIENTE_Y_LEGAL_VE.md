@@ -1,16 +1,16 @@
 # 🇻🇪 Guía Integral de Entrega, Marco Legal en Venezuela y Manual de Operaciones - Crastur
 
-Este documento constituye la documentación formal de entrega del sistema **Crastur - Sistema de Ventas y Bot de WhatsApp para Tiendas de Repuestos e Insumos**. Ha sido redactado para servir como manual operativo para el comerciante y como dictamen técnico-jurídico que respalda la legalidad y libre distribución del producto en la República Bolivariana de Venezuela.
+Este documento constituye la documentación formal de entrega del sistema **Crastur - Sistema de Ventas y Bot de WhatsApp para Tiendas de Repuestos e Insumos**. Ha sido redactado para servir como manual operativo para el comerciante y su personal de mostrador, y como dictamen técnico-jurídico que respalda la legalidad y libre distribución del producto en la República Bolivariana de Venezuela.
 
 ---
 
 ## 📑 ÍNDICE
 1. [Dictamen de Cumplimiento Legal en Venezuela](#1-dictamen-de-cumplimiento-legal-en-venezuela)
 2. [Términos de WhatsApp (Meta) y Blindaje Anti-Baneo](#2-términos-de-whatsapp-meta-y-blindaje-anti-baneo)
-3. [Manual Operativo para el Cliente (Paso a Paso)](#3-manual-operativo-para-el-cliente-paso-a-paso)
-4. [Gestión de Inventario, Apartados y Ciclo de Gracia (24h + 12h)](#4-gestión-de-inventario-apartados-y-ciclo-de-gracia-24h--12h)
-5. [Uso del Live Inbox (Atención Humana / Human Takeover)](#5-uso-del-live-inbox-atención-humana--human-takeover)
-6. [Respaldo, Importación y Mantenimiento de Base de Datos](#6-respaldo-importación-y-mantenimiento-de-base-de-datos)
+3. [Manual Operativo para el Comerciante (Paso a Paso)](#3-manual-operativo-para-el-comerciante-paso-a-paso)
+4. [Gestión de Inventario, Horarios, Combos Cashea y Apartados 24h](#4-gestión-de-inventario-horarios-combos-cashea-y-apartados-24h)
+5. [Uso del Live Inbox y Gestión de Asesores (Human Takeover)](#5-uso-del-live-inbox-y-gestión-de-asesores-human-takeover)
+6. [Respaldo, Mantenimiento y Suite de Pruebas de Estrés](#6-respaldo-mantenimiento-y-suite-de-pruebas-de-estrés)
 7. [Contrato de Licenciamiento y Acta de Entrega de Software](#7-contrato-de-licenciamiento-y-acta-de-entrega-de-software)
 
 ---
@@ -23,8 +23,8 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 * **Exigencia Legal:** Toda actividad comercial en territorio venezolano debe expresar de forma obligatoria y prioritaria los precios en **Bolívares (Bs.)**, calculados según la tasa oficial del Banco Central de Venezuela (BCV). Está terminantemente prohibido por la SUNDDE publicar precios exclusivamente en divisas extranjeras, utilizar tasas no oficiales ("paralelo") o imponer recargos punitivos a los pagos realizados en moneda de curso legal.
 * **Cumplimiento en Crastur:**
   - El sistema consulta y sincroniza automáticamente la tasa del **Banco Central de Venezuela (`bcv.org.ve`)** a 2 decimales exactos.
-  - Cada respuesta del bot, comprobante de apartado y cotización en el panel administrativo muestra simultáneamente el monto en dólares (`$ USD`) y en bolívares (`Bs.`), especificando la tasa oficial referencial.
-  - La política de descuentos por pronto pago en divisas se presenta como un beneficio comercial de descuento directo en caja y nunca como una penalización al pago en Bolívares (Pago Móvil o transferencias).
+  - Cada respuesta del bot, comprobante de apartado y cotización en el panel administrativo muestra simultáneamente el monto en dólares (`$ USD`) y en bolívares (`Bs.`), especificando la tasa oficial referencial del día.
+  - La política de descuentos por pronto pago en divisas se presenta como un beneficio comercial de descuento directo en caja por pronto pago en efectivo y nunca como una penalización al pago en Bolívares (Pago Móvil o transferencias bancarias).
 
 ### B. Convenio Cambiario N° 1 del Banco Central de Venezuela (BCV)
 * **Gaceta Oficial N° 6.405 Extraordinario del 7 de septiembre de 2018:**
@@ -43,17 +43,17 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 * **Artículos 20, 21 y 22:** Sancionan penalmente la violación de la privacidad de la data personal, interceptación indebida de comunicaciones y la revelación o cesión no autorizada de datos de clientes.
 * **Cumplimiento en Crastur:**
   - **Soberanía y Almacenamiento 100% Local:** La base de datos (`crastur.db`) opera bajo SQLite en la computadora del comerciante. **No envía datos de clientes ni conversaciones a servidores en la nube de terceros, ni contiene telemetría oculta.**
-  - El comerciante mantiene el control físico y absoluto de sus registros de clientes.
+  - El comerciante mantiene el control físico y absoluto de sus registros de clientes y productos.
 
 ### E. Ley sobre Mensajes de Datos y Firmas Electrónicas (G.O. N° 37.076)
 * **Artículos 4 y 6:** Reconocimiento de la eficacia probatoria y validez jurídica de los mensajes de datos y comunicaciones electrónicas entre partes comerciales.
 * **Cumplimiento en Crastur:**
   - Los tickets de apartado emitidos por WhatsApp poseen validez como constancia de oferta mercantil y reserva temporal.
-  - Incluyen fecha y hora de emisión, plazo exacto de expiración, descripción del producto, precio en Bolívares y USD, e identificación del establecimiento físico en San Agustín Norte.
+  - Incluyen fecha y hora de emisión, plazo exacto de expiración, descripción del producto, precio en Bolívares y USD, código único de control `CRA-` e identificación del establecimiento físico en San Agustín Norte.
 
 ### F. Ley Orgánica de Telecomunicaciones (LOT) y CONATEL
 * El software no presta servicios portadores ni opera redes públicas de telecomunicaciones; actúa como una aplicación de usuario final (Over-The-Top / OTT) instalada en un computador privado para la atención de clientes sobre el canal de WhatsApp. **No requiere habilitación administrativa, concesión ni licencia de CONATEL.**
-* El sistema cumple con las directrices anti-spam: la insistencia automática educada se ejecuta una sola vez (a los 15 minutos) y se aborta de inmediato si el cliente manifiesta negativa o agradecimiento.
+* El sistema cumple con directrices anti-spam: la insistencia automática educada se ejecuta una sola vez (a los 15 minutos) y se aborta de inmediato si el cliente manifiesta negativa, agradecimiento o si se encuentra fuera de horario de tienda.
 
 ---
 
@@ -61,7 +61,7 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 
 ### ¿Es legal comercializar y usar este bot?
 - **Ante la ley venezolana:** Sí, es 100% legal. No existe ninguna prohibición legal en Venezuela para conectar software propio a mensajería instantánea.
-- **Ante los Términos de Servicio de WhatsApp (Meta):** Meta establece en sus políticas privadas comerciales la preferencia por su API oficial de pago (WhatsApp Business Cloud API). El bot de Crastur utiliza **Baileys**, una librería de conexión directa WebSocket basada en el protocolo de WhatsApp Web.
+- **Ante los Términos de Servicio de WhatsApp (Meta):** Meta establece en sus políticas privadas comerciales la preferencia por su API oficial de pago (WhatsApp Business Cloud API). El bot de Crastur utiliza **Baileys**, una librería de conexión directa WebSocket basada en el protocolo nativo de WhatsApp Web.
 
 ### Mecanismos de Protección y Humanización Implementados:
 1. **Presencia Humana Simulada (`composing`):**  
@@ -69,137 +69,164 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 2. **Retardo Humano Variable (Human Typing Delay):**  
    El bot no responde de forma instantánea (<200ms) como los bots maliciosos; aplica un retraso orgánico calculado de 1.2 a 2.2 segundos para simular el ritmo de digitación humana.
 3. **Agrupación de Mensajes por Ráfaga (Debounce Anti-Spam de 1.2s):**  
-   Si el cliente envía varios mensajes cortos seguidos (*"hola"*, *"tienen bujía?"*, *"precio?"*), el bot los procesa en un único bloque en lugar de bombardear al cliente con 3 respuestas automáticas concurrentes.
-4. **Protección Contra Grupos y Canales:**  
+   Si el cliente envía varios mensajes cortos seguidos (*"hola"*, *"tienen bujía?"*, *"precio?"*), el bot los procesa en un único bloque en lugar de bombardear al cliente con múltiples respuestas concurrentes.
+4. **Protección Contra Grupos, Canales y Estados:**  
    El bot ignora estrictamente mensajes de grupos (`@g.us`), canales (`@newsletter`), estados de WhatsApp (`status@broadcast`) y difusiones masivas para evitar saturación de la cuenta.
 
 ### ⚠️ Reglas de Oro para el Comerciante (Evitar Bloqueos de Línea):
 1. **No enviar mensajes masivos a números desconocidos:** El bot debe utilizarse para responder a clientes que escriben a la tienda, **nunca para enviar publicidad en frío a bases de datos compradas**.
 2. **Calentamiento de líneas nuevas (Warm-up):** Si se utiliza una línea de teléfono recién comprada, úsala normalmente durante 7 a 10 días (chatear con amigos, grupos de confianza) antes de vincularla a un volumen comercial alto.
-3. **Mantener una buena tasa de respuesta:** Utilizar la pestaña **Live Inbox** cuando un cliente requiera atención especializada para que la interacción sea de mutua satisfacción y ningún usuario reporte la cuenta como spam.
+3. **Mantener una buena tasa de respuesta:** Utilizar la pestaña **Live Inbox** cuando un cliente requiera atención especializada para que la interacción sea fluida y ningún usuario reporte la cuenta como spam.
 
 ---
 
-## 3. MANUAL OPERATIVO PARA EL CLIENTE (PASO A PASO)
+## 3. MANUAL OPERATIVO PARA EL COMERCIANTE (PASO A PASO)
 
-### Arranque en 1 Solo Clic (Windows)
-1. Ubica el archivo **`Crastur.bat`** en la carpeta principal o el acceso directo en el Escritorio.
-2. Haz **doble clic en `Crastur.bat`**.
-3. El sistema verificará automáticamente el entorno y abrirá tu navegador predeterminado en `http://localhost:3333`.
+### 🖥️ Experiencia para el Cliente / Trabajador de Mostrador
 
-### Arranque en Linux / macOS
-1. Abre la terminal en la carpeta del proyecto.
-2. Ejecuta: **`./crastur.sh`** (o **`npm start`**).
-3. El iniciador comprobará las dependencias y abrirá automáticamente el panel en `http://localhost:3333`.
+El cliente **no necesita entrar a carpetas técnicas ni ver código**. Todo el flujo está pensado para funcionar directamente con **1 solo acceso directo en el Escritorio de Windows**:
+
+#### 1. Configuración Inicial (Solo la Primera Vez):
+- En la carpeta de la aplicación, haz doble clic en **`Crastur.bat`**.
+- El asistente comprobará el sistema, inicializará la base de datos y **creará automáticamente 1 único acceso directo oficial en el Escritorio de Windows**:
+  - 🛞 **`Crastur`**: Con el icono oficial naranja de la tienda.
+- A partir de este momento, el operador **solo usará ese acceso directo de su Escritorio**.
+
+---
+
+### 🟢 Rutina Diaria: Cómo Abrir el Sistema
+
+1. **En su Escritorio de Windows:**
+   - Haz **doble clic en el acceso directo `Crastur`**.
+   - **Si el sistema estaba apagado:** Arranca de forma 100% silenciosa en segundo plano (sin consolas negras que puedan cerrarse por error) y abre automáticamente el navegador en `http://localhost:3333`.
+   - **Si el sistema ya estaba encendido (ej. cerraron la pestaña por descuido):** El lanzador detecta que el servicio ya está corriendo y **simplemente reabre la pestaña en el navegador**, sin generar bloqueos ni errores de puerto ocupado.
+
+2. **En Linux / macOS:**
+   - Abre la terminal y ejecuta: `./crastur.sh`.
+
+---
+
+### 🛑 Rutina de Cierre: Cómo Apagar el Sistema
+
+Al terminar el turno o cerrar la tienda, el apagado se realiza de forma elegante y respetuosa directamente desde el sistema:
+
+1. **Apagado Oficial desde el Navegador:**
+   - En la esquina superior derecha del panel administrativo, haz clic en el botón rojo **"Apagar"**.
+   - Confirma el diálogo de seguridad.
+   - El sistema guarda de inmediato la base de datos SQLite en disco (`persistDB()`), desconecta WhatsApp sin perder la sesión y detiene el servidor.
+   - La pantalla cambia a una confirmación agradable indicando que todo está a salvo y que ya puedes cerrar esa pestaña. **Tus demás pestañas del navegador (correo, bancos, etc.) permanecen totalmente intactas.**
+
+2. **Herramienta Técnica de Emergencia (Solo si el navegador no responde):**
+   - En Windows: ejecuta `scripts/apagar_servidor.bat`.
+   - En Linux / macOS: ejecuta `scripts/apagar_servidor.sh`.
+
+---
 
 ### Cómo Vincular la Línea de WhatsApp
 1. En el menú lateral izquierdo, haz clic en **Conexión WhatsApp**.
 2. Abre WhatsApp en tu celular ➔ menú de 3 puntos (o Ajustes en iPhone) ➔ **Dispositivos vinculados** ➔ **Vincular un dispositivo**.
-3. Apunta la cámara de tu teléfono hacia el **código QR** que aparece en la pantalla de la computadora.
+3. Apunta la cámara de tu teléfono hacia el **código QR** que aparece en pantalla.
 4. Una vez vinculado, el indicador cambiará a **Conectado** en color verde y el bot empezará a atender de inmediato.
 
 ### ¿Qué hacer si se cambia de teléfono o WhatsApp se desconecta?
 1. Dirígete a **Conexión WhatsApp** en el panel.
 2. Haz clic en el botón **"Nuevo QR Limpio"** (o "Cerrar Sesión").
-3. El sistema purgará las credenciales caducadas y generará un nuevo código QR fresco para escanear con la nueva línea.
+3. El sistema purgará las credenciales caducadas y generará un nuevo código QR limpio para escanear con la nueva línea.
 
 ---
 
-## 4. GESTIÓN DE INVENTARIO, APARTADOS Y CICLO DE GRACIA (24H + 12H)
+## 4. GESTIÓN DE INVENTARIO, HORARIOS, COMBOS CASHEA Y APARTADOS 24H
 
-### Control Estricto de Stock
-- Al registrar un apartado desde WhatsApp o el panel, el sistema **verifica que el repuesto tenga existencias disponibles (`stock > 0`)**.
-- Si el stock es 0, el bot informa cordialmente al cliente que la pieza está agotada y le sugiere hablar con un vendedor.
-- Al generarse el apartado, **el sistema descuenta automáticamente 1 unidad del stock activo** para garantizar que no se venda la misma pieza a dos personas diferentes.
+### A. Inventario Limpio para Producción (Opción A)
+Para su despliegue comercial oficial, el sistema se entrega con **`0 productos`**, permitiendo cargar el catálogo real directamente desde:
+- **Catálogo ➔ Nuevo Repuesto**: Registro manual con marca, modelo, categoría, precio USD y stock.
+- **Importación**: Carga rápida de inventario.
+- **Restablecimiento Limpio de Fábrica**: En caso de requerir volver a dejar la base de datos 100% limpia en el futuro, ejecuta en la terminal:
+  ```bash
+  npm run reset
+  ```
 
-### Ciclo de Vida del Apartado (24 Horas + 12 Horas de Gracia):
-1. **Primeras 24 Horas (Estado `activo`):**  
-   El repuesto queda reservado en tienda física. El panel muestra la cuenta regresiva en verde o ámbar (*"18h restantes"*).
-2. **Al cumplir las 24 Horas (Estado `vencido`):**  
-   - Si el cliente no retiró la pieza, el sistema cambia el estado a **`vencido`** y **restablece automáticamente el stock al inventario de la tienda** para que pueda ser vendido a otro comprador.
-   - **Plazo de Gracia de 12 Horas:** El apartado **NO se borra de inmediato**. Se mantiene visible en el panel durante **12 horas extras** con el badge `Vencido (Gracia: Xh restantes)`. Esto permite al dueño llamar al cliente por teléfono si desea ofrecerle retirar la pieza antes de descartar el registro.
-3. **A las 36 Horas Totales (24h + 12h de gracia):**  
-   El registro se purga automáticamente de la base de datos para mantener el sistema ligero y ordenado.
+### B. Gestión de Horarios: Lunes a Sábado vs. Cierre Temprano Dominical
+Crastur opera de lunes a sábado en horario corrido y los domingos con horario reducido:
+- **Preset Oficial Predeterminado:**  
+  `Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM`
+- **Configuración Intuitiva:** En la pestaña **1. Mi Tienda & Horario**, dispones de chips rápidos y un selector para configurar por separado los días laborales de semana y el horario especial de domingos (`☀️ 8:30 AM a 2:00 PM`, `☀️ 8:00 AM a 1:00 PM`, `☀️ 9:00 AM a 2:00 PM`, o `🚫 Cerrado`).
+- **Comportamiento Fuera de Horario:** Si un cliente escribe fuera de las horas comerciales, el bot le brinda información completa de precios, catálogo y tasa BCV, pero aclara que las reservas y entregas físicas se procesarán a partir de la hora oficial de apertura de la tienda física.
 
----
+### C. Calculadora Cashea y Constructor de Combos ($25 USD Mínimo)
+El servicio de financiamiento en 3 cuotas quincenales sin interés de Cashea exige en tienda física un monto mínimo de **$25 USD**. Para productos económicos (ej. aceite a $6, pastillas a $5 o bujías a $3.50):
+1. Ingresa a la **Calculadora Cashea** ➔ **Elegir o Combinar Repuestos del Catálogo**.
+2. Utiliza los selectores de cantidad `[-] [qty] [+]` o el botón **"Sumar a Combo Cashea"** para armar el paquete de repuestos que el cliente desea llevarse.
+3. La **barra de progreso** indica en tiempo real cuánto dinero falta para alcanzar los $25 USD y ofrece sugerencias rápidas en 1 clic.
+4. Al llegar a $25 USD, presiona **"Copiar Cotización Lista para WhatsApp"** para enviar un presupuesto formal con desglose por ítem, precio en USD, precio en Bs a tasa BCV, inicial en tienda física (según Nivel 1: 40%, Nivel 2: 30%, Nivel 3+: 20%) y 3 cuotas quincenales exactas sin interés.
 
-## 5. USO DEL LIVE INBOX (ATENCIÓN HUMANA / HUMAN TAKEOVER)
-
-El panel incluye la pestaña **Live Inbox**, diseñada para que los asesores de ventas puedan supervisar las conversaciones de los clientes y tomar el control manual cuando sea necesario:
-
-1. **Indicador de Estado de Conexión:**  
-   En la parte superior, si WhatsApp no está vinculado, el sistema mostrará un banner de alerta con el botón directo **"👉 Vincular WhatsApp Ahora"**. En el menú lateral se indicará claramente *"Sin Conexión"* en lugar de confundir al usuario.
-2. **Lista de Chats Recientes:**  
-   En la columna izquierda verás todas las conversaciones con el nombre del cliente, número de teléfono, último mensaje y un badge que indica si el bot está activo (verde) o en pausa (ámbar).
-3. **Pausar Bot en un Chat Específico (Human Takeover):**  
-   Si deseas atender tú mismo a un cliente sin que el bot envíe respuestas automáticas, abre el chat y presiona el botón **"Pausar Bot (Atender Yo)"**. El bot guardará silencio en esa conversación.
-4. **Banco de Atajos Comerciales Profesionales (8 Plantillas Oficiales):**  
-   Encima de la barra de mensajes dispones de botones directos y el botón **"Ver Todos (8)"** con información completa y verificada de Crastur:
-   - **👋 Saludo Asesor:** Presentación cordial del equipo de ventas.
-   - **📍 Ubicación & Puntos de Referencia:** Dirección exacta (Edif. Liberalba, San Agustín Norte), referencias (Metro Parque Central / Centro Financiero Latino) y enlace a Google Maps.
-   - **💳 Métodos de Pago & Tasa BCV:** Desglose de divisas en efectivo (con descuento), Pago Móvil sin recargos, transferencias y tasa oficial del BCV en vivo.
-   - **💛 Financiamiento Cashea:** Explicación detallada de compras a partir de $25 USD, pago de inicial y 3 cuotas quincenales según el nivel del cliente.
-   - **🛵 Delivery en Caracas & Tarifas:** Tarifas estimadas por zonas de la Gran Caracas ($2-$3 USD y $3-$5 USD).
-   - **⏱️ Cómo Apartar por 24 Horas:** Datos requeridos (Nombre, Cédula y Teléfono).
-   - **✅ Disponibilidad Inmediata:** Confirmación de stock para retiro hoy o delivery.
-   - **🛡️ Garantía & Política de Cambios:** Especificación de garantía y conservación de empaque original.
-5. **Limpieza y Mantenimiento del Inbox:**  
-   - **Borrado Individual de Chats en la Lista:** Cada conversación en la lista izquierda cuenta con su propio icono de papelera. Al hacer clic o tocarlo, se muestra una ventana de confirmación segura para eliminar esa conversación específica sin afectar al resto de clientes ni tocar tus productos. Si el cliente vuelve a escribir más adelante, entrará como una nueva conversación sin problemas.
-   - **Limpiar Chat Abierto:** También dispones del botón de papelera en la barra superior del chat activo para limpiar los mensajes de la conversación que tienes en pantalla.
-   - **Vaciar Todo el Inbox:** Botón en la lista de chats para limpiar todos los historiales y dejar la bandeja completamente limpia al inicio de jornada.
-6. **Reanudar Bot:**  
-   Cuando termines de atender al cliente, haz clic en **"Reanudar Bot"** para que el asistente virtual vuelva a encargarse de responderle.
+### D. Ciclo de Vida del Apartado (24 Horas + 12 Horas de Gracia)
+1. **Control de Stock en Tiempo Real:** Al apartar una pieza, el bot verifica que exista existencia física (`stock > 0`) y descuenta inmediatamente 1 unidad del inventario disponible para evitar sobreventa.
+2. **Primeras 24 Horas (`activo`):** El cliente cuenta con 24 horas continuas para retirar en el local de San Agustín Norte.
+3. **Al Vencer las 24 Horas (`vencido`):** El sistema **reintegra automáticamente la pieza al stock activo** para que pueda ser vendida a otro cliente.
+4. **12 Horas de Gracia Extra:** El registro no se elimina de inmediato; permanece visible en el panel durante 12 horas adicionales con el badge `Vencido (Gracia: Xh)`, permitiendo al encargado contactar al cliente por teléfono antes de descartar la ficha.
+5. **A las 36 Horas Totales:** El registro se purga automáticamente de la base de datos para mantener el sistema ligero y rápido.
 
 ---
 
-## 6. RESPALDO, IMPORTACIÓN Y MANTENIMIENTO DEL SISTEMA
+## 5. USO DEL LIVE INBOX Y GESTIÓN DE ASESORES (HUMAN TAKEOVER)
+
+El panel incluye la sección **Live Inbox**, donde el personal de ventas puede supervisar los chats de WhatsApp y tomar el control manual cuando sea necesario:
+
+1. **Pausar Bot en un Chat Específico (Human Takeover):**  
+   Si deseas atender tú mismo a un cliente sin que el bot envíe respuestas automáticas, abre el chat y presiona **"Pausar Bot (Atender Yo)"**. El bot guardará silencio en esa conversación hasta que presiones **"Reanudar Bot"**.
+2. **Banco de Atajos Comerciales Profesionales (8 Plantillas Oficiales):**  
+   Dispones de botones rápidos con respuestas redactadas y verificadas de Crastur:
+   - **👋 Saludo Asesor**
+   - **📍 Ubicación & Puntos de Referencia** (Edif. Liberalba, San Agustín Norte)
+   - **💳 Métodos de Pago & Tasa BCV**
+   - **💛 Financiamiento Cashea**
+   - **🛵 Delivery en Caracas & Tarifas**
+   - **⏱️ Cómo Apartar por 24 Horas**
+   - **✅ Disponibilidad Inmediata**
+   - **🛡️ Garantía & Política de Cambios**
+3. **Gestión de Asesores de Ventas:**  
+   En la sección de Asesores puedes registrar los miembros del equipo de ventas. El sistema normaliza automáticamente números de teléfono con o sin código internacional (`+58`, `0412...`, etc.) generando enlaces directos de WhatsApp `wa.me/58...` sin errores de marcado.
+4. **Limpieza Segura del Inbox:**  
+   - Borrado individual de chats con confirmación de seguridad.
+   - Vaciado general de la bandeja sin tocar productos ni configuraciones.
+
+---
+
+## 6. RESPALDO, MANTENIMIENTO Y SUITE DE PRUEBAS DE ESTRÉS
 
 ### A. Herramienta Automatizada de Mantenimiento (`npm run maintenance`)
-El sistema cuenta con un script integral de mantenimiento y diagnóstico accesible por terminal ejecutando:
+Ejecutando por terminal:
 ```bash
 npm run maintenance
 ```
-Este comando despliega un menú interactivo en consola con las siguientes opciones:
+Dispones de un menú de diagnóstico y optimización:
+- **`--diag`**: Integridad física de SQLite (`PRAGMA integrity_check`) y verificación de puertos.
+- **`--node-check`**: Detección de versión de Node.js y compatibilidad LTS oficial.
+- **`--rebuild-deps`**: Re-vinculación de dependencias nativas y WebAssembly (`sql.js`).
+- **`--clean`**: Vaciado de mensajes y métricas a cero operativo.
+- **`--vacuum`**: Desfragmentación y optimización profunda de SQLite.
+- **`--prune-backups`**: Limpieza de respaldos automáticos de más de 7 días.
+- **`--reset-wa`**: Reinicio de credenciales de WhatsApp para escanear un nuevo QR.
+- **`--build`**: Compilación del panel visual web en Vite.
 
-1. **🔍 Diagnóstico Integral de Salud (`--diag`):**
-   - Comprueba la integridad física de SQLite (`PRAGMA integrity_check`).
-   - Muestra el tamaño de la base de datos y desglose de registros (catálogo, apartados activos, mensajes).
-   - Verifica la disponibilidad del puerto de red `3333` y el estado de la sesión de WhatsApp.
-2. **🟢 Verificación de Node.js y Compatibilidad LTS (`--node-check`):**
-   - Detecta la versión de Node.js instalada en la máquina y consulta la última versión LTS oficial en `nodejs.org`.
-   - Si el sistema operativo actualizó Node.js (por ejemplo, a Node.js 20, 22 o superior), te permite verificar la compatibilidad de inmediato.
-3. **🔄 Re-vincular Dependencias tras Cambio de Node.js (`--rebuild-deps`):**
-   - Ejecuta `npm rebuild` para re-compilar y vincular los módulos nativos y de WebAssembly (`sql.js`, buffers de sockets) con el runtime activo de Node.js, garantizando cero fallos de ABI.
-4. **🧹 Limpieza Operacional a Cero (`--clean`):**
-   - Limpia historiales de chat, sesiones inactivas, apartados vencidos y métricas de prueba, dejando el catálogo de productos comerciales y la configuración de la tienda 100% intactos.
-5. **🗜️ Optimización y Desfragmentación SQLite (`--vacuum`):**
-   - Ejecuta `VACUUM` y `PRAGMA optimize;` en la base de datos, reduciendo su peso en disco y acelerando las lecturas y consultas del bot.
-6. **📦 Depuración de Respaldos Antiguos (`--prune-backups`):**
-   - Elimina respaldos automáticos con más de 7 días de antigüedad en `data/backups/`, evitando consumo innecesario de almacenamiento y generando un respaldo maestro actualizado.
-7. **📲 Reinicio Seguro de Sesión de WhatsApp (`--reset-wa`):**
-   - Si la línea telefónica cambia o las credenciales sufren desincronización, purga la carpeta `data/auth_info_baileys/` para permitir escanear un nuevo código QR limpio de inmediato.
-8. **🚀 Recompilación del Panel Web (`--build`):**
-   - Ejecuta la compilación de producción de Vite para asegurar que el panel visual esté al día con todas las optimizaciones.
-9. **⚡ Mantenimiento Completo Automático (`--all`):**
-   - Ejecuta el diagnóstico, verificación de Node.js, optimización SQLite, depuración de respaldos y compilación web en una sola acción.
+### B. Suite de Pruebas de Estrés y Validación Extrema (`npm test`)
+El sistema cuenta con una batería de **68 pruebas automatizadas** que validan:
+- **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en menos de 120 ms (> 1.700 req/s).
+- **16 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
+- **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (> 30 msgs/min).
+- **Auto-Limpieza Post-Pruebas:** El script inyecta fixtures temporales para ejecutar las pruebas y los elimina al terminar, garantizando que el catálogo de producción permanezca en **0 productos**.
 
-### B. Respaldo Integral y Restauración Segura de la Base de Datos (.db)
-- **Copia de Seguridad del Negocio (1 Clic):**  
-  En el menú lateral, dirígete a **Configuración** ➔ pestaña **🛡️ Copia de Seguridad** y presiona el botón **"Descargar Copia de Seguridad"**. Se guardará en tu computadora un archivo `.db` que contiene el 100% de tus productos, precios en dólares, combos, clientes, apartados y configuración de tienda.
-- **Restaurar desde una Copia:**  
-  Si necesitas restaurar una copia previa o migrar datos desde otra computadora (por ejemplo, desde la PC de Windows), presiona **"Restaurar desde Copia"** y selecciona tu archivo `.db`. El sistema valida la integridad de la base de datos y crea automáticamente una copia de seguridad de emergencia previa antes de aplicar los datos nuevos.
-- **Protección del Negocio:**  
-  Para evitar que operadores inexpertos borren o corrompan datos por descuido, la exportación e importación se gestiona de forma centralizada y segura en la sección de Copia de Seguridad bajo confirmaciones protegidas.
-
-### C. Protección Atómica Contra Apagones y Fallas Eléctricas
-- El motor de almacenamiento de Crastur utiliza **escritura atómica en disco** mediante archivos temporales antes de consolidar `crastur.db`.
-- Si ocurre un corte de luz o fluctuación eléctrica durante la operación de la tienda, el archivo principal de la base de datos no sufre corrupción. Además, el sistema genera copias de seguridad automáticas diarias en la carpeta `data/backups/`.
+### C. Copias de Seguridad y Protección contra Apagones
+- **Descarga en 1 Clic:** En **Configuración ➔ 5. Copia de Seguridad**, haz clic en **"Descargar Copia de Seguridad"** para obtener tu archivo `.db`.
+- **Restauración Segura:** Puedes restaurar un respaldo `.db` en cualquier momento; el sistema genera una copia de seguridad preventiva antes de aplicar los datos.
+- **Escritura Atómica:** El motor SQLite escribe en archivos temporales antes de consolidar el archivo maestro, protegiendo los datos contra pérdidas ante cortes imprevistos de energía eléctrica.
 
 ---
 
 ## 7. CONTRATO DE LICENCIAMIENTO Y ACTA DE ENTREGA DE SOFTWARE
 
-*(Este modelo puede ser firmado entre el desarrollador y el cliente propietario de Crastur al momento de la entrega formal del producto)*
+*(Modelo para ser suscrito entre el desarrollador y el representante comercial de Crastur al momento de la entrega formal del producto)*
 
 ### ACTA DE ENTREGA Y LICENCIA DE USO DE SOFTWARE COMERCIAL
 
@@ -210,7 +237,7 @@ Por una parte, **EL DESARROLLADOR / PROVEEDOR**, y por la otra parte, **CRASTUR 
 2. **Soberanía y Privacidad de los Datos:** EL CLIENTE declara conocer que la base de datos opera de forma estrictamente local en su equipo de cómputo. EL DESARROLLADOR no almacena, no transfiere ni tiene acceso a los datos de los clientes, números telefónicos, cédulas de identidad ni conversaciones generadas en el negocio de EL CLIENTE, cumpliendo a cabalidad con el Art. 28 de la CRBV y la Ley Especial contra los Delitos Informáticos.
 3. **Cumplimiento de Leyes Comerciales y SUNDDE:** EL CLIENTE se compromete a mantener activa la sincronización con la tasa oficial del BCV y a no utilizar el sistema para fines contrarios a la Ley Orgánica de Precios Justos ni para especulación cambiaria.
 4. **Políticas de WhatsApp y Exención de Responsabilidad:** EL CLIENTE reconoce que el servicio de mensajería de WhatsApp es provisto por una empresa tercera (Meta Platforms, Inc.). EL DESARROLLADOR entrega el software equipado con mecanismos de humanización y anti-spam (composing, retardo humano y limitadores). EL CLIENTE se compromete a no utilizar el bot para envío masivo de spam o comunicaciones no solicitadas, eximiendo a EL DESARROLLADOR de cualquier responsabilidad en caso de suspensiones de la línea originadas por reportes de usuarios o uso indebido por parte de los operadores del negocio.
-5. **Garantía y Aceptación:** EL CLIENTE ha inspeccionado el sistema, verificado el correcto funcionamiento del bot, del catálogo, del sistema de apartados de 24 horas y del panel administrativo web, declarando su total conformidad y aceptación de entrega a satisfacción.
+5. **Garantía y Aceptación:** EL CLIENTE ha inspeccionado el sistema, verificado el correcto funcionamiento del bot, del catálogo, del sistema de apartados de 24 horas, de la calculadora de combos Cashea y del panel administrativo web, declarando su total conformidad y aceptación de entrega a satisfacción.
 
 En Caracas, a la fecha de su entrega y puesta en marcha.
 

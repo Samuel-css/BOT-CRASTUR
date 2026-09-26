@@ -26,7 +26,17 @@ function persistDB() {
     const data = rawDb.export();
     const tempPath = dbPath + '.tmp';
     fs.writeFileSync(tempPath, Buffer.from(data));
-    fs.renameSync(tempPath, dbPath);
+    try {
+      fs.renameSync(tempPath, dbPath);
+    } catch (renameErr) {
+      // En Windows, si el archivo está retenido por un antivirus o proceso de indexación
+      if (process.platform === 'win32' || renameErr.code === 'EPERM' || renameErr.code === 'EBUSY') {
+        fs.copyFileSync(tempPath, dbPath);
+        try { fs.unlinkSync(tempPath); } catch (_) {}
+      } else {
+        throw renameErr;
+      }
+    }
   } catch (e) {
     console.error('[DB] Error guardando archivo crastur.db:', e.message);
   }
@@ -349,13 +359,13 @@ async function initDB() {
     'cashea_info': '¡En Crastur contamos con Cashea! Llévate hoy tus repuestos y accesorios para moto e insumos pagando solo una inicial y el resto en 3 cuotas quincenales sin interés.',
     'insistencia_activa': '1',
     'insistencia_minutos': '15',
-    'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM',
+    'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM',
     'politica_envios': 'Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.',
     'metodos_pago': 'Precio Promoción en Divisas (Efectivo $ y Binance Pay USDT), Pago Móvil y Transferencia (tasa BCV), Efectivo Bs y Cashea en tienda.',
     'mensaje_insistencia': '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.',
-    'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nInsumos para caucheras, repuestos y accesorios para moto, y otros productos con financiamiento Cashea.',
+    'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.',
     'fuera_horario_activo': '0',
-    'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨',
+    'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨',
     'bot_pausado_global': '0'
   };
 
