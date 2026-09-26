@@ -301,13 +301,19 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
   // Conmutador interactivo de formas de pago
   const togglePaymentItem = (paymentLabel) => {
     const cur = form.metodos_pago || '';
+    // Separar por comas, limpiar espacios, filtrar vacíos
+    const items = cur.split(',').map(s => s.trim()).filter(Boolean);
+    const idx = items.findIndex(s => s.toLowerCase() === paymentLabel.toLowerCase());
     let updated = '';
-    if (cur.toLowerCase().includes(paymentLabel.toLowerCase())) {
-      const regex = new RegExp(`(,\\s*)?${paymentLabel}`, 'gi');
-      updated = cur.replace(regex, '').replace(/^,\s*/, '').trim();
+    if (idx !== -1) {
+      // Está activo → desactivar (quitar)
+      items.splice(idx, 1);
+      updated = items.join(', ');
       toast.info(`Desactivado: ${paymentLabel}`);
     } else {
-      updated = cur ? `${cur}, ${paymentLabel}` : paymentLabel;
+      // No está → activar (agregar)
+      items.push(paymentLabel);
+      updated = items.join(', ');
       toast.success(`Activado: ${paymentLabel}`);
     }
     setForm(prev => ({ ...prev, metodos_pago: updated }));
@@ -357,7 +363,6 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
       });
       const data = await res.json();
       if (data.success) {
-        toast.success('¡Configuración guardada exitosamente!');
         if (onSaveSettings) onSaveSettings(data.settings);
       } else {
         toast.error('Error al guardar la configuración');
@@ -1354,7 +1359,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {PAYMENT_OPTIONS.map((item) => {
-                    const isAvailable = (form.metodos_pago || '').toLowerCase().includes(item.label.toLowerCase());
+                    const isAvailable = (form.metodos_pago || '').split(',').map(s => s.trim()).some(s => s.toLowerCase() === item.label.toLowerCase());
                     return (
                       <button
                         key={item.id}

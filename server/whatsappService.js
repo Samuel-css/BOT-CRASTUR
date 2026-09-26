@@ -18,8 +18,10 @@ let liveMessageCallbacks = [];
 let followUpInterval = null;
 let qrTimeoutCount = 0;
 let reconnectTimer = null;
+let botReady = false;        // true solo despues de la sincronizacion inicial del historial
+let botReadyTimer = null;    // timer que activa botReady tras espera de sincronizacion
 
-// Buffer de Debounce Anti-Spam para ráfagas de mensajes rápidos
+// Buffer de Debounce Anti-Spam para rafagas de mensajes rapidos
 const messageDebounceTimers = new Map();
 const messageDebounceQueues = new Map();
 
@@ -231,6 +233,8 @@ async function startWhatsApp() {
         connectionStatus = 'disconnected';
         currentQR = null;
         currentUser = null;
+        botReady = false;
+        if (botReadyTimer) { clearTimeout(botReadyTimer); botReadyTimer = null; }
         notifyStatusChange();
 
         if (followUpInterval) {
@@ -270,6 +274,14 @@ async function startWhatsApp() {
         };
         console.log(`[WhatsApp] ¡Conexión exitosa a WhatsApp! Sesión activa: ${phone}`);
         notifyStatusChange();
+
+        // Esperar 20 segundos para que la sincronización histórica termine antes de activar respuestas
+        botReady = false;
+        if (botReadyTimer) clearTimeout(botReadyTimer);
+        botReadyTimer = setTimeout(() => {
+          botReady = true;
+          console.log('[WhatsApp] ✅ Bot listo y activo. Respondiendo mensajes nuevos.');
+        }, 20000);
 
         // Iniciar chequeo de insistencia periódica y limpieza de apartados vencidos (cada 1 minuto)
         if (!followUpInterval) {
@@ -367,7 +379,8 @@ async function startWhatsApp() {
 
     // Escuchar mensajes entrantes
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type !== 'notify' && type !== 'append') return;
+      // Solo mensajes en tiempo real ('notify'). 'append' es historial de sincronizacion, nunca activar bot.
+      if (type !== 'notify') return;
       if (!messages || !Array.isArray(messages)) return;
 
       for (const msg of messages) {
@@ -586,6 +599,12 @@ async function startWhatsApp() {
           const activePushName = queue[queue.length - 1]?.pushName || pushName || 'amigo/a';
 
           console.log(`[WhatsApp Bot] ⚙️ Procesando consulta de ${activePushName} (${jid}): "${combinedText || '[Multimedia]'}"`);
+
+          // Si el bot aún está en período de sincronización (primeros 20s), no responder
+          if (!botReady) {
+            console.log(`[WhatsApp Bot] ⏳ Bot en fase de inicio, mensaje de ${activePushName} registrado en inbox pero sin respuesta automática todavía.`);
+            return;
+          }
 
           try {
             const mediaParam = hasMediaOnly ? { isMedia: true, type: firstMedia.mediaType } : null;
