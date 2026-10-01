@@ -1,3 +1,23 @@
+/**
+ * ============================================================================
+ * COMPONENTE RAÍZ DEL PANEL ADMINISTRATIVO: DASHBOARD CRASTUR (APP.JSX)
+ * ============================================================================
+ * Orquesta la interfaz de usuario en React, integrando navegación modular por pestañas,
+ * streaming de eventos en tiempo real mediante WebSockets, sincronización con la tasa BCV,
+ * control de pausas del bot (Human Takeover) y gestión de modales transaccionales.
+ * 
+ * [MERCADO VENEZUELA]
+ * - Monitorea en vivo la tasa oficial del BCV (Bs/USD) y recalcula precios y cuotas Cashea.
+ * - Gestiona el estado de apertura/cierre de la tienda física en San Agustín Norte, Caracas.
+ * - Copia cotizaciones optimizadas para WhatsApp con desglose de cuotas e inicial Cashea.
+ * 
+ * [ARQUITECTURA SQL.JS]
+ * - Sincroniza catálogo, reservas por 24h, proveedores, asesores y métricas desde SQLite WASM.
+ * 
+ * [ANTI-BANEO META 2025]
+ * - Control de interruptor de pausa global y derivación fluida a asesores comerciales humanos.
+ */
+
 import { useState, useEffect } from 'react';
 import { Power, RotateCcw, CheckCircle2 } from 'lucide-react';
 import Sidebar from './components/layout/Sidebar';
@@ -9,10 +29,12 @@ import ReservationsView from './components/views/ReservationsView';
 import CasheaCalculatorView from './components/views/CasheaCalculatorView';
 import WhatsAppView from './components/views/WhatsAppView';
 import SellersView from './components/views/SellersView';
+import SuppliersView from './components/views/SuppliersView';
 import SettingsView from './components/views/SettingsView';
 
 import ProductModal from './components/modals/ProductModal';
 import SellerModal from './components/modals/SellerModal';
+import SupplierModal from './components/modals/SupplierModal';
 import ReservationModal from './components/modals/ReservationModal';
 import ConfirmModal from './components/modals/ConfirmModal';
 import QuickPriceModal from './components/modals/QuickPriceModal';
@@ -22,12 +44,14 @@ import { Toaster } from 'sonner';
 import { formatBs, formatRate } from './utils/formatters';
 
 export default function App() {
+  // Pestaña activa del dashboard y colecciones de datos primarias
   const [activeTab, setActiveTab] = useState('dashboard');
   const [products, setProducts] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [sellers, setSellers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [settings, setSettings] = useState({});
-  const [bcvData, setBcvData] = useState({ tasa_efectiva: 849.56, tasa_bcv: 849.56, fecha_tasa: '' });
+  const [bcvData, setBcvData] = useState({ tasa_efectiva: null, tasa_bcv: null, fecha_tasa: '' });
   const [waStatus, setWaStatus] = useState({ status: 'disconnected', qr: null, user: null });
   const [botPausedGlobal, setBotPausedGlobal] = useState(false);
   const [metrics, setMetrics] = useState({ consultas_hoy: 0, total_mensajes: 0, total_clientes: 0, top_busquedas: [] });
@@ -36,9 +60,10 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toasts, toast, removeToast } = useToast();
 
-  // Modals state
+  // Estados de control de apertura para modales interactivos
   const [productModal, setProductModal] = useState({ isOpen: false, editing: null });
   const [sellerModal, setSellerModal] = useState({ isOpen: false, editing: null });
+  const [supplierModal, setSupplierModal] = useState({ isOpen: false, editing: null });
   const [reservationModal, setReservationModal] = useState({ isOpen: false, data: null });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: true });
   const [quickPriceOpen, setQuickPriceOpen] = useState(false);
@@ -53,6 +78,9 @@ export default function App() {
     }
   });
 
+  /**
+   * Alterna la barra lateral entre modo expandido y colapsado (con persistencia en localStorage).
+   */
   const handleToggleSidebar = () => {
     setSidebarCollapsed(prev => {
       const next = !prev;
@@ -61,7 +89,7 @@ export default function App() {
     });
   };
 
-  // Escuchar tecla F2 (precio rápido) y Ctrl+B (plegar/desplegar sidebar)
+  // Atajos globales de teclado: F2 (Calculadora rápida) y Ctrl+B (Plegar/Desplegar navegación)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'F2') {
@@ -77,7 +105,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Adaptación automática al redimensionar la ventana si la resolución es baja
+  // Adaptación de interfaz responsiva ante cambios en la resolución de pantalla
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 1100) {
@@ -88,6 +116,9 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  /**
+   * Modifica el indicador de apertura física de la tienda (Horario de atención / Fuera de horario).
+   */
   const handleToggleStoreStatus = () => {
     const isClosed = settings.fuera_horario_activo === '1';
     const newStatus = isClosed ? '0' : '1';
@@ -129,6 +160,13 @@ export default function App() {
       .catch(() => {});
   };
 
+  const loadSuppliers = () => {
+    fetch('/api/suppliers')
+      .then(r => r.json())
+      .then(data => setSuppliers(data.suppliers || []))
+      .catch(() => {});
+  };
+
   const loadBCV = () => {
     fetch('/api/bcv')
       .then(r => r.json())
@@ -154,12 +192,13 @@ export default function App() {
     loadProducts();
     loadReservations();
     loadSellers();
+    loadSuppliers();
     loadBCV();
     loadSettings();
     loadMetrics();
   };
 
-  // Initial Load & Real-time WebSockets
+  // Carga inicial y suscripción a eventos en tiempo real vía WebSocket (con reconexión estocástica)
   useEffect(() => {
     loadAllData();
 
@@ -172,7 +211,7 @@ export default function App() {
       try {
         ws = new WebSocket(wsUrl);
         ws.onopen = () => {
-          wsReconnectDelay = 2000; // Reset delay on success
+          wsReconnectDelay = 2000; // Restablecer retardo base tras reconexión exitosa
         };
         ws.onmessage = (event) => {
           try {
@@ -202,7 +241,7 @@ export default function App() {
           }
         };
         ws.onclose = () => {
-          // Reconnect with exponential backoff (max 30s)
+          // Reintentar conexión con backoff exponencial (límite máximo 30 segundos)
           setTimeout(() => {
             connectWS();
             wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000);
@@ -217,6 +256,7 @@ export default function App() {
     }
     connectWS();
 
+    // Polling de respaldo cada 10 segundos como red de seguridad ante caídas de WebSocket
     const interval = setInterval(() => {
       fetch('/api/status')
         .then(r => r.json())
@@ -239,6 +279,9 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * Fuerza una consulta manual de la tasa BCV oficial y actualiza el estado.
+   */
   const refreshBCV = () => {
     setLoading(true);
     fetch('/api/bcv/refresh', { method: 'POST' })
@@ -255,7 +298,9 @@ export default function App() {
       });
   };
 
-  // WhatsApp Actions
+  /**
+   * Inicia el proceso de conexión de WhatsApp Baileys.
+   */
   const handleStartWhatsApp = () => {
     setLoading(true);
     fetch('/api/whatsapp/start', { method: 'POST' })
@@ -271,6 +316,9 @@ export default function App() {
       });
   };
 
+  /**
+   * Restablece las credenciales de WhatsApp en disco y genera un nuevo código QR limpio.
+   */
   const handleResetWhatsApp = () => {
     setConfirmModal({
       isOpen: true,
@@ -298,6 +346,9 @@ export default function App() {
     });
   };
 
+  /**
+   * Cierra la sesión activa de WhatsApp con opción de vaciado de chats por privacidad.
+   */
   const handleOpenLogoutConfirm = () => {
     setConfirmModal({
       isOpen: true,
@@ -328,6 +379,9 @@ export default function App() {
     });
   };
 
+  /**
+   * [ANTI-BANEO META 2025] Alterna la pausa global del bot para toda la tienda física.
+   */
   const handleToggleGlobalBotPause = () => {
     const nextState = !botPausedGlobal;
     fetch('/api/bot/pause-global', {
@@ -351,7 +405,9 @@ export default function App() {
       });
   };
 
-  // Product CRUD
+  /**
+   * Guarda o actualiza un producto en el inventario de la tienda.
+   */
   const handleSaveProduct = async (formData) => {
     try {
       if (productModal.editing) {
@@ -388,6 +444,9 @@ export default function App() {
     }
   };
 
+  /**
+   * Elimina un producto tras verificar si existen apartados activos comprometidos.
+   */
   const handleDeleteProduct = (productId) => {
     const prod = products.find(p => p.id === productId);
     const prodName = prod ? `"${prod.marca} - ${prod.modelo}"` : 'este repuesto';
@@ -424,7 +483,9 @@ export default function App() {
     });
   };
 
-  // Reservations Actions
+  /**
+   * Marca un apartado como retirado en mostrador y lo archiva en el historial.
+   */
   const handleMarkDelivered = (reservationId) => {
     const resItem = reservations.find(r => r.id === reservationId);
     const clientName = resItem?.nombre ? ` de ${resItem.nombre}` : '';
@@ -455,6 +516,9 @@ export default function App() {
     });
   };
 
+  /**
+   * Cancela una reserva y reintegra la unidad física al stock de la tienda.
+   */
   const handleCancelReservation = (reservationId) => {
     const resItem = reservations.find(r => r.id === reservationId);
     const prodName = resItem?.producto_nombre ? ` (${resItem.producto_nombre})` : '';
@@ -481,7 +545,9 @@ export default function App() {
     });
   };
 
-  // Seller CRUD
+  /**
+   * Guarda o actualiza un asesor comercial.
+   */
   const handleSaveSeller = async (formData) => {
     try {
       if (sellerModal.editing) {
@@ -518,6 +584,9 @@ export default function App() {
     }
   };
 
+  /**
+   * Elimina un asesor del equipo de ventas.
+   */
   const handleDeleteSeller = (sellerId) => {
     const seller = sellers.find(s => s.id === sellerId);
     const sellerName = seller ? `"${seller.nombre}"` : 'este asesor';
@@ -548,7 +617,81 @@ export default function App() {
     });
   };
 
-  // Settings Save
+  /**
+   * Guarda o actualiza un proveedor comercial mayorista.
+   */
+  const handleSaveSupplier = async (supplierData) => {
+    try {
+      if (supplierModal.editing) {
+        const res = await fetch(`/api/suppliers/${supplierModal.editing.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(supplierData)
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast.success('Proveedor actualizado exitosamente');
+          setSupplierModal({ isOpen: false, editing: null });
+          loadSuppliers();
+        } else {
+          toast.error(data.error || 'Error al actualizar el proveedor');
+        }
+      } else {
+        const res = await fetch('/api/suppliers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(supplierData)
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast.success('Proveedor registrado exitosamente');
+          setSupplierModal({ isOpen: false, editing: null });
+          loadSuppliers();
+        } else {
+          toast.error(data.error || 'Error al registrar el proveedor');
+        }
+      }
+    } catch {
+      toast.error('Error de conexión al guardar el proveedor');
+    }
+  };
+
+  /**
+   * Inactiva lógicamente un proveedor mayorista.
+   */
+  const handleDeleteSupplier = (supplierId) => {
+    const sup = suppliers.find(s => s.id === supplierId);
+    const supName = sup ? `"${sup.empresa}"` : 'este proveedor';
+
+    setConfirmModal({
+      isOpen: true,
+      title: '¿Eliminar Proveedor / Mayorista?',
+      message: `¿Estás seguro de desactivar a ${supName}? Podrás reactivarlo o restaurarlo en cualquier momento desde el respaldo maestro.`,
+      confirmText: 'Sí, Desactivar Proveedor',
+      cancelText: 'Cancelar',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/suppliers/${supplierId}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.success) {
+            toast.success(`Proveedor ${supName} desactivado`);
+            loadSuppliers();
+          } else {
+            toast.error(data.error || 'Error al eliminar el proveedor');
+          }
+        } catch {
+          toast.error('Error al eliminar el proveedor');
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  /**
+   * Guarda parámetros de configuración operativa.
+   */
   const handleSaveSettings = (newSettings) => {
     fetch('/api/settings', {
       method: 'POST',
@@ -563,7 +706,9 @@ export default function App() {
       .catch(() => toast.error('Error al guardar la configuración'));
   };
 
-  // Quotes Copy
+  /**
+   * Copia una cotización de producto con formato enriquecido para WhatsApp.
+   */
   const copyWhatsAppQuote = (product) => {
     const tasa = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;
     const precioUsd = parseFloat(product.precio_usd) || 0;
@@ -581,6 +726,9 @@ export default function App() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  /**
+   * Copia una cotización libre o calculada desde la herramienta de Cashea.
+   */
   const copyManualQuote = (usdAmount, nivel, inicialUsd, inicialBs, cuotaUsd, _cuotaBs) => {
     const tasa = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;
     const precioBs = usdAmount * tasa;
@@ -595,6 +743,9 @@ export default function App() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  /**
+   * [PERSISTENCIA ATÓMICA] Apagado controlado de la plataforma tras guardar estado en disco.
+   */
   const handleShutdownSystem = () => {
     setConfirmModal({
       isOpen: true,
@@ -614,7 +765,7 @@ export default function App() {
             body: JSON.stringify({ reason: 'user_requested_ui' })
           });
         } catch {
-          // El servidor se apaga de inmediato, es esperado que fetch rechace
+          // El servidor se apaga inmediatamente tras recibir la orden
         }
         setIsSystemShutdown(true);
       }
@@ -668,7 +819,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-[#090d16] text-slate-100 overflow-hidden font-sans select-none">
-      {/* SIDEBAR MODULAR */}
+      {/* BARRA LATERAL DE NAVEGACIÓN */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -681,9 +832,9 @@ export default function App() {
         onToggleCollapse={handleToggleSidebar}
       />
 
-      {/* MAIN CONTAINER */}
+      {/* CONTENEDOR PRINCIPAL */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* HEADER MODULAR */}
+        {/* ENCABEZADO SUPERIOR CON WIDGET DE TASA BCV Y CONTROLES */}
         <Header
           activeTab={activeTab}
           bcvData={bcvData}
@@ -702,7 +853,7 @@ export default function App() {
           onShutdown={handleShutdownSystem}
         />
 
-        {/* VIEW CONTAINER */}
+        {/* CONTENEDOR DE VISTAS ACTIVAS */}
         <main className="flex-1 overflow-y-auto p-2.5 sm:p-4 lg:p-6">
           <div key={activeTab} className="animate-fade-in-up">
             {activeTab === 'dashboard' && (
@@ -788,6 +939,15 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'suppliers' && (
+              <SuppliersView
+                suppliers={suppliers}
+                onOpenAddModal={() => setSupplierModal({ isOpen: true, editing: null })}
+                onEditSupplier={(sup) => setSupplierModal({ isOpen: true, editing: sup })}
+                onDeleteSupplier={handleDeleteSupplier}
+              />
+            )}
+
             {activeTab === 'settings' && (
               <SettingsView
                 settings={settings}
@@ -810,7 +970,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* MODALS MODULARES */}
+      {/* MODALES TRANSACCIONALES */}
       <ProductModal
         isOpen={productModal.isOpen}
         editingProduct={productModal.editing}
@@ -824,6 +984,13 @@ export default function App() {
         editingSeller={sellerModal.editing}
         onClose={() => setSellerModal({ isOpen: false, editing: null })}
         onSave={handleSaveSeller}
+      />
+
+      <SupplierModal
+        isOpen={supplierModal.isOpen}
+        editingSupplier={supplierModal.editing}
+        onClose={() => setSupplierModal({ isOpen: false, editing: null })}
+        onSave={handleSaveSupplier}
       />
 
       <ReservationModal
@@ -857,7 +1024,7 @@ export default function App() {
         bcvData={bcvData}
       />
 
-      {/* Notificaciones modernas Sonner en la esquina superior derecha (no tapan botones ni inputs) */}
+      {/* NOTIFICACIONES TOAST FLOTANTES */}
       <Toaster
         theme="dark"
         position="top-right"

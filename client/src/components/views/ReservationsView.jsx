@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * VISTA DE APARTADOS Y CONTROL DE RESERVAS 24 HORAS (RESERVATIONSVIEW.JSX)
+ * ============================================================================
+ * Tablero de control de tickets de apartado para los asesores en el mostrador:
+ * - Cuenta regresiva en tiempo real para las 24 horas de vigencia
+ * - Cálculo visual de las 12 horas adicionales de período de gracia post-vencimiento
+ * - Enlace directo al chat de WhatsApp del cliente
+ * - Acciones rápidas: marcar como retirado (pago en tienda) o liberar stock anticipadamente
+ * 
+ * [APARTADOS Y RESERVAS 24H]
+ * - Ciclo de vida estricto: activo (24h) -> vencido (12h de gracia) -> purgado (36h).
+ * [MERCADO VENEZUELA]
+ * - Visualización dual de montos en USD y Bolívares convertidos a la tasa BCV del momento del apartado.
+ */
+
 import { useState } from 'react';
 import { Clock, User, CheckCircle, Search, ExternalLink, Eye } from 'lucide-react';
 import { formatBs, formatTimeRemaining } from '../../utils/formatters';
@@ -11,6 +27,7 @@ export default function ReservationsView({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('activo'); // 'activo' | 'all'
 
+  // Filtrado de reservas por coincidencia en texto (nombre, cédula, teléfono o repuesto) y estado
   const filtered = reservations.filter(r => {
     const q = searchTerm.toLowerCase();
     const matchesSearch =
@@ -25,7 +42,7 @@ export default function ReservationsView({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Top Banner Informativo */}
+      {/* Banner Informativo Superior con Conteo de Apartados Vigentes */}
       <div className="bg-gradient-to-r from-orange-500/15 via-[#0a0f1d] to-[#0a0f1d] border border-orange-500/25 rounded-3xl p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in-up">
         <div>
           <div className="flex items-center gap-2 text-orange-400 font-bold text-sm">
@@ -47,7 +64,7 @@ export default function ReservationsView({
         </div>
       </div>
 
-      {/* Barra de Búsqueda y Filtros */}
+      {/* Barra de Búsqueda y Selector de Filtros */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#0a0f1d] p-3.5 rounded-2xl border border-slate-800/80 shadow-md">
         <div className="relative w-full sm:w-80">
           <Search size={15} className="absolute left-3.5 top-3 text-slate-400" />
@@ -84,7 +101,7 @@ export default function ReservationsView({
         </div>
       </div>
 
-      {/* Grid de Apartados */}
+      {/* Cuadrícula de Tarjetas de Apartados */}
       {filtered.length === 0 ? (
         <div className="p-12 text-center bg-[#0a0f1d] border border-slate-800/80 rounded-3xl space-y-3">
           <div className="w-14 h-14 rounded-2xl bg-[#070b14] border border-slate-800 flex items-center justify-center text-slate-500 mx-auto">
@@ -102,7 +119,7 @@ export default function ReservationsView({
             const cleanPhone = (res.telefono || '').replace(/[^\d+]/g, '').replace('+', '');
             const waLink = `https://wa.me/${cleanPhone}`;
 
-            // Calcular tiempo de gracia de 12 horas si está vencido
+            // Cálculo del período de gracia de 12 horas en estado vencido
             const isVencido = res.estado === 'vencido' || time.isExpired;
             const isRetirado = res.estado === 'retirado';
             const GRACE_PERIOD_MS = 12 * 60 * 60 * 1000;
@@ -123,7 +140,7 @@ export default function ReservationsView({
                 }`}
               >
                 <div className="space-y-3">
-                  {/* Header de la tarjeta: Estado y tiempo */}
+                  {/* Encabezado: Estado y tiempo restante */}
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
                     <div className="flex items-center gap-2">
                       <div className={`w-2.5 h-2.5 rounded-full ${
@@ -167,7 +184,7 @@ export default function ReservationsView({
                     </span>
                   </div>
 
-                  {/* Datos del Cliente */}
+                  {/* Ficha de Identificación del Cliente */}
                   <div>
                     <h4 className="font-bold text-sm text-white flex items-center gap-1.5">
                       <User size={14} className="text-orange-400 shrink-0" />
@@ -190,7 +207,7 @@ export default function ReservationsView({
                     </div>
                   </div>
 
-                  {/* Repuesto Apartado */}
+                  {/* Detalle del Repuesto Reservado */}
                   <div className="p-3 bg-[#070b14] rounded-2xl border border-slate-800/80 space-y-1">
                     <span className="text-[10px] text-slate-500 uppercase font-semibold block">Repuesto Reservado:</span>
                     <p className="font-bold text-xs text-white line-clamp-1">{res.producto_nombre}</p>
@@ -205,7 +222,7 @@ export default function ReservationsView({
                   </div>
                 </div>
 
-                {/* Acciones de la tarjeta */}
+                {/* Barra de Acciones del Mostrador */}
                 <div className="pt-4 mt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
                   <button
                     onClick={() => onViewDetails(res)}

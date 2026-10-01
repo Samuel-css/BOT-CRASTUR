@@ -1,3 +1,18 @@
+/**
+ * ============================================================================
+ * VISTA DE CATÁLOGO COMERCIAL E INVENTARIO (CATALOGVIEW.JSX)
+ * ============================================================================
+ * Panel de consulta y gestión del inventario físico de repuestos e insumos:
+ * - Visualización en cuadrícula (tarjetas interactivas) o tabla densa de inventario
+ * - Edición rápida en línea del precio en USD con persistencia inmediata
+ * - Copia de cotizaciones formateadas para WhatsApp e Instagram
+ * - Módulo de ajuste masivo de precios por porcentaje o monto fijo en dólares
+ * 
+ * [MERCADO VENEZUELA]
+ * - Precios calculados al vuelo en Bolívares a la tasa oficial BCV.
+ * - Desglose de cuotas e inicial Cashea visible en cada tarjeta de repuesto.
+ */
+
 import { useState } from 'react';
 import { Package, Plus, Search, Grid, List, Copy, Check, Edit2, Trash2, ShoppingBag, Sparkles, ChevronDown, Car } from 'lucide-react';
 import { toast } from 'sonner';

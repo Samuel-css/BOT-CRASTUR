@@ -1,3 +1,21 @@
+/**
+ * ============================================================================
+ * BANDEJA DE ENTRADA EN VIVO: LIVE INBOX & HUMAN TAKEOVER (LIVEINBOXVIEW.JSX)
+ * ============================================================================
+ * Provee la interfaz de atención en tiempo real entre asesores humanos y clientes de WhatsApp:
+ * - Streaming bidireccional de mensajes mediante WebSocket
+ * - Human Takeover: Pausar/reanudar intervención automática del bot por chat individual
+ * - Biblioteca de atajos rápidos con respuestas comerciales contextualizadas (Caracas, Cashea, BCV)
+ * - Ficha lateral del cliente con estatus de apartado de 24 horas y contacto
+ * 
+ * [ANTI-BANEO META 2025]
+ * - Envío manual a través de la cola con presencia 'composing' y retardo estocástico.
+ * - Deduplicación entre envíos optimistas y confirmaciones WebSocket en una ventana de 15 segundos.
+ * 
+ * [MERCADO VENEZUELA]
+ * - Atajos con cotizaciones BCV actualizadas, coordenadas en San Agustín Norte y cálculo Cashea.
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {

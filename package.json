@@ -3,16 +3,18 @@
   "version": "1.0.0",
   "description": "Sistema de Ventas y Bot de WhatsApp para Crastur",
   "scripts": {
-    "start": "node server/server.js",
+    "start": "tsx server/server.ts",
     "launch": "node launcher.js",
     "build": "npm --prefix client run build",
     "dev:client": "npm --prefix client run dev",
-    "maintenance": "node scripts/maintenance.js",
-    "clean": "node scripts/clean_data.js",
-    "reset": "node scripts/reset_clean_install.js",
+    "maintenance": "tsx scripts/maintenance.ts",
+    "clean": "tsx scripts/clean_data.ts",
+    "reset": "tsx scripts/reset_clean_install.ts",
     "stop": "node -e \"const http=require('http'); const req=http.request('http://localhost:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",
-    "test": "node scripts/run_stress_and_edge_tests.js",
-    "test:catalog": "node scripts/test_catalog_pdf.js"
+    "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
+    "build:server": "tsc -p tsconfig.server.json",
+    "test": "tsx scripts/run_stress_and_edge_tests.ts",
+    "test:catalog": "tsx scripts/test_catalog_pdf.ts"
   },
   "keywords": [
     "crastur",
@@ -30,9 +32,18 @@
     "express": "^5.2.1",
     "pdfkit": "^0.20.2",
     "pino": "^10.3.1",
-    "pino-pretty": "^13.1.3",
     "qrcode": "^1.5.4",
     "sql.js": "^1.14.2",
-    "ws": "^8.21.3"
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "@types/pdfkit": "^0.17.6",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

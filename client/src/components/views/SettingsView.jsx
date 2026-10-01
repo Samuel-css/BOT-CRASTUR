@@ -197,6 +197,24 @@ const PAYMENT_OPTIONS = [
   { id: 'transferencia', label: 'Transferencia Bancaria', Icon: Building2, iconColor: 'text-blue-400', desc: 'Banesco o Mercantil' }
 ];
 
+// Analizador inteligente que normaliza las opciones de pago activas y descarta texto legado duplicado
+const parseActivePayments = (rawString) => {
+  if (rawString === undefined || rawString === null) return PAYMENT_OPTIONS.map(o => o.label);
+  const trimmed = String(rawString).trim();
+  if (trimmed === '' || trimmed.toLowerCase() === 'ninguno' || trimmed.toLowerCase() === 'vacio') return [];
+  const lower = trimmed.toLowerCase();
+  return PAYMENT_OPTIONS.filter(opt => {
+    if (lower.includes(opt.label.toLowerCase())) return true;
+    if (opt.id === 'efectivo' && (lower.includes('efectivo $') || lower.includes('efectivo') || lower.includes('divisas'))) return true;
+    if (opt.id === 'binance' && (lower.includes('binance') || lower.includes('usdt'))) return true;
+    if (opt.id === 'pagomovil' && (lower.includes('pago móvil') || lower.includes('pago movil'))) return true;
+    if (opt.id === 'cashea' && lower.includes('cashea')) return true;
+    if (opt.id === 'puntoventa' && (lower.includes('punto de venta') || lower.includes('punto'))) return true;
+    if (opt.id === 'transferencia' && lower.includes('transferencia')) return true;
+    return false;
+  }).map(opt => opt.label);
+};
+
 const QUICK_EMOJIS = ['🏍️', '🛞', '🔧', '💵', '🪙', '💛', '📍', '📦', '✅', '⚡', '🕒', '👋', '🤝'];
 
 // Comparador robusto que ignora saltos de línea CRLF/LF o espacios accidentales
@@ -300,23 +318,18 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
 
   // Conmutador interactivo de formas de pago
   const togglePaymentItem = (paymentLabel) => {
-    const cur = form.metodos_pago || '';
-    // Separar por comas, limpiar espacios, filtrar vacíos
-    const items = cur.split(',').map(s => s.trim()).filter(Boolean);
-    const idx = items.findIndex(s => s.toLowerCase() === paymentLabel.toLowerCase());
-    let updated = '';
-    if (idx !== -1) {
-      // Está activo → desactivar (quitar)
-      items.splice(idx, 1);
-      updated = items.join(', ');
+    const currentActive = parseActivePayments(form.metodos_pago);
+    const exists = currentActive.includes(paymentLabel);
+    let updatedList;
+    if (exists) {
+      updatedList = currentActive.filter(l => l !== paymentLabel);
       toast.info(`Desactivado: ${paymentLabel}`);
     } else {
-      // No está → activar (agregar)
-      items.push(paymentLabel);
-      updated = items.join(', ');
+      updatedList = [...currentActive, paymentLabel];
       toast.success(`Activado: ${paymentLabel}`);
     }
-    setForm(prev => ({ ...prev, metodos_pago: updated }));
+    const val = updatedList.length === 0 ? 'ninguno' : updatedList.join(', ');
+    setForm(prev => ({ ...prev, metodos_pago: val }));
   };
 
   const field = (name) => ({
@@ -430,7 +443,18 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success('Descargando copia de seguridad de la tienda...');
+    toast.success('Descargando copia de seguridad de la tienda (Base de Datos SQLite)...');
+  };
+
+  const handleDownloadMasterJson = () => {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const link = document.createElement('a');
+    link.href = '/api/backup/export-full';
+    link.download = `respaldo_maestro_crastur_${dateStr}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Descargando Respaldo Maestro JSON (Catálogo, Proveedores y Ajustes)...');
   };
 
   const handleSelectRestoreFile = () => {
@@ -443,6 +467,34 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
 
     const performRestore = async () => {
       setRestoring(true);
+
+      // Si es archivo JSON de Respaldo Maestro
+      if (file.name.endsWith('.json')) {
+        try {
+          const fileText = await file.text();
+          const parsed = JSON.parse(fileText);
+          const res = await fetch('/api/backup/import-full', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsed)
+          });
+          const data = await res.json();
+          if (data.success) {
+            toast.success(`¡Respaldo Maestro restaurado! (${data.importedProducts} productos, ${data.importedSuppliers} proveedores)`);
+            setTimeout(() => window.location.reload(), 1500);
+          } else {
+            toast.error(data.error || 'Error al restaurar respaldo JSON');
+          }
+        } catch (err) {
+          toast.error('El archivo JSON no tiene un formato válido de Crastur');
+        } finally {
+          setRestoring(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+        return;
+      }
+
+      // Si es archivo SQLite .db binario
       const formData = new FormData();
       formData.append('backupFile', file);
 
@@ -453,7 +505,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
         });
         const data = await res.json();
         if (data.success) {
-          toast.success('¡Respaldo restaurado correctamente! Recargando...');
+          toast.success('¡Respaldo SQLite restaurado correctamente! Recargando...');
           setTimeout(() => window.location.reload(), 1500);
         } else {
           toast.error(data.error || 'Error al restaurar el respaldo');
@@ -1359,7 +1411,8 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {PAYMENT_OPTIONS.map((item) => {
-                    const isAvailable = (form.metodos_pago || '').split(',').map(s => s.trim()).some(s => s.toLowerCase() === item.label.toLowerCase());
+                    const activePayments = parseActivePayments(form.metodos_pago);
+                    const isAvailable = activePayments.includes(item.label);
                     return (
                       <button
                         key={item.id}
@@ -1407,7 +1460,9 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                     Resumen informado a los clientes:
                   </span>
                   <p className="text-xs text-white font-medium">
-                    {form.metodos_pago || 'No has seleccionado formas de pago activas.'}
+                    {parseActivePayments(form.metodos_pago).length > 0
+                      ? parseActivePayments(form.metodos_pago).join(', ')
+                      : '⚠️ No has seleccionado formas de pago activas (todas apagadas).'}
                   </p>
                 </div>
               </div>
@@ -1572,26 +1627,37 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Descargar Respaldo */}
+                  {/* Descargar Respaldo Maestro */}
                   <div className="p-4 rounded-2xl bg-[#070b14] border border-slate-800 flex flex-col justify-between space-y-3">
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Download size={14} className="text-indigo-400" />
-                        Descargar Copia de Seguridad
+                        <Download size={14} className="text-orange-400" />
+                        Respaldo Maestro Seguro (JSON)
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        Genera un archivo de respaldo con todos tus productos, clientes, apartados y configuración de la tienda.
+                        Exporta en un solo archivo tu Catálogo de productos, Proveedores, Asesores de ventas y Configuración general. Totalmente compatible entre versiones.
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleDownloadBackup}
-                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 cursor-pointer"
-                    >
-                      <Download size={14} />
-                      <span>Descargar Respaldo a mi PC</span>
-                    </button>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={handleDownloadMasterJson}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer active:scale-95"
+                      >
+                        <Download size={14} />
+                        <span>Descargar Respaldo Maestro (.json)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadBackup}
+                        className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white font-medium text-[11px] transition flex items-center justify-center gap-1.5 border border-slate-800 cursor-pointer"
+                      >
+                        <Download size={12} />
+                        <span>Descargar Base de Datos Completa (.db)</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Restaurar Respaldo */}
@@ -1599,10 +1665,10 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
                         <Upload size={14} className="text-amber-400" />
-                        Restaurar desde Respaldo
+                        Restaurar Copia de Seguridad
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        Carga un archivo de respaldo descargado previamente para restaurar toda la información de la tienda.
+                        Sube un archivo de Respaldo Maestro (.json) o una base de datos SQLite (.db). El sistema restaurará tu inventario y proveedores de inmediato.
                       </p>
                     </div>
 
@@ -1610,7 +1676,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileChange}
-                      accept=".db"
+                      accept=".db,.json"
                       className="hidden"
                     />
 
@@ -1618,10 +1684,10 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                       type="button"
                       onClick={handleSelectRestoreFile}
                       disabled={restoring}
-                      className="w-full py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500 text-slate-200 hover:text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      className="w-full py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500 text-slate-200 hover:text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-95"
                     >
                       <Upload size={14} />
-                      <span>{restoring ? 'Restaurando...' : 'Seleccionar Archivo de Respaldo'}</span>
+                      <span>{restoring ? 'Restaurando información...' : 'Seleccionar Archivo (.json o .db)'}</span>
                     </button>
                   </div>
                 </div>

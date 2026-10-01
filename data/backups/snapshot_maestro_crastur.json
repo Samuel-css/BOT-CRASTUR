@@ -1,0 +1,56 @@
+{
+  "version": "3.0",
+  "exportado_en": "2026-10-01T16:13:52.944Z",
+  "total_productos": 2,
+  "total_proveedores": 0,
+  "total_vendedores": 0,
+  "productos": [
+    {
+      "id": 6,
+      "marca": "motul",
+      "modelo": "aciete 20w50",
+      "categoria": "Lubricantes & Fluidos - Aceites de Motor 4T / 2T",
+      "precio_usd": 10,
+      "descripcion": "",
+      "imagen_url": "",
+      "stock": 9,
+      "activo": 1
+    },
+    {
+      "id": 7,
+      "marca": "michelin",
+      "modelo": "caucho 170/70-r14",
+      "categoria": "Repuestos Moto - Tripas y Cauchos",
+      "precio_usd": 20,
+      "descripcion": "",
+      "imagen_url": "",
+      "stock": 10,
+      "activo": 1
+    }
+  ],
+  "proveedores": [],
+  "vendedores": [],
+  "configuracion": {
+    "nombre_negocio": "Crastur - Insumos para Caucheras, Repuestos de Moto & Otros Productos",
+    "tasa_manual_activa": "0",
+    "tasa_personalizada": "849.56",
+    "direccion_tienda": "Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas, Venezuela",
+    "google_maps_url": "https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA",
+    "cashea_inicial_pct": "40",
+    "cashea_cuotas": "3",
+    "cashea_info": "¡En Crastur contamos con Cashea! Llévate hoy tus repuestos y accesorios para moto e insumos pagando solo una inicial y el resto en 3 cuotas quincenales sin interés.",
+    "insistencia_activa": "1",
+    "insistencia_minutos": "15",
+    "politica_envios": "Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.",
+    "metodos_pago": "Efectivo $, Binance Pay (USDT), Pago Móvil BCV, Punto de Venta, Transferencia Bancaria, Cashea en Tienda",
+    "mensaje_insistencia": "¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.",
+    "mensaje_bienvenida": "¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.",
+    "horario_atencion": "Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM",
+    "mensaje_fuera_horario": "¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨",
+    "delivery_zonas_json": "[{\"zona\":\"Centro / La Candelaria / El Silencio / San Bernardino\",\"tarifa\":\"$2 a $3 USD\",\"palabras\":[\"centro\",\"candelaria\",\"silencio\",\"san bernardino\",\"parque carabobo\",\"bellas artes\"]},{\"zona\":\"Chacao / Altamira / Las Mercedes / Bello Monte\",\"tarifa\":\"$3 a $4 USD\",\"palabras\":[\"chacao\",\"altamira\",\"mercedes\",\"bello monte\",\"los palos grandes\",\"castellana\"]},{\"zona\":\"El Recreo / Sabana Grande / Plaza Venezuela\",\"tarifa\":\"$2.5 a $3.5 USD\",\"palabras\":[\"sabana grande\",\"plaza venezuela\",\"recreo\",\"los caobos\"]},{\"zona\":\"Oeste (Catia, 23 de Enero, Propatria)\",\"tarifa\":\"$3 a $4 USD\",\"palabras\":[\"catia\",\"23 de enero\",\"propatria\",\"perez bonalde\",\"agua salud\"]},{\"zona\":\"Suroeste (El Paraíso, Montalbán, La Vega, Caricuao)\",\"tarifa\":\"$3 a $5 USD\",\"palabras\":[\"paraiso\",\"montalban\",\"vega\",\"caricuao\",\"antimano\",\"vista alegre\"]},{\"zona\":\"Este (La California, Los Dos Caminos, Petare, Boleíta)\",\"tarifa\":\"$3.5 a $5 USD\",\"palabras\":[\"california\",\"dos caminos\",\"petare\",\"boleita\",\"marques\",\"cortijos\",\"macaracuay\"]},{\"zona\":\"Sureste (Baruta, El Hatillo, La Trinidad, Santa Fe)\",\"tarifa\":\"$4 a $6 USD\",\"palabras\":[\"baruta\",\"hatillo\",\"trinidad\",\"santa fe\",\"cafetal\",\"manzanares\",\"las minas\"]}]",
+    "fuera_horario_activo": "0",
+    "bot_pausado_global": "0",
+    "tasa_bcv": "860.1753",
+    "fecha_tasa": "Jueves, 01 Octubre  2026"
+  }
+}

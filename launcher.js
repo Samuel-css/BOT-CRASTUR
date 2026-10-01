@@ -41,6 +41,16 @@ function isServerAlreadyRunning(port = 3333) {
   });
 }
 
+async function waitForServerReady(port = 3333, maxAttempts = 60, intervalMs = 250, checkExit = null) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (typeof checkExit === 'function' && checkExit()) return false;
+    const ready = await isServerAlreadyRunning(port);
+    if (ready) return true;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
 function ensureDesktopShortcuts() {
   if (process.platform !== 'win32') return;
   try {
@@ -159,26 +169,43 @@ async function main() {
   ensureDesktopShortcuts();
 
   // Paso 5: Listo (100%)
-  renderProgressBar(100, '¡Todo listo! Iniciando Crastur...');
-  console.log(`\n\n${green}${bold}✓ El sistema está 100% operativo y protegido contra fallos.${reset}`);
-  console.log(`${cyan}Abriendo la aplicación en tu navegador...${reset}\n`);
+  let serverExitedEarly = false;
+  let serverExitCode = null;
 
-  // Iniciar servidor optimizado
-  const serverProc = spawn('node', ['--max-old-space-size=512', 'server/server.js'], {
+  const serverProc = spawn('npx', ['tsx', '--max-old-space-size=512', 'server/server.ts'], {
     cwd: __dirname,
+    shell: true,
     stdio: 'inherit'
   });
 
-  // Abrir navegador
-  setTimeout(() => {
-    try {
-      if (process.platform === 'win32') {
-        spawn('cmd.exe', ['/c', 'start', '""', 'http://localhost:3333'], { stdio: 'ignore' });
-      } else {
-        spawn('xdg-open', ['http://localhost:3333'], { shell: true, stdio: 'ignore' });
-      }
-    } catch (e) {}
-  }, 1200);
+  serverProc.on('exit', (code) => {
+    serverExitedEarly = true;
+    serverExitCode = code;
+  });
+
+  renderProgressBar(85, 'Conectando con la base de datos y servicios...');
+  const serverHealthy = await waitForServerReady(3333, 80, 200, () => serverExitedEarly);
+
+  if (serverExitedEarly) {
+    console.log(`\n\n${yellow}${bold}⚠️ El servidor se detuvo al arrancar (código: ${serverExitCode}). Revisa si el puerto 3333 está en uso o verifica los logs.${reset}\n`);
+    process.exit(serverExitCode || 1);
+  }
+
+  renderProgressBar(100, '¡Todo listo! Iniciando Crastur...');
+  if (serverHealthy) {
+    console.log(`\n\n${green}${bold}✓ El sistema está 100% operativo y en línea.${reset}`);
+  } else {
+    console.log(`\n\n${yellow}${bold}⚠️ El servidor está tardando en inicializar. Abriendo navegador...${reset}`);
+  }
+  console.log(`${cyan}Abriendo la aplicación en tu navegador...${reset}\n`);
+
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd.exe', ['/c', 'start', '""', 'http://localhost:3333'], { stdio: 'ignore' });
+    } else {
+      spawn('xdg-open', ['http://localhost:3333'], { shell: true, stdio: 'ignore' });
+    }
+  } catch (e) {}
 
   serverProc.on('close', (code) => {
     process.exit(code || 0);
@@ -188,5 +215,5 @@ async function main() {
 main().catch(err => {
   console.error(`\n${yellow}[Lanzador] Error al iniciar: ${err.message}${reset}`);
   console.log('Iniciando modo de recuperación directa...');
-  spawn('node', ['server/server.js'], { cwd: __dirname, stdio: 'inherit' });
+  spawn('npx', ['tsx', 'server/server.ts'], { shell: true, cwd: __dirname, stdio: 'inherit' });
 });

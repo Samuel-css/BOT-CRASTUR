@@ -12,7 +12,8 @@ import {
   Clock,
   X,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Truck
 } from 'lucide-react';
 
 function MotorcycleIcon({ className = 'w-6 h-6' }) {
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'General' },
   { id: 'inbox', label: 'Live Inbox', icon: MessageSquare, section: 'Operaciones', type: 'inbox' },
   { id: 'products', label: 'Catálogo Productos', icon: Package, section: 'Operaciones', type: 'products' },
+  { id: 'suppliers', label: 'Proveedores', icon: Truck, section: 'Operaciones' },
   { id: 'reservations', label: 'Apartados (24h)', icon: Clock, section: 'Operaciones', type: 'reservations' },
   { id: 'calculator', label: 'Calculadora Cashea', icon: Calculator, section: 'Operaciones' },
   { id: 'whatsapp', label: 'Conexión WhatsApp', icon: QrCode, section: 'Sistema & Bot', type: 'whatsapp' },

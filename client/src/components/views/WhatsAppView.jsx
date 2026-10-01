@@ -1,3 +1,14 @@
+/**
+ * ============================================================================
+ * VISTA DE VINCULACIÓN Y ESTADO DE WHATSAPP BAILEYS (WHATSAPPVIEW.JSX)
+ * ============================================================================
+ * Interfaz para escanear el código QR, monitorear el estado del socket Baileys,
+ * forzar regeneración limpia de credenciales o cerrar sesión de forma segura.
+ * 
+ * [BAILEYS v7 ESM] Renderiza el QR vectorial o base64 emitido por el socket.
+ * [ANTI-BANEO META 2025] Muestra advertencias claras e indicadores de salud de la línea vinculada.
+ */
+
 import { QrCode, CheckCircle2, RefreshCw, Smartphone, LogOut } from 'lucide-react';
 
 export default function WhatsAppView({
@@ -13,6 +24,7 @@ export default function WhatsAppView({
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in-up">
       <div className="p-6 bg-[#0a0f1d] border border-slate-800/80 rounded-3xl shadow-xl space-y-6">
+        {/* Cabecera de la tarjeta con acciones rápidas */}
         <div className="pb-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -61,7 +73,7 @@ export default function WhatsAppView({
           </div>
         </div>
 
-        {/* State Display */}
+        {/* Panel de estado visual según la fase del socket */}
         <div className="p-8 bg-[#070b14] rounded-3xl border border-slate-800 text-center flex flex-col items-center justify-center min-h-[320px]">
           {status === 'connected' ? (
             <div className="space-y-4 max-w-sm">
