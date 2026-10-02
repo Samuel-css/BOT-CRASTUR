@@ -99,14 +99,6 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       texto: `🪙 *Pago por Binance Pay / USDT - Crastur* ⚡\n¡Aprovecha nuestro *Precio Promoción en Divisas* pagando con Binance sin comisiones!\n📲 *Pay ID / Correo:* (Consulta con nuestro asesor en caja)\n💡 *Instrucciones:* Abre tu app Binance > Pay > Enviar, ingresa el monto exacto en USDT y envíanos la captura o ID de transacción por aquí para procesar tu pedido de inmediato.`
     },
     {
-      id: 'mayor',
-      titulo: 'Atención Venta al Mayor',
-      categoria: 'Ventas',
-      icono: CheckCircle2,
-      color: 'emerald',
-      texto: `📦 *Ventas al Mayor en Crastur - Caucheras & Talleres* 🛞🛢️\n¡Saludos! Con gusto te atendemos como cliente mayorista:\n• Precios especiales por bulto y caja cerrada en insumos de cauchera y lubricantes.\n• Aceptamos Efectivo ($), Binance Pay (USDT) y Pago Móvil tasa BCV.\n• Despacho directo a tu taller o negocio en Caracas.\n👉 Indícanos qué productos y qué cantidades estimas para prepararte la cotización formal con descuento por volumen.`
-    },
-    {
       id: 'cashea',
       titulo: 'Financiamiento Cashea Completo',
       categoria: 'Pagos',

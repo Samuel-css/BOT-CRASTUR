@@ -28,15 +28,18 @@ import { broadcast } from '../websocket';
 /**
  * POST /api/start
  * Inicia el proceso de conexión del socket de Baileys y generación de QR / emparejamiento.
+ * Se expone también como /api/whatsapp/start para compatibilidad con el panel.
  */
-router.post('/start', async (req: Request, res: Response) => {
+const startHandler = async (req: Request, res: Response) => {
   try {
     startWhatsApp();
     res.json({ success: true, message: 'Iniciando servicio de WhatsApp...' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+router.post('/start', startHandler);
+router.post('/whatsapp/start', startHandler);
 
 /**
  * POST /api/logout
@@ -57,12 +60,37 @@ router.post('/logout', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+// Alias compatible con el panel: /api/whatsapp/logout
+router.post('/whatsapp/logout', async (req: Request, res: Response) => {
+  try {
+    const { clearHistory } = req.body || {};
+    await logoutWhatsApp();
+    if (clearHistory) {
+      db.prepare('DELETE FROM chat_messages').run();
+      db.prepare('DELETE FROM chat_sessions').run();
+      broadcast('live_chat_message', { action: 'all_deleted' });
+      console.log('[WhatsApp] Sesión cerrada y chats eliminados de la base de datos.');
+    }
+    res.json({ success: true, message: 'Sesión de WhatsApp cerrada exitosamente', cleared: !!clearHistory });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 /**
  * POST /api/reset
  * Purga las credenciales almacenadas en `data/baileys_auth` y reinicia el socket en limpio.
  */
 router.post('/reset', async (req: Request, res: Response) => {
+  try {
+    const result = await resetWhatsApp();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// Alias compatible con el panel: /api/whatsapp/reset
+router.post('/whatsapp/reset', async (req: Request, res: Response) => {
   try {
     const result = await resetWhatsApp();
     res.json(result);

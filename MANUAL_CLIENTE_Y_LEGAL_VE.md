@@ -117,8 +117,7 @@ Al terminar el turno o cerrar la tienda, el apagado se realiza de forma elegante
    - La pantalla cambia a una confirmación agradable indicando que todo está a salvo y que ya puedes cerrar esa pestaña. **Tus demás pestañas del navegador (correo, bancos, etc.) permanecen totalmente intactas.**
 
 2. **Herramienta Técnica de Emergencia (Solo si el navegador no responde):**
-   - En Windows: ejecuta `scripts/apagar_servidor.bat`.
-   - En Linux / macOS: ejecuta `scripts/apagar_servidor.sh`.
+   - Por terminal (cualquier sistema): ejecuta `npm run stop`.
 
 ---
 
@@ -195,26 +194,25 @@ El panel incluye la sección **Live Inbox**, donde el personal de ventas puede s
 
 ## 6. RESPALDO, MANTENIMIENTO Y SUITE DE PRUEBAS DE ESTRÉS
 
-### A. Herramienta Automatizada de Mantenimiento (`npm run maintenance`)
+### A. Panel Visual de Instalación y Mantenimiento (`npm run instalar`)
 Ejecutando por terminal:
 ```bash
-npm run maintenance
+npm run instalar
 ```
-Dispones de un menú de diagnóstico y optimización:
-- **`--diag`**: Integridad física de SQLite (`PRAGMA integrity_check`) y verificación de puertos.
-- **`--node-check`**: Detección de versión de Node.js y compatibilidad LTS oficial.
-- **`--rebuild-deps`**: Re-vinculación de dependencias nativas y WebAssembly (`sql.js`).
-- **`--clean`**: Vaciado de mensajes y métricas a cero operativo.
-- **`--vacuum`**: Desfragmentación y optimización profunda de SQLite.
-- **`--prune-backups`**: Limpieza de respaldos automáticos de más de 7 días.
-- **`--reset-wa`**: Reinicio de credenciales de WhatsApp para escanear un nuevo QR.
-- **`--build`**: Compilación del panel visual web en Vite.
+Se abre en el navegador un panel con botones para: **Instalar/Verificar Sistema**, **Actualizar Panel Visual**, **Crear Respaldo**, **Ver y Restaurar Respaldos** e **Iniciar Crastur**.
+
+También disponibles por terminal:
+- **`npm run clean`**: Vaciado de mensajes y métricas a cero operativo.
+- **`npm run reset`**: Restablecimiento limpio de fábrica (0 productos para producción).
+- **`npm run migrar -- --out ...` / `--in ...`**: Respaldo y restauración portable de Catálogo + Asesores.
+- **`npm run build`**: Compilación del panel visual web en Vite.
+- **`npm run typecheck:server` / `build:server`**: Verificación de tipos y compilación del backend.
 
 ### B. Suite de Pruebas de Estrés y Validación Extrema (`npm test`)
-El sistema cuenta con una batería de **68 pruebas automatizadas** que validan:
-- **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en menos de 120 ms (> 1.700 req/s).
-- **16 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
-- **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (> 30 msgs/min).
+El sistema cuenta con una batería de **202 pruebas automatizadas** que validan:
+- **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en pocos milisegundos (> 1.000 req/s).
+- **35 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
+- **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (ráfaga de flood masivo, sin silenciar conversaciones humanas normales).
 - **Auto-Limpieza Post-Pruebas:** El script inyecta fixtures temporales para ejecutar las pruebas y los elimina al terminar, garantizando que el catálogo de producción permanezca en **0 productos**.
 
 ### C. Copias de Seguridad y Protección contra Apagones

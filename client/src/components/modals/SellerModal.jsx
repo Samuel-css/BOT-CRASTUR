@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { X, UserCheck, Phone, Briefcase, ExternalLink, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { X, UserCheck, Phone, Briefcase, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { handlePhoneKeyDown, sanitizeText } from '../../utils/inputSanitizers';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 /**
  * Normaliza cualquier número venezolano (0412, 0414, 0424, 0416, 0426, 0422, +58...)
@@ -44,6 +45,9 @@ export default function SellerModal({ isOpen, onClose, onSave, editingSeller }) 
   });
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Cerrar con tecla Escape de forma consistente con los demás modales
+  useEscapeToClose(isOpen, onClose, !isSubmitting);
 
   useEffect(() => {
     if (editingSeller) {

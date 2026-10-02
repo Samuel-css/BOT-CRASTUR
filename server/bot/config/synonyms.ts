@@ -10,6 +10,13 @@
 export const SYNONYMS: Record<string, string> = {
   // 🛞 Insumos para Caucheras
   'parche': 'parches',
+  'parches': 'parches',
+  'parxe': 'parches',
+  'parxes': 'parches',
+  'parchar': 'parches',
+  'rema': 'parches',
+  'remafrio': 'parches',
+  'parche frio': 'parches',
   'pega': 'pega',
   'pegamento': 'pega',
   'cemento': 'pega',
@@ -143,7 +150,28 @@ export const SYNONYMS: Record<string, string> = {
   'suzuki': 'suzuki',
   'ngk': 'ngk',
   'motul': 'motul',
-  'sky': 'sky'
+  'sky': 'sky',
+
+  // 🏍️ Términos de la página web (cascos y marcas)
+  'casco': 'casco',
+  'cascos': 'casco',
+  'coraza': 'casco',
+  'corazas': 'casco',
+  'shaft': 'shaft',
+  'axxis': 'axxis',
+  'moxul': 'moxul',
+  'edge': 'edge',
+  'michelin': 'michelin',
+  'ceat': 'ceat',
+  'eurogrip': 'eurogrip',
+  'timsun': 'timsun',
+  'euromina': 'euromina',
+  'macuro': 'macuro',
+  'roshfrans': 'roshfrans',
+  'ipone': 'ipone',
+  'pdv': 'pdv',
+  'inca': 'inca',
+  'ultralub': 'ultralub'
 };
 
 export default SYNONYMS;

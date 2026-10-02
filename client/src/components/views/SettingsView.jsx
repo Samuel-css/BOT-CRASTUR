@@ -2,13 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Settings,
   MapPin,
-  ShoppingBag,
   MessageSquare,
   Check,
   Clock,
-  Bell,
-  Moon,
-  Building2,
   Truck,
   Plus,
   Trash2,
@@ -18,207 +14,28 @@ import {
   Upload,
   AlertCircle,
   ExternalLink,
-  Save,
-  Sparkles,
   Zap,
   CheckCircle2,
   RefreshCw,
-  Sun,
-  Coffee,
-  Briefcase,
-  Sliders,
-  DollarSign,
-  Coins,
-  CreditCard,
-  Flame,
-  Smartphone,
-  Store,
-  Power
+  ShoppingBag,
+  Bell,
+  Moon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DEFAULT_DELIVERY_ZONES } from '../../constants/deliveryZones';
 
-const TABS = [
-  { id: 'tienda', label: '1. Mi Tienda & Horario', icon: Building2, desc: 'Nombre, estado, tasa BCV y horario' },
-  { id: 'mensajes', label: '2. Asistente Virtual', icon: MessageSquare, desc: 'Cómo habla el bot y respuestas' },
-  { id: 'pagos', label: '3. Formas de Pago & Cashea', icon: ShoppingBag, desc: 'Métodos activos y cuotas' },
-  { id: 'delivery', label: '4. Delivery Caracas', icon: Truck, desc: 'Zonas y tarifas de motorizado' },
-  { id: 'seguridad', label: '5. Copia de Seguridad', icon: Database, desc: 'Respaldos y mantenimiento' }
-];
+// Módulos extraídos (constantes de presets y helpers puros)
+import {
+  TABS,
+  WELCOME_TONE_PRESETS,
+  OUT_OF_HOURS_PRESETS,
+  FOLLOWUP_PRESETS,
+  SCHEDULE_OPTIONS,
+  PAYMENT_OPTIONS
+} from './settings/constants';
+import { parseActivePayments, cleanCompare } from './settings/helpers';
 
-// Presets de Tono para el Mensaje de Bienvenida del Bot
-const WELCOME_TONE_PRESETS = [
-  {
-    id: 'motero',
-    titulo: 'Pana Motero & Repuestero',
-    badge: 'Recomendado 🔥',
-    desc: 'Cercano, rápido, habla como un pana motero de confianza y destaca retiro ya.',
-    Icon: Flame,
-    iconColor: 'text-orange-400',
-    color: 'border-orange-500/50 bg-orange-500/10 text-orange-300',
-    texto: '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.'
-  },
-  {
-    id: 'profesional',
-    titulo: 'Atención Formal & Tienda',
-    badge: 'Formal 👔',
-    desc: 'Educado, serio, enfocado en asesoría técnica y repuestos con garantía.',
-    Icon: Building2,
-    iconColor: 'text-sky-400',
-    color: 'border-sky-500/50 bg-sky-500/10 text-sky-300',
-    texto: '¡Saludos cordiales! Bienvenido a *Crastur Caracas* 🏢✨\nEspecialistas en repuestos para motos, insumos para cauchera y lubricantes con garantía de tienda.\n\nContamos con financiamiento Cashea 💛, retiro en mostrador y delivery directo. Indícanos el repuesto que requieres para asistirte.'
-  },
-  {
-    id: 'rapido',
-    titulo: 'Mostrador Express',
-    badge: 'Express ⚡',
-    desc: 'Directo al grano. Da precios en 1 segundo y ubicación para retirar.',
-    Icon: Zap,
-    iconColor: 'text-emerald-400',
-    color: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300',
-    texto: '¡Hola! Bienvenido a *Crastur* 🛞🏍️\nConsulta de precios y stock en segundos.\n\nEscribe el repuesto que buscas (ej: *pastillas*, *bujía*, *parches*, *aceite*) o escribe *MENU* para ver el catálogo completo.'
-  },
-  {
-    id: 'cashea',
-    titulo: 'Especial Cashea (En Cuotas)',
-    badge: 'Cashea 💛',
-    desc: 'Destaca que el cliente puede llevarse el repuesto hoy pagando en 3 cuotas.',
-    Icon: ShoppingBag,
-    iconColor: 'text-amber-400',
-    color: 'border-amber-500/50 bg-amber-500/10 text-amber-300',
-    texto: '¡Hola! Bienvenido a *Crastur* 🛞🏍️💛\n¡Llévate hoy tus repuestos e insumos pagando solo el 40% inicial y el resto en 3 cuotas quincenales sin interés con Cashea!\n\n¿Qué repuesto necesitas para tu moto hoy? Te confirmamos precio y cuotas al instante.'
-  }
-];
-
-// Presets para cuando la tienda está cerrada
-const OUT_OF_HOURS_PRESETS = [
-  {
-    id: 'estandar',
-    titulo: 'Cierre Nocturno',
-    Icon: Moon,
-    iconColor: 'text-indigo-400',
-    desc: 'Avisa que la tienda está cerrada de noche y atiende al abrir',
-    texto: '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨'
-  },
-  {
-    id: 'almuerzo',
-    titulo: 'Pausa de Almuerzo',
-    Icon: Coffee,
-    iconColor: 'text-amber-400',
-    desc: 'Pausa breve de almuerzo en el mostrador',
-    texto: '¡Hola! 🥪 En este momento nuestro equipo está en pausa de almuerzo. Dejamos tu consulta anotada y en breve retomamos atención personalizada en mostrador.'
-  },
-  {
-    id: 'domingo',
-    titulo: 'Descanso Dominical',
-    Icon: Sun,
-    iconColor: 'text-yellow-400',
-    desc: 'Para domingos no laborables o feriados',
-    texto: '¡Hola! ☀️ Los domingos nuestra tienda física descansa. ¡El asistente virtual te puede dar precios de una vez! El lunes a las 8:00 AM abrimos para entregas y apartados en San Agustín.'
-  }
-];
-
-// Presets para seguimiento automático
-const FOLLOWUP_PRESETS = [
-  {
-    id: 'amable',
-    titulo: 'Sutil & Amable',
-    Icon: Sparkles,
-    iconColor: 'text-emerald-400',
-    texto: '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.'
-  },
-  {
-    id: 'urgencia',
-    titulo: 'Disponibilidad Limitada',
-    Icon: Flame,
-    iconColor: 'text-red-400',
-    texto: '¡Hola, {nombre}! ⏱️ Nos quedan pocas unidades disponibles de *{producto}*. ¿Deseas que te lo apartemos sin costo por 24 horas para retirarlo en tienda física?'
-  },
-  {
-    id: 'cashea',
-    titulo: 'Financiamiento Cashea',
-    Icon: ShoppingBag,
-    iconColor: 'text-yellow-400',
-    texto: '¡Hola, {nombre}! 💛 Recuerda que en *{producto}* puedes llevártelo hoy pagando solo la inicial en tienda física con tu app Cashea. ¿Te preparamos el pedido?'
-  }
-];
-
-// Opciones de horario predefinidas para el Selector
-const SCHEDULE_OPTIONS = [
-  {
-    id: 'crastur_completo',
-    label: 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM (Horario Completo Crastur)',
-    shortLabel: 'Semana 8am-8pm + Dom 8:30am-2pm',
-    Icon: Clock,
-    iconColor: 'text-orange-400',
-    value: 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM'
-  },
-  {
-    id: 'crastur_standard',
-    label: '8:00 AM a 8:00 PM (Lunes a Sábado - Domingos Cerrado)',
-    shortLabel: 'Lun a Sáb (8am - 8pm)',
-    Icon: Store,
-    iconColor: 'text-blue-400',
-    value: 'Lunes a Sábado de 8:00 AM a 8:00 PM'
-  },
-  {
-    id: 'comercial',
-    label: '8:30 AM a 6:00 PM (Lunes a Sábado - Comercial Corrido)',
-    shortLabel: 'Comercial (8:30am - 6pm)',
-    Icon: Briefcase,
-    iconColor: 'text-amber-400',
-    value: 'Lunes a Sábado de 8:30 AM a 6:00 PM'
-  },
-  {
-    id: 'medio_dia',
-    label: '8:00 AM a 2:00 PM (Medio Día / Solo Sábados)',
-    shortLabel: 'Medio Día (8am - 2pm)',
-    Icon: Sun,
-    iconColor: 'text-yellow-400',
-    value: 'Lunes a Sábado de 8:00 AM a 2:00 PM'
-  },
-  {
-    id: 'custom',
-    label: '✏️ Horario Personalizado (Configurar semana y domingos a mi gusto)',
-    shortLabel: 'Personalizado',
-    Icon: Sliders,
-    iconColor: 'text-emerald-400',
-    value: 'custom'
-  }
-];
-
-// Tarjetas interactivas de métodos de pago
-const PAYMENT_OPTIONS = [
-  { id: 'efectivo', label: 'Efectivo $', Icon: DollarSign, iconColor: 'text-emerald-400', desc: 'Dólares en efectivo en tienda física' },
-  { id: 'binance', label: 'Binance Pay (USDT)', Icon: Coins, iconColor: 'text-amber-400', desc: 'Pago digital en criptoactivos' },
-  { id: 'pagomovil', label: 'Pago Móvil BCV', Icon: Smartphone, iconColor: 'text-sky-400', desc: 'En bolívares a tasa oficial BCV' },
-  { id: 'cashea', label: 'Cashea en Tienda', Icon: ShoppingBag, iconColor: 'text-yellow-400', desc: 'Pago en 3 cuotas quincenales' },
-  { id: 'puntoventa', label: 'Punto de Venta', Icon: CreditCard, iconColor: 'text-purple-400', desc: 'Tarjeta de débito en mostrador' },
-  { id: 'transferencia', label: 'Transferencia Bancaria', Icon: Building2, iconColor: 'text-blue-400', desc: 'Banesco o Mercantil' }
-];
-
-// Analizador inteligente que normaliza las opciones de pago activas y descarta texto legado duplicado
-const parseActivePayments = (rawString) => {
-  if (rawString === undefined || rawString === null) return PAYMENT_OPTIONS.map(o => o.label);
-  const trimmed = String(rawString).trim();
-  if (trimmed === '' || trimmed.toLowerCase() === 'ninguno' || trimmed.toLowerCase() === 'vacio') return [];
-  const lower = trimmed.toLowerCase();
-  return PAYMENT_OPTIONS.filter(opt => {
-    if (lower.includes(opt.label.toLowerCase())) return true;
-    if (opt.id === 'efectivo' && (lower.includes('efectivo $') || lower.includes('efectivo') || lower.includes('divisas'))) return true;
-    if (opt.id === 'binance' && (lower.includes('binance') || lower.includes('usdt'))) return true;
-    if (opt.id === 'pagomovil' && (lower.includes('pago móvil') || lower.includes('pago movil'))) return true;
-    if (opt.id === 'cashea' && lower.includes('cashea')) return true;
-    if (opt.id === 'puntoventa' && (lower.includes('punto de venta') || lower.includes('punto'))) return true;
-    if (opt.id === 'transferencia' && lower.includes('transferencia')) return true;
-    return false;
-  }).map(opt => opt.label);
-};
-
-const QUICK_EMOJIS = ['🏍️', '🛞', '🔧', '💵', '🪙', '💛', '📍', '📦', '✅', '⚡', '🕒', '👋', '🤝'];
-
-// Comparador robusto que ignora saltos de línea CRLF/LF o espacios accidentales
-const cleanCompare = (a, b) => (a || '').replace(/\s+/g, ' ').trim() === (b || '').replace(/\s+/g, ' ').trim();
+// Los presets (TABS, WELCOME_TONE_PRESETS, etc.) y helpers viven en ./settings/constants.js y ./settings/helpers.js
 
 export default function SettingsView({ settings, onSaveSettings, onRequestConfirm }) {
   const [activeTab, setActiveTab] = useState('tienda');
@@ -226,9 +43,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
   const [restoring, setRestoring] = useState(false);
   const fileInputRef = useRef(null);
   const [form, setForm] = useState(settings || {});
-  const [simulatorView, setSimulatorView] = useState('bienvenida');
   const [subTabMensajes, setSubTabMensajes] = useState('bienvenida');
-  const [showAdvancedText, setShowAdvancedText] = useState(false);
 
   // Estado para el selector de horario
   const [scheduleMode, setScheduleMode] = useState(() => {
@@ -337,20 +152,10 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
     onChange: (e) => setForm({ ...form, [name]: e.target.value })
   });
 
-  const toggle = (name) => ({
-    checked: form[name] === '1',
-    onChange: (e) => setForm({ ...form, [name]: e.target.checked ? '1' : '0' })
-  });
-
   const insertVariable = (fieldName, varTag) => {
     const cur = form[fieldName] || '';
     setForm(prev => ({ ...prev, [fieldName]: `${cur} ${varTag}` }));
     toast.info(`Insertado "${varTag}"`);
-  };
-
-  const insertEmoji = (fieldName, emoji) => {
-    const cur = form[fieldName] || '';
-    setForm(prev => ({ ...prev, [fieldName]: `${cur} ${emoji}` }));
   };
 
   const handleSubmit = async (e) => {
@@ -435,26 +240,15 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
     }
   };
 
-  const handleDownloadBackup = () => {
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const link = document.createElement('a');
-    link.href = '/api/backup/download';
-    link.download = `backup_crastur_${dateStr}.db`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Descargando copia de seguridad de la tienda (Base de Datos SQLite)...');
-  };
-
   const handleDownloadMasterJson = () => {
     const dateStr = new Date().toISOString().slice(0, 10);
     const link = document.createElement('a');
-    link.href = '/api/backup/export-full';
-    link.download = `respaldo_maestro_crastur_${dateStr}.json`;
+    link.href = '/api/backup/catalog-sellers';
+    link.download = `catalogo_asesores_crastur_${dateStr}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success('Descargando Respaldo Maestro JSON (Catálogo, Proveedores y Ajustes)...');
+    toast.success('Descargando respaldo de Catálogo + Asesores (.json)...');
   };
 
   const handleSelectRestoreFile = () => {
@@ -467,51 +261,23 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
 
     const performRestore = async () => {
       setRestoring(true);
-
-      // Si es archivo JSON de Respaldo Maestro
-      if (file.name.endsWith('.json')) {
-        try {
-          const fileText = await file.text();
-          const parsed = JSON.parse(fileText);
-          const res = await fetch('/api/backup/import-full', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(parsed)
-          });
-          const data = await res.json();
-          if (data.success) {
-            toast.success(`¡Respaldo Maestro restaurado! (${data.importedProducts} productos, ${data.importedSuppliers} proveedores)`);
-            setTimeout(() => window.location.reload(), 1500);
-          } else {
-            toast.error(data.error || 'Error al restaurar respaldo JSON');
-          }
-        } catch (err) {
-          toast.error('El archivo JSON no tiene un formato válido de Crastur');
-        } finally {
-          setRestoring(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-        return;
-      }
-
-      // Si es archivo SQLite .db binario
-      const formData = new FormData();
-      formData.append('backupFile', file);
-
       try {
-        const res = await fetch('/api/backup/restore', {
+        const fileText = await file.text();
+        const parsed = JSON.parse(fileText);
+        const res = await fetch('/api/backup/catalog-sellers/import', {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed)
         });
         const data = await res.json();
         if (data.success) {
-          toast.success('¡Respaldo SQLite restaurado correctamente! Recargando...');
+          toast.success(`¡Restaurado! ${data.importedProducts} productos y ${data.importedSellers} asesores cargados.`);
           setTimeout(() => window.location.reload(), 1500);
         } else {
           toast.error(data.error || 'Error al restaurar el respaldo');
         }
       } catch (err) {
-        toast.error('Error de red al subir la copia de seguridad');
+        toast.error('El archivo no tiene un formato válido de Catálogo y Asesores de Crastur');
       } finally {
         setRestoring(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -520,10 +286,9 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
 
     if (onRequestConfirm) {
       onRequestConfirm({
-        title: '⚠️ ¿Restaurar información de la tienda?',
-        message: `Esto reemplazará toda la información actual con el archivo de respaldo "${file.name}". Los datos actuales quedarán en el punto guardado en ese archivo.`,
+        title: '⚠️ ¿Restaurar Catálogo y Asesores?',
+        message: `Se agregarán o actualizarán los productos y asesores del archivo "${file.name}". La configuración y los chats actuales NO se tocan.`,
         confirmText: 'Sí, Restaurar Ahora',
-        checkboxLabel: 'Entiendo que se sobrescribirán los datos actuales con este respaldo',
         isDanger: true,
         onConfirm: performRestore
       });
@@ -1627,15 +1392,15 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Descargar Respaldo Maestro */}
+                  {/* Descargar Catálogo y Asesores */}
                   <div className="p-4 rounded-2xl bg-[#070b14] border border-slate-800 flex flex-col justify-between space-y-3">
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
                         <Download size={14} className="text-orange-400" />
-                        Respaldo Maestro Seguro (JSON)
+                        Descargar Catálogo y Asesores (.json)
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        Exporta en un solo archivo tu Catálogo de productos, Proveedores, Asesores de ventas y Configuración general. Totalmente compatible entre versiones.
+                        Exporta en un solo archivo tus <strong>productos</strong> y tus <strong>asesores de venta</strong>. Es portable y compatible entre versiones. No incluye configuración ni chats.
                       </p>
                     </div>
 
@@ -1646,29 +1411,20 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer active:scale-95"
                       >
                         <Download size={14} />
-                        <span>Descargar Respaldo Maestro (.json)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleDownloadBackup}
-                        className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white font-medium text-[11px] transition flex items-center justify-center gap-1.5 border border-slate-800 cursor-pointer"
-                      >
-                        <Download size={12} />
-                        <span>Descargar Base de Datos Completa (.db)</span>
+                        <span>Descargar Catálogo y Asesores</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Restaurar Respaldo */}
+                  {/* Restaurar Catálogo y Asesores */}
                   <div className="p-4 rounded-2xl bg-[#070b14] border border-slate-800 flex flex-col justify-between space-y-3">
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
                         <Upload size={14} className="text-amber-400" />
-                        Restaurar Copia de Seguridad
+                        Restaurar Catálogo y Asesores (.json)
                       </h4>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        Sube un archivo de Respaldo Maestro (.json) o una base de datos SQLite (.db). El sistema restaurará tu inventario y proveedores de inmediato.
+                        Sube un archivo de <strong>Catálogo y Asesores</strong>. Se agregan o actualizan los productos y asesores; tu configuración y chats actuales NO se modifican.
                       </p>
                     </div>
 
@@ -1676,7 +1432,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileChange}
-                      accept=".db,.json"
+                      accept=".json"
                       className="hidden"
                     />
 
@@ -1687,9 +1443,16 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                       className="w-full py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500 text-slate-200 hover:text-white font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-95"
                     >
                       <Upload size={14} />
-                      <span>{restoring ? 'Restaurando información...' : 'Seleccionar Archivo (.json o .db)'}</span>
+                      <span>{restoring ? 'Restaurando...' : 'Seleccionar Archivo (.json)'}</span>
                     </button>
                   </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-sky-950/20 border border-sky-800/40 flex items-start gap-2.5">
+                  <AlertCircle size={16} className="text-sky-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-sky-200/90 leading-relaxed">
+                    <strong>Consejo de migración:</strong> Este respaldo se puede llevar a otra versión o computadora. Descárgalo antes de reinstalar o resetear el sistema y vuelve a cargarlo después.
+                  </p>
                 </div>
               </div>
             </div>

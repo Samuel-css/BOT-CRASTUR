@@ -3,7 +3,7 @@
  * TIPOS MAESTROS DEL FRONTEND: ECOSISTEMA COMERCIAL CRASTUR
  * ============================================================================
  * Define las interfaces de datos compartidas en el dashboard administrativo React:
- * productos, proveedores, vendedores, apartados por 24 horas, tasa BCV,
+ * productos, vendedores, apartados por 24 horas, tasa BCV,
  * estado del socket Baileys WhatsApp, Live Inbox y calculadora Cashea.
  * 
  * [MERCADO VENEZUELA] Modela inventarios en USD, conversiones dinámicas a Bs (BCV),
@@ -45,32 +45,6 @@ export interface Product {
   cashea_cuota_usd?: number;
   /** Monto por cuota quincenal Cashea en Bs */
   cashea_cuota_bs?: number;
-}
-
-/**
- * Aliado mayorista o proveedor de repuestos e insumos.
- */
-export interface Supplier {
-  /** Identificador único autoincremental */
-  id: number;
-  /** Razón social de la distribuidora */
-  empresa: string;
-  /** Nombre del contacto comercial directo */
-  contacto_nombre?: string;
-  /** Teléfono o WhatsApp de pedidos */
-  telefono: string;
-  /** Categorías o marcas abastecidas */
-  categorias?: string;
-  /** Días de entrega o despacho programado */
-  dias_despacho?: string;
-  /** Términos de pago y crédito comercial */
-  condiciones_pago?: string;
-  /** Notas internas de compras */
-  notas?: string;
-  /** Estado activo de la relación comercial */
-  activo: number | boolean;
-  /** Fecha de registro */
-  creado_en?: string;
 }
 
 /**
@@ -284,14 +258,10 @@ export interface MasterBackupPayload {
   exportado_en: string;
   /** Total de productos exportados */
   total_productos: number;
-  /** Total de proveedores exportados */
-  total_proveedores: number;
   /** Total de asesores exportados */
   total_vendedores: number;
   /** Lista de productos */
   productos: Product[];
-  /** Lista de proveedores */
-  proveedores: Supplier[];
   /** Lista de vendedores */
   vendedores: Seller[];
   /** Mapa de configuración */

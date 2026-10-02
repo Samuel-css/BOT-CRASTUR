@@ -10,7 +10,6 @@ import {
   Plus,
   Minus,
   Trash2,
-  Sparkles,
   Layers,
   AlertTriangle,
   PackageCheck
@@ -133,7 +132,6 @@ export default function CasheaCalculatorView({
   const inicialBs = inicialUsd * bcvRate;
 
   const saldoFinanciarUsd = totalUsd - inicialUsd;
-  const saldoFinanciarBs = saldoFinanciarUsd * bcvRate;
 
   const cuotaQuincenalUsd = saldoFinanciarUsd / 3;
   const cuotaQuincenalBs = cuotaQuincenalUsd * bcvRate;

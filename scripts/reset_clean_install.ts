@@ -29,7 +29,7 @@ export async function resetCleanInstall(): Promise<void> {
     db = new SQL.Database();
   }
 
-  // 0. Respaldo Preventivo de Emergencia (Catálogo, Proveedores y Configuración)
+  // 0. Respaldo Preventivo de Emergencia (Catálogo y Configuración)
   try {
     const products = db.exec("SELECT * FROM products");
     if (products.length > 0 && products[0].values.length > 0) {
@@ -92,6 +92,29 @@ export async function resetCleanInstall(): Promise<void> {
   const exported = db.export();
   fs.writeFileSync(dbPath, Buffer.from(exported));
   console.log('💾 Archivo crastur.db guardado exitosamente.');
+
+  // 6. Neutralizar el snapshot maestro antiguo y backups con datos viejos
+  // [RESET LIMPIO] Evita que al reiniciar el sistema se revivan datos antiguos
+  // mediante la auto-restauración del snapshot. La versión nueva arranca de verdad limpia.
+  console.log('🗂️ Neutralizando snapshot maestro antiguo y respaldos previos...');
+  const masterSnapshotPath = path.join(backupDir, 'snapshot_maestro_crastur.json');
+  try {
+    if (fs.existsSync(masterSnapshotPath)) {
+      const emptySnapshot = {
+        version: '3.0',
+        exportado_en: new Date().toISOString(),
+        total_productos: 0,
+        total_vendedores: 0,
+        productos: [],
+        vendedores: [],
+        configuracion: {}
+      };
+      fs.writeFileSync(masterSnapshotPath, JSON.stringify(emptySnapshot, null, 2), 'utf8');
+      console.log('✅ Snapshot maestro vaciado (0 productos). No se auto-restaurarán datos antiguos.');
+    }
+  } catch (e: any) {
+    console.warn('⚠️ No se pudo vaciar el snapshot maestro:', e?.message || e);
+  }
 
   // 5. Limpiar backups antiguos con datos viejos de pruebas y crear respaldo nuevo limpio
   console.log('🗂️ Limpiando respaldos antiguos de pruebas...');

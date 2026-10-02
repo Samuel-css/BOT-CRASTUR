@@ -14,8 +14,9 @@
 
 import { Router, Request, Response } from 'express';
 const router = Router();
-import { db, getSettings, getEffectiveRate } from '../database';
+import { db, getSettings, getEffectiveRate, saveMasterSnapshotToDisk } from '../database';
 import { clearCatalogCache } from '../bot/services/catalogPdfService';
+import { invalidateProductCache } from '../bot/services/searchService';
 import { broadcast } from '../websocket';
 import type { Product } from '../types/database';
 
@@ -88,7 +89,9 @@ router.post('/', (req: Request, res: Response) => {
   );
 
   clearCatalogCache();
+  invalidateProductCache();
   broadcast('products_updated', { action: 'created', id: result.lastInsertRowid });
+  saveMasterSnapshotToDisk();
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
@@ -144,7 +147,9 @@ router.put('/:id', (req: Request, res: Response) => {
   );
 
   clearCatalogCache();
+  invalidateProductCache();
   broadcast('products_updated', { action: 'updated', id });
+  saveMasterSnapshotToDisk();
   res.json({ success: true });
 });
 
@@ -156,7 +161,9 @@ router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
   clearCatalogCache();
+  invalidateProductCache();
   broadcast('products_updated', { action: 'deleted', id });
+  saveMasterSnapshotToDisk();
   res.json({ success: true });
 });
 
@@ -219,7 +226,9 @@ router.post('/bulk-price-adjustment', (req: Request, res: Response) => {
     }
 
     clearCatalogCache();
+    invalidateProductCache();
     broadcast('products_updated', { action: 'bulk_price_updated', count: updatedCount });
+    saveMasterSnapshotToDisk();
     res.json({ success: true, count: updatedCount, message: `Se actualizaron los precios de ${updatedCount} productos.` });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

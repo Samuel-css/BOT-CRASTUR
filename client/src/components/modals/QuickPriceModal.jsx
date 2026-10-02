@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Search, X, Copy, Check, Package, Sparkles } from 'lucide-react';
 import { formatBs, formatRate } from '../../utils/formatters';
 import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function QuickPriceModal({ isOpen, onClose, products = [], bcvData }) {
   const [query, setQuery] = useState('');
@@ -17,16 +18,8 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
     }
   }, [isOpen]);
 
-  // Escuchar tecla Escape
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  // [UX] Cerrar con tecla Escape (centralizado en el hook compartido)
+  useEscapeToClose(isOpen, onClose);
 
   if (!isOpen) return null;
 

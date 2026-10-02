@@ -737,9 +737,13 @@ function handleApartadoTelefono(
   const precioUsd = parseFloat(metadata.precio_usd) || 0;
   const precioBs = precioUsd * tasa;
 
-  // Persistir la reserva atómica en la base de datos con control de stock y vencimiento a 24 horas
+  // Persistir la reserva atómica en la base de datos con control de stock de TODOS los ítems del combo
   let reservation: any;
   try {
+    const itemsToReserve = (metadata.items && Array.isArray(metadata.items) && metadata.items.length > 0)
+      ? metadata.items
+      : [{ id: prodId, nombre: prodNombre, precio_usd: precioUsd }];
+
     reservation = createReservation({
       jid,
       nombre,
@@ -748,7 +752,8 @@ function handleApartadoTelefono(
       producto_id: prodId,
       producto_nombre: prodNombre,
       precio_usd: precioUsd,
-      precio_bs: precioBs
+      precio_bs: precioBs,
+      items: itemsToReserve
     });
   } catch (err: any) {
     db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);

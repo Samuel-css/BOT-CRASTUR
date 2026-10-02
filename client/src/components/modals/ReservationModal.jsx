@@ -1,7 +1,11 @@
-import { X, Clock, User, Phone, CreditCard, Package, ExternalLink, CheckCircle, Trash2 } from 'lucide-react';
-import { formatBs, formatRate, formatTimeRemaining, formatDateTime } from '../../utils/formatters';
+import { X, Clock, User, Package, ExternalLink, CheckCircle, Trash2 } from 'lucide-react';
+import { formatBs, formatTimeRemaining, formatDateTime } from '../../utils/formatters';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
-export default function ReservationModal({ isOpen, onClose, reservation, bcvRate, onMarkDelivered, onCancel }) {
+export default function ReservationModal({ isOpen, onClose, reservation, onMarkDelivered, onCancel }) {
+  // Cerrar con tecla Escape (hook siempre antes de cualquier return condicional)
+  useEscapeToClose(isOpen, onClose);
+
   if (!isOpen || !reservation) return null;
 
   const time = formatTimeRemaining(reservation.expira_en);

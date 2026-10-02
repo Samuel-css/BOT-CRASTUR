@@ -1,8 +1,7 @@
 {
   "version": "3.0",
-  "exportado_en": "2026-10-01T16:13:52.944Z",
-  "total_productos": 2,
-  "total_proveedores": 0,
+  "exportado_en": "2026-10-02T03:07:36.069Z",
+  "total_productos": 9,
   "total_vendedores": 0,
   "productos": [
     {
@@ -26,9 +25,85 @@
       "imagen_url": "",
       "stock": 10,
       "activo": 1
+    },
+    {
+      "id": 88,
+      "marca": "Bera",
+      "modelo": "Pastillas de Freno SBR 150 Delanteras",
+      "categoria": "Repuestos Moto",
+      "precio_usd": 5,
+      "descripcion": "Pastillas de freno semimetálicas delanteras originales para Bera SBR.",
+      "imagen_url": null,
+      "stock": 19,
+      "activo": 1
+    },
+    {
+      "id": 89,
+      "marca": "NGK",
+      "modelo": "Bujía D8EA Moto Bera Empire 150",
+      "categoria": "Repuestos Moto",
+      "precio_usd": 3.5,
+      "descripcion": "Bujía original japonesa de rosca larga.",
+      "imagen_url": null,
+      "stock": 28,
+      "activo": 1
+    },
+    {
+      "id": 90,
+      "marca": "Choho",
+      "modelo": "Kit de Arrastre Reforzado 428H Bera SBR",
+      "categoria": "Repuestos Moto",
+      "precio_usd": 28,
+      "descripcion": "Kit de arrastre reforzado paso 428H.",
+      "imagen_url": null,
+      "stock": 10,
+      "activo": 1
+    },
+    {
+      "id": 91,
+      "marca": "Motul",
+      "modelo": "Aceite 4T 20W50 Mineral 1L",
+      "categoria": "Otros Productos",
+      "precio_usd": 6,
+      "descripcion": "Aceite mineral 4 tiempos para motor de moto.",
+      "imagen_url": null,
+      "stock": 23,
+      "activo": 1
+    },
+    {
+      "id": 92,
+      "marca": "Rema",
+      "modelo": "Caja de Parches en Frío Tip Top",
+      "categoria": "Insumos Cauchera",
+      "precio_usd": 12,
+      "descripcion": "Caja de parches vulcanizados en frío para tripas y cauchos.",
+      "imagen_url": null,
+      "stock": 15,
+      "activo": 1
+    },
+    {
+      "id": 93,
+      "marca": "Duro",
+      "modelo": "Tripa para Moto Aro 18 Reforzada",
+      "categoria": "Repuestos Moto",
+      "precio_usd": 4.5,
+      "descripcion": "Tripa de caucho reforzada para rin 18.",
+      "imagen_url": null,
+      "stock": 25,
+      "activo": 1
+    },
+    {
+      "id": 94,
+      "marca": "Genérico",
+      "modelo": "Válvula de Aire Corta TR412",
+      "categoria": "Insumos Cauchera",
+      "precio_usd": 1.5,
+      "descripcion": "Válvula de goma para caucho tubeless.",
+      "imagen_url": null,
+      "stock": 50,
+      "activo": 1
     }
   ],
-  "proveedores": [],
   "vendedores": [],
   "configuracion": {
     "nombre_negocio": "Crastur - Insumos para Caucheras, Repuestos de Moto & Otros Productos",
@@ -42,15 +117,15 @@
     "insistencia_activa": "1",
     "insistencia_minutos": "15",
     "politica_envios": "Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.",
-    "metodos_pago": "Efectivo $, Binance Pay (USDT), Pago Móvil BCV, Punto de Venta, Transferencia Bancaria, Cashea en Tienda",
     "mensaje_insistencia": "¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.",
     "mensaje_bienvenida": "¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.",
     "horario_atencion": "Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM",
     "mensaje_fuera_horario": "¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨",
     "delivery_zonas_json": "[{\"zona\":\"Centro / La Candelaria / El Silencio / San Bernardino\",\"tarifa\":\"$2 a $3 USD\",\"palabras\":[\"centro\",\"candelaria\",\"silencio\",\"san bernardino\",\"parque carabobo\",\"bellas artes\"]},{\"zona\":\"Chacao / Altamira / Las Mercedes / Bello Monte\",\"tarifa\":\"$3 a $4 USD\",\"palabras\":[\"chacao\",\"altamira\",\"mercedes\",\"bello monte\",\"los palos grandes\",\"castellana\"]},{\"zona\":\"El Recreo / Sabana Grande / Plaza Venezuela\",\"tarifa\":\"$2.5 a $3.5 USD\",\"palabras\":[\"sabana grande\",\"plaza venezuela\",\"recreo\",\"los caobos\"]},{\"zona\":\"Oeste (Catia, 23 de Enero, Propatria)\",\"tarifa\":\"$3 a $4 USD\",\"palabras\":[\"catia\",\"23 de enero\",\"propatria\",\"perez bonalde\",\"agua salud\"]},{\"zona\":\"Suroeste (El Paraíso, Montalbán, La Vega, Caricuao)\",\"tarifa\":\"$3 a $5 USD\",\"palabras\":[\"paraiso\",\"montalban\",\"vega\",\"caricuao\",\"antimano\",\"vista alegre\"]},{\"zona\":\"Este (La California, Los Dos Caminos, Petare, Boleíta)\",\"tarifa\":\"$3.5 a $5 USD\",\"palabras\":[\"california\",\"dos caminos\",\"petare\",\"boleita\",\"marques\",\"cortijos\",\"macaracuay\"]},{\"zona\":\"Sureste (Baruta, El Hatillo, La Trinidad, Santa Fe)\",\"tarifa\":\"$4 a $6 USD\",\"palabras\":[\"baruta\",\"hatillo\",\"trinidad\",\"santa fe\",\"cafetal\",\"manzanares\",\"las minas\"]}]",
     "fuera_horario_activo": "0",
+    "tasa_bcv": "866.5612",
+    "fecha_tasa": "Viernes, 02 Octubre  2026",
     "bot_pausado_global": "0",
-    "tasa_bcv": "860.1753",
-    "fecha_tasa": "Jueves, 01 Octubre  2026"
+    "metodos_pago": "Efectivo $, Binance Pay (USDT), Pago Móvil BCV, Cashea en Tienda, Punto de Venta, Transferencia Bancaria"
   }
 }

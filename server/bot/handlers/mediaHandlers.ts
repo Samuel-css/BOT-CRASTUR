@@ -15,7 +15,7 @@ export function handleMediaResponse(mediaTypeOrPushName?: string, pushNameOrMedi
   let mediaType = 'multimedia';
   let pushName = 'amigo/a';
 
-  if (mediaTypeOrPushName === 'audio' || mediaTypeOrPushName === 'image' || mediaTypeOrPushName === 'video' || mediaTypeOrPushName === 'sticker') {
+  if (mediaTypeOrPushName === 'audio' || mediaTypeOrPushName === 'voice' || mediaTypeOrPushName === 'image' || mediaTypeOrPushName === 'video' || mediaTypeOrPushName === 'sticker') {
     mediaType = mediaTypeOrPushName;
     pushName = pushNameOrMediaType || 'amigo/a';
   } else {
@@ -23,7 +23,7 @@ export function handleMediaResponse(mediaTypeOrPushName?: string, pushNameOrMedi
     mediaType = pushNameOrMediaType || 'multimedia';
   }
 
-  const tipoLabel = mediaType === 'audio' ? 'tu nota de voz' : 'tu foto/archivo';
+  const tipoLabel = (mediaType === 'audio' || mediaType === 'voice') ? 'tu nota de voz' : 'tu foto/archivo';
   let msg = `¡Hola, *${pushName}*! 👋\n\n`;
   msg += `He recibido ${tipoLabel}. En nuestro canal automatizado de WhatsApp no puedo escuchar audios ni abrir fotos directamente 😊.\n\n`;
   msg += `📌 *Para ayudarte de inmediato:*\n`;

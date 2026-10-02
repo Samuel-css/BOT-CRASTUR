@@ -5,16 +5,17 @@
   "scripts": {
     "start": "tsx server/server.ts",
     "launch": "node launcher.js",
+    "instalar": "node installer/server.js",
     "build": "npm --prefix client run build",
     "dev:client": "npm --prefix client run dev",
-    "maintenance": "tsx scripts/maintenance.ts",
     "clean": "tsx scripts/clean_data.ts",
     "reset": "tsx scripts/reset_clean_install.ts",
+    "migrar": "tsx scripts/migrar_catalogo_asesores.ts",
     "stop": "node -e \"const http=require('http'); const req=http.request('http://localhost:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "build:server": "tsc -p tsconfig.server.json",
     "test": "tsx scripts/run_stress_and_edge_tests.ts",
-    "test:catalog": "tsx scripts/test_catalog_pdf.ts"
+    "test:ui": "tsx scripts/run_ui_e2e_tests.ts"
   },
   "keywords": [
     "crastur",
@@ -43,6 +44,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.2",
+    "puppeteer-core": "^25.12.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

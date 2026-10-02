@@ -1,11 +1,11 @@
 # Dependencias
 node_modules/
 client/node_modules/
-package-lock.json
 
-# Builds de producción
+# Builds del servidor (se generan con npm run build:server; el cliente usa client/dist/)
 /dist/
-!client/dist/
+
+# Build del panel web: SÍ se versiona (lo sirve el servidor y lo empaqueta el instalador)
 
 
 # SEGURIDAD CRÍTICA: Credenciales de WhatsApp (Baileys)
@@ -17,6 +17,7 @@ auth_info_baileys/
 data/*.db
 data/*.db-journal
 data/backups/*.db
+data/backups/*.json
 data/catalogs/*.pdf
 !data/catalogs/.gitkeep
 
@@ -26,6 +27,7 @@ data/catalogs/*.pdf
 
 # Logs y depuración
 logs/
+data/launcher.log
 *.log
 npm-debug.log*
 yarn-debug.log*

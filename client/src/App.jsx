@@ -12,29 +12,31 @@
  * - Copia cotizaciones optimizadas para WhatsApp con desglose de cuotas e inicial Cashea.
  * 
  * [ARQUITECTURA SQL.JS]
- * - Sincroniza catálogo, reservas por 24h, proveedores, asesores y métricas desde SQLite WASM.
+ * - Sincroniza catálogo, reservas por 24h, asesores y métricas desde SQLite WASM.
  * 
  * [ANTI-BANEO META 2025]
  * - Control de interruptor de pausa global y derivación fluida a asesores comerciales humanos.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Power, RotateCcw, CheckCircle2 } from 'lucide-react';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import DashboardView from './components/views/DashboardView';
-import LiveInboxView from './components/views/LiveInboxView';
-import CatalogView from './components/views/CatalogView';
-import ReservationsView from './components/views/ReservationsView';
-import CasheaCalculatorView from './components/views/CasheaCalculatorView';
-import WhatsAppView from './components/views/WhatsAppView';
-import SellersView from './components/views/SellersView';
-import SuppliersView from './components/views/SuppliersView';
-import SettingsView from './components/views/SettingsView';
+
+// [RENDIMIENTO] Code-splitting: cada vista se carga bajo demanda (lazy) para reducir
+// el bundle inicial. El Dashboard (pestaña por defecto) se importa directo para que
+// aparezca de inmediato; las demás vistas se descargan cuando el usuario navega a ellas.
+const LiveInboxView = lazy(() => import('./components/views/LiveInboxView'));
+const CatalogView = lazy(() => import('./components/views/CatalogView'));
+const ReservationsView = lazy(() => import('./components/views/ReservationsView'));
+const CasheaCalculatorView = lazy(() => import('./components/views/CasheaCalculatorView'));
+const WhatsAppView = lazy(() => import('./components/views/WhatsAppView'));
+const SellersView = lazy(() => import('./components/views/SellersView'));
+const SettingsView = lazy(() => import('./components/views/SettingsView'));
 
 import ProductModal from './components/modals/ProductModal';
 import SellerModal from './components/modals/SellerModal';
-import SupplierModal from './components/modals/SupplierModal';
 import ReservationModal from './components/modals/ReservationModal';
 import ConfirmModal from './components/modals/ConfirmModal';
 import QuickPriceModal from './components/modals/QuickPriceModal';
@@ -43,13 +45,25 @@ import { Toaster } from 'sonner';
 
 import { formatBs, formatRate } from './utils/formatters';
 
+/**
+ * Indicador visual mostrado mientras una vista lazy se descarga por primera vez.
+ * Mantiene la sensación de fluidez sin bloquear el resto del panel.
+ */
+function ViewLoadingFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
+      <div className="w-9 h-9 rounded-full border-2 border-slate-700 border-t-orange-500 animate-spin" />
+      <span className="text-xs font-medium tracking-wide">Cargando módulo...</span>
+    </div>
+  );
+}
+
 export default function App() {
   // Pestaña activa del dashboard y colecciones de datos primarias
   const [activeTab, setActiveTab] = useState('dashboard');
   const [products, setProducts] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [sellers, setSellers] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
   const [settings, setSettings] = useState({});
   const [bcvData, setBcvData] = useState({ tasa_efectiva: null, tasa_bcv: null, fecha_tasa: '' });
   const [waStatus, setWaStatus] = useState({ status: 'disconnected', qr: null, user: null });
@@ -63,7 +77,6 @@ export default function App() {
   // Estados de control de apertura para modales interactivos
   const [productModal, setProductModal] = useState({ isOpen: false, editing: null });
   const [sellerModal, setSellerModal] = useState({ isOpen: false, editing: null });
-  const [supplierModal, setSupplierModal] = useState({ isOpen: false, editing: null });
   const [reservationModal, setReservationModal] = useState({ isOpen: false, data: null });
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: true });
   const [quickPriceOpen, setQuickPriceOpen] = useState(false);
@@ -160,13 +173,6 @@ export default function App() {
       .catch(() => {});
   };
 
-  const loadSuppliers = () => {
-    fetch('/api/suppliers')
-      .then(r => r.json())
-      .then(data => setSuppliers(data.suppliers || []))
-      .catch(() => {});
-  };
-
   const loadBCV = () => {
     fetch('/api/bcv')
       .then(r => r.json())
@@ -192,7 +198,6 @@ export default function App() {
     loadProducts();
     loadReservations();
     loadSellers();
-    loadSuppliers();
     loadBCV();
     loadSettings();
     loadMetrics();
@@ -618,78 +623,6 @@ export default function App() {
   };
 
   /**
-   * Guarda o actualiza un proveedor comercial mayorista.
-   */
-  const handleSaveSupplier = async (supplierData) => {
-    try {
-      if (supplierModal.editing) {
-        const res = await fetch(`/api/suppliers/${supplierModal.editing.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(supplierData)
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast.success('Proveedor actualizado exitosamente');
-          setSupplierModal({ isOpen: false, editing: null });
-          loadSuppliers();
-        } else {
-          toast.error(data.error || 'Error al actualizar el proveedor');
-        }
-      } else {
-        const res = await fetch('/api/suppliers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(supplierData)
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast.success('Proveedor registrado exitosamente');
-          setSupplierModal({ isOpen: false, editing: null });
-          loadSuppliers();
-        } else {
-          toast.error(data.error || 'Error al registrar el proveedor');
-        }
-      }
-    } catch {
-      toast.error('Error de conexión al guardar el proveedor');
-    }
-  };
-
-  /**
-   * Inactiva lógicamente un proveedor mayorista.
-   */
-  const handleDeleteSupplier = (supplierId) => {
-    const sup = suppliers.find(s => s.id === supplierId);
-    const supName = sup ? `"${sup.empresa}"` : 'este proveedor';
-
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Eliminar Proveedor / Mayorista?',
-      message: `¿Estás seguro de desactivar a ${supName}? Podrás reactivarlo o restaurarlo en cualquier momento desde el respaldo maestro.`,
-      confirmText: 'Sí, Desactivar Proveedor',
-      cancelText: 'Cancelar',
-      isDanger: true,
-      onConfirm: async () => {
-        try {
-          const res = await fetch(`/api/suppliers/${supplierId}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (data.success) {
-            toast.success(`Proveedor ${supName} desactivado`);
-            loadSuppliers();
-          } else {
-            toast.error(data.error || 'Error al eliminar el proveedor');
-          }
-        } catch {
-          toast.error('Error al eliminar el proveedor');
-        } finally {
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        }
-      }
-    });
-  };
-
-  /**
    * Guarda parámetros de configuración operativa.
    */
   const handleSaveSettings = (newSettings) => {
@@ -856,6 +789,7 @@ export default function App() {
         {/* CONTENEDOR DE VISTAS ACTIVAS */}
         <main className="flex-1 overflow-y-auto p-2.5 sm:p-4 lg:p-6">
           <div key={activeTab} className="animate-fade-in-up">
+            <Suspense fallback={<ViewLoadingFallback />}>
             {activeTab === 'dashboard' && (
               <DashboardView
                 products={products}
@@ -939,15 +873,6 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'suppliers' && (
-              <SuppliersView
-                suppliers={suppliers}
-                onOpenAddModal={() => setSupplierModal({ isOpen: true, editing: null })}
-                onEditSupplier={(sup) => setSupplierModal({ isOpen: true, editing: sup })}
-                onDeleteSupplier={handleDeleteSupplier}
-              />
-            )}
-
             {activeTab === 'settings' && (
               <SettingsView
                 settings={settings}
@@ -966,6 +891,7 @@ export default function App() {
                 })}
               />
             )}
+            </Suspense>
           </div>
         </main>
       </div>
@@ -984,13 +910,6 @@ export default function App() {
         editingSeller={sellerModal.editing}
         onClose={() => setSellerModal({ isOpen: false, editing: null })}
         onSave={handleSaveSeller}
-      />
-
-      <SupplierModal
-        isOpen={supplierModal.isOpen}
-        editingSupplier={supplierModal.editing}
-        onClose={() => setSupplierModal({ isOpen: false, editing: null })}
-        onSave={handleSaveSupplier}
       />
 
       <ReservationModal
@@ -1024,13 +943,13 @@ export default function App() {
         bcvData={bcvData}
       />
 
-      {/* NOTIFICACIONES TOAST FLOTANTES */}
+      {/* NOTIFICACIONES TOAST FLOTANTES (CENTRADAS) */}
       <Toaster
         theme="dark"
-        position="top-right"
+        position="top-center"
         richColors
         closeButton
-        offset="72px"
+        expand
         toastOptions={{
           style: {
             background: 'rgba(12, 19, 34, 0.95)',
@@ -1042,7 +961,10 @@ export default function App() {
             fontSize: '0.85rem',
             fontWeight: 500,
             fontFamily: 'Plus Jakarta Sans, sans-serif',
-            backdropFilter: 'blur(16px)'
+            backdropFilter: 'blur(16px)',
+            textAlign: 'center',
+            minWidth: '320px',
+            maxWidth: '460px'
           }
         }}
       />

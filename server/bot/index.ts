@@ -7,7 +7,7 @@
  * 1. Filtros de seguridad e integridad: Pausa global, pausa por asesor, anti-spam y sanitización de entrada.
  * 2. Mensajería multimedia y estados interactivos de flujo (máquina de estados de apartados y menú de catálogos).
  * 3. Intenciones de cortesía, desuscripción voluntaria (opt-out), reclamos y prevención de hostilidad.
- * 4. Reglas de negocio operativas: Cripto/Binance, ventas al mayor, combos Instagram, catálogo PDF, medios de pago y tasa BCV.
+ * 4. Reglas de negocio operativas: Cripto/Binance, combos Instagram, catálogo PDF, medios de pago y tasa BCV.
  * 5. Logística física en Caracas: Delivery motorizado, horarios de tienda, retiro inmediato, puntos de referencia y garantía.
  * 6. Carrito multi-producto y activación de apartado por 24 horas.
  * 7. Búsqueda difusa de productos en inventario SQLite mediante algoritmo de Levenshtein ponderado.
@@ -29,13 +29,10 @@ import {
   db,
   getSettings,
   getEffectiveRate,
-  recordMetric,
-  isBotPaused,
-  isBotGloballyPaused
+  recordMetric
 } from '../database';
 
 // Utilidades y Reglas de Negocio
-import { isSpamming } from './utils/antiSpam';
 import { normalizeText } from './utils/textUtils';
 import { isWithinBusinessHours, handleOutOfHoursTransactionResponse } from './services/businessRules';
 import { searchProductsFuzzy, searchMultipleProducts } from './services/searchService';
@@ -43,7 +40,6 @@ import { extractVenezuelanPhones } from './utils/formatters';
 import { detectCaracasZone } from './utils/caracasDelivery';
 
 // Handlers de Respuestas Especializados
-import { handleMediaResponse } from './handlers/mediaHandlers';
 import {
   handleGreetingResponse,
   handleCourtesyResponse,
@@ -64,15 +60,12 @@ import {
   handleCaucheraQueryResponse,
   handleNonAcceptedPaymentsResponse,
   handleBinancePaymentResponse,
-  handleWholesaleQueryResponse,
   handleInvoicingQueryResponse,
   handleStoreHoursResponse,
   handleWarrantyResponse,
   handleAvailabilityResponse,
   handleLocationResponse,
   handleCarInquiryResponse,
-  handleElderlyOrConfusedResponse,
-  handleHostilityOrComplaintResponse,
   handleCategoryBrowseResponse
 } from './handlers/infoHandlers';
 import { handleCasheaSmart, handleCasheaResponse } from './handlers/casheaHandlers';
@@ -84,7 +77,8 @@ import {
   handleInstagramCombosResponse
 } from './handlers/productHandlers';
 import { handleSellersResponse } from './handlers/advisoryHandlers';
-import { handleDefaultFallback } from './handlers/fallbackHandlers';
+import { handleDefaultFallback, handleSecondFallback } from './handlers/fallbackHandlers';
+import { runWebIntents } from './handlers/webIntentHandlers';
 import {
   handleCatalogMenuResponse,
   handleCatalogPdfDelivery
@@ -99,6 +93,10 @@ import {
 } from './apartado/apartadoFlow';
 import { checkPendingFollowUps, check22hReservationReminders } from './followUp/followUpService';
 
+// Módulos de enrutamiento extraídos (guards y comandos de flujo)
+import { runGuards, SILENCE } from './router/guards';
+import { runFlowCommands } from './router/flowCommands';
+
 /**
  * Procesa un mensaje entrante de WhatsApp y genera la respuesta automática correspondiente.
  * 
@@ -108,7 +106,7 @@ import { checkPendingFollowUps, check22hReservationReminders } from './followUp/
  * @param mediaInfo - Metadatos si el mensaje contiene audio, imagen o documento
  * @returns Cadena con la respuesta textual, objeto con documento/imagen, o null si debe silenciarse.
  */
-function processIncomingMessage(
+function processIncomingMessageCore(
   jid: string,
   rawText: string,
   pushName: string = 'amigo/a',
@@ -187,187 +185,30 @@ function processIncomingMessage(
   const tasa = getEffectiveRate();
 
   // ============================================================================
-  // [SECCIÓN 0] Control Global de Silenciado
+  // [SECCIONES 0-3] Guardas de silenciamiento, anti-spam, entradas confusas y multimedia
+  // (ver server/bot/router/guards.ts)
   // ============================================================================
-  if (isBotGloballyPaused()) {
-    console.log('[Bot] Silenciado globalmente por el panel administrativo. Mensaje guardado en Live Inbox.');
-    return null;
-  }
+  const guardResult = runGuards(jid, text, pushName, mediaInfo, session);
+  if (guardResult === SILENCE) return null;
+  if (guardResult !== null) return guardResult;
 
   // ============================================================================
-  // [SECCIÓN 1] Pausa Manual por Asesor Humano en esta Conversación
+  // [SECCIONES 4-4d] Cancelación, opt-out, hostilidad y atención especial
+  // (ver server/bot/router/flowCommands.ts)
   // ============================================================================
-  if (isBotPaused(jid)) {
-    console.log(`[Bot] Chat ${jid} pausado manualmente por un asesor humano. Sin auto-respuesta.`);
-    return null;
-  }
+  const flowResult = runFlowCommands(jid, text, norm, pushName, session);
+  if (flowResult !== null) return flowResult;
 
   // ============================================================================
-  // [SECCIÓN 2] [ANTI-BANEO META 2025] Límite de Frecuencia Anti-Spam
+  // [SECCIÓN 4e] Intenciones provenientes de la PÁGINA WEB
+  // Los botones de la web generan mensajes concretos (cascos, cauchos por medida,
+  // lubricantes de marca, delivery y consultas comerciales). Se evalúan
+  // temprano para garantizar que SIEMPRE reciban una respuesta útil y nunca un fallback.
   // ============================================================================
-  if (isSpamming(jid)) {
-    console.log(`[Bot Anti-Spam] ⚠️ Usuario ${jid} superó los límites de frecuencia de Meta. Mensaje silenciado.`);
-    return null;
-  }
-
-  // ============================================================================
-  // Validaciones de Mensajes Vacíos o de Confusión Extrema
-  // ============================================================================
-  if (/^[\?¿\s\.]+$/.test(text) && text.length >= 1) {
-    return `¡Hola! 👋 Veo tus signos de interrogación. ¿En qué repuesto o insumo para tu moto o cauchera te podemos ayudar hoy? Escribe el nombre de la pieza o escribe *MENU* para ver las opciones principales.`;
-  }
-
-  if (!text && (!mediaInfo || !mediaInfo.isMedia)) {
-    return null;
-  }
-
-  // ============================================================================
-  // [SECCIÓN 3] Mensajes Multimedia (Audios, Notas de Voz, Imágenes, Stickers)
-  // ============================================================================
-  if (mediaInfo && mediaInfo.isMedia) {
-    // Si el usuario está en medio de un apartado y envía comprobante o nota de voz
-    if (session.step && session.step.startsWith('apartado_')) {
-      const stepNames: Record<string, string> = {
-        'apartado_pidiendo_nombre': 'tu *Nombre y Apellido*',
-        'apartado_pidiendo_cedula': 'tu número de *Cédula de Identidad*',
-        'apartado_pidiendo_telefono': 'tu *Número de Teléfono* de contacto'
-      };
-      const expectedField = stepNames[session.step] || 'el dato solicitado';
-      return `¡Recibido! 📎 Recuerda que para completar tu apartado y emitir tu ticket oficial por 24 horas, necesitamos que nos indiques en texto ${expectedField}.\n\n_(Escribe *cancelar* si deseas salir)_`;
-    }
-    return handleMediaResponse(mediaInfo.type, pushName);
-  }
-
-  // ============================================================================
-  // [SECCIÓN 4] Cancelación y Reinicio de Flujos Conversacionales
-  // ============================================================================
-  if (
-    norm === 'cancelar' ||
-    norm === 'cancelar operacion' ||
-    norm === 'cancelar apartado' ||
-    norm === 'salir' ||
-    norm === 'reiniciar' ||
-    norm === 'reset'
-  ) {
-    if (session.step && session.step !== 'start') {
-      db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
-      return `Operación cancelada exitosamente 👍. Escribe *MENU* para volver al inicio o escribe el repuesto que estás buscando.`;
-    }
-    return `Escribe el repuesto o insumo que buscas (ejemplo: *"bujía bera"*, *"aceite 20w50"*) o escribe *MENU* para ver nuestras categorías.`;
-  }
-
-  // ============================================================================
-  // [SECCIÓN 4b] [ANTI-BANEO META 2025] Desuscripción Voluntaria (No Molestar)
-  // ============================================================================
-  if (
-    norm === 'no molestar' ||
-    norm === 'no me escribas' ||
-    norm === 'no me escriban' ||
-    norm === 'no me mandes mensajes' ||
-    norm === 'no me envies mensajes' ||
-    norm === 'dejen de escribirme' ||
-    norm === 'deja de escribirme' ||
-    norm === 'no quiero mensajes' ||
-    norm === 'borrame' ||
-    norm === 'eliminarme' ||
-    norm === 'baja' ||
-    norm === 'desuscribir' ||
-    norm === 'opt out' ||
-    norm === 'stop'
-  ) {
-    db.prepare(`
-      UPDATE chat_sessions
-      SET no_molestar = 1,
-          seguimiento_enviado = 1,
-          step = 'start',
-          apartado_metadata = NULL
-      WHERE jid = ?
-    `).run(jid);
-    recordMetric('desuscripcion_no_molestar', text, jid);
-    return `Entendido, *${pushName}*. Hemos registrado tu preferencia de *No Molestar* 👍. No recibirás recordatorios ni mensajes automáticos de seguimiento. Si en el futuro necesitas consultar repuestos o insumos, solo escríbenos y con gusto te atenderemos. ¡Feliz día!`;
-  }
-
-  // ============================================================================
-  // [SECCIÓN 4c] Detección de Hostilidad, Quejas, Insultos o Acusaciones
-  // ============================================================================
-  // Contexto dialectal de Venezuela: "coño" se usa como asombro cotidiano ("coño chamo qué barato").
-  // Solo se clasifica como hostilidad cuando va acompañado de calificativos agresivos.
-  const hasAggressiveContext =
-    norm.includes('madre') ||
-    norm.includes('tu madre') ||
-    norm.includes('maldit') ||
-    norm.includes('ladron') ||
-    norm.includes('estafador') ||
-    norm.includes('mamag') ||
-    norm.includes('mierda') ||
-    norm.includes('hdp') ||
-    norm.includes('incompetente');
-
-  if (
-    norm.includes('estafa') ||
-    norm.includes('ladrones') ||
-    norm.includes('robando') ||
-    norm.includes('robo') ||
-    norm.includes('trampa') ||
-    norm.includes('enganoso') ||
-    norm.includes('mentira') ||
-    norm.includes('estafadores') ||
-    norm.includes('denuncia') ||
-    norm.includes('sundde') ||
-    norm.includes('cicpc') ||
-    norm.includes('fiscalia') ||
-    norm.includes('policia') ||
-    norm.includes('porqueria') ||
-    norm.includes('pesimo servicio') ||
-    norm.includes('mal servicio') ||
-    norm.includes('incompetentes') ||
-    norm.includes('estafaron') ||
-    (norm.includes('coño') && hasAggressiveContext) ||
-    norm.includes('coño de tu madre') ||
-    norm.includes('coño e tu madre') ||
-    norm.includes('mamaguevo') ||
-    norm.includes('maldito') ||
-    norm.includes('malditos') ||
-    norm.includes('hijo de puta') ||
-    norm.includes('hdp')
-  ) {
-    recordMetric('queja_hostilidad', text, jid);
-    return handleHostilityOrComplaintResponse(pushName, settings);
-  }
-
-  // ============================================================================
-  // [SECCIÓN 4d] Atención Paciente para Personas Mayores / Principiantes
-  // ============================================================================
-  if (
-    norm.includes('soy una persona mayor') ||
-    norm.includes('soy mayor') ||
-    norm.includes('soy viejo') ||
-    norm.includes('soy vieja') ||
-    norm.includes('tengo muchos anos') ||
-    norm.includes('no entiendo nada') ||
-    norm.includes('no se usar esto') ||
-    norm.includes('no entiendo como funciona') ||
-    norm.includes('me cuesta esto') ||
-    norm.includes('no entiendo el telefono') ||
-    norm.includes('no soy bueno con la tecnologia') ||
-    norm.includes('no se como hacer') ||
-    norm.includes('no entiendo la tecnologia') ||
-    norm.includes('no se usar whatsapp') ||
-    norm.includes('no entiendo esta aplicacion') ||
-    norm.includes('me enrede') ||
-    norm.includes('estoy enredado') ||
-    norm.includes('estoy enredada') ||
-    norm.includes('estoy confundido') ||
-    norm.includes('estoy confundida') ||
-    norm.includes('no comprendo') ||
-    norm.includes('explicame mejor') ||
-    norm.includes('explicamelo con calma') ||
-    norm.includes('con calma') ||
-    norm.includes('despacio por favor') ||
-    norm.includes('poco a poco')
-  ) {
-    recordMetric('atencion_persona_mayor', text, jid);
-    return handleElderlyOrConfusedResponse(pushName, settings);
+  const webIntent = runWebIntents(norm, text, pushName, settings, tasa);
+  if (webIntent) {
+    recordMetric('consulta_desde_web', text.slice(0, 80), jid);
+    return webIntent;
   }
 
   // ============================================================================
@@ -410,25 +251,13 @@ function processIncomingMessage(
 
   // ============================================================================
   // [SECCIÓN 6] Cortesía, Agradecimientos y Despedidas
+  // Detección por fragmentos para tolerar modismos venezolanos ("fino gracias mano").
   // ============================================================================
-  if (
+  const esCortesia =
     norm === 'gracias' ||
-    norm === 'muchas gracias' ||
-    norm === 'gracias amigo' ||
-    norm === 'gracias mi pana' ||
-    norm === 'ok gracias' ||
-    norm === 'vale gracias' ||
-    norm === 'chevere gracias' ||
-    norm === 'listo gracias' ||
-    norm === 'fino gracias' ||
-    norm === 'perfecto gracias' ||
-    norm === 'excelente gracias' ||
-    norm === 'bueno gracias' ||
-    norm === 'dale gracias' ||
     norm === 'chevere' ||
     norm === 'fino' ||
     norm === 'todo fino' ||
-    norm === 'listo mi pana' ||
     norm === 'chao' ||
     norm === 'adios' ||
     norm === 'hasta luego' ||
@@ -436,8 +265,24 @@ function processIncomingMessage(
     norm === 'buen dia' ||
     norm === 'feliz dia' ||
     norm === 'feliz tarde' ||
-    norm === 'feliz noche'
-  ) {
+    norm === 'feliz noche' ||
+    norm === 'ok' ||
+    norm === 'listo mi pana' ||
+    norm.includes('gracias') ||
+    norm.includes('fino gracias') ||
+    norm.includes('chevere gracias') ||
+    norm.includes('todo fino') ||
+    norm.includes('mil gracias') ||
+    norm.includes('muy amable') ||
+    norm.includes('excelente servicio') ||
+    norm.includes('buen servicio');
+
+  // No tratar como cortesía si es una consulta (contiene signos de pregunta o intención de producto)
+  const pareceConsulta = text.includes('?') || text.includes('¿') ||
+    norm.includes('cuanto') || norm.includes('precio') || norm.includes('tienen') ||
+    norm.includes('quiero') || norm.includes('busco') || norm.includes('hay ') || norm.includes('necesito');
+
+  if (esCortesia && !pareceConsulta) {
     return handleCourtesyResponse(pushName, settings);
   }
 
@@ -501,31 +346,6 @@ function processIncomingMessage(
   ) {
     recordMetric('consulta_binance', text, jid);
     return handleBinancePaymentResponse(tasa, settings);
-  }
-
-  // ============================================================================
-  // [SECCIÓN 9] Ventas al Mayor / Talleres / Caucheras
-  // ============================================================================
-  if (
-    norm.includes('al mayor') ||
-    norm.includes('por mayor') ||
-    norm.includes('precio al mayor') ||
-    norm.includes('precios al mayor') ||
-    norm.includes('por bulto') ||
-    norm.includes('por caja') ||
-    norm.includes('cajas cerradas') ||
-    norm.includes('para taller') ||
-    norm.includes('para cauchera') ||
-    norm.includes('descuento por cantidad') ||
-    norm.includes('descuento por volumen') ||
-    norm.includes('catalogo mayorista') ||
-    norm.includes('somos taller') ||
-    norm.includes('somos cauchera') ||
-    norm.includes('tengo una cauchera') ||
-    norm.includes('tengo un taller')
-  ) {
-    recordMetric('consulta_mayorista', text, jid);
-    return handleWholesaleQueryResponse(pushName, settings);
   }
 
   // ============================================================================
@@ -1156,8 +976,9 @@ function processIncomingMessage(
     const firstProd = productSearchResults[0];
     recordMetric('busqueda_producto', `${firstProd.marca} ${firstProd.modelo}`, jid);
 
-    // Reiniciar seguimiento para que el cliente pueda recibir recordatorio educado si no concreta compra
-    db.prepare("UPDATE chat_sessions SET seguimiento_enviado = 0 WHERE jid = ? AND seguimiento_enviado = 1").run(jid);
+    // [ANTI-BANEO META 2025] Máximo 1 seguimiento proactivo por sesión: si ya se envió
+    // un recordatorio previamente, no se re-arma (evita mensajes proactivos repetidos).
+    const yaSeguido = session && (session.seguimiento_enviado === 1 || session.seguimiento_enviado === '1');
 
     // Preservar historial reciente de productos cotizados
     let prevHistory: any[] = [];
@@ -1189,9 +1010,9 @@ function processIncomingMessage(
       SET ultimo_producto_id = ?,
           ultimo_producto_nombre = ?,
           contexto_productos = ?,
-          seguimiento_enviado = 0
+          seguimiento_enviado = ?
       WHERE jid = ?
-    `).run(firstProd.id, `${firstProd.marca} ${firstProd.modelo}`, contextJson, jid);
+    `).run(firstProd.id, `${firstProd.marca} ${firstProd.modelo}`, contextJson, yaSeguido ? 1 : 0, jid);
 
     if (productSearchResults.length === 1) {
       return handleSingleProductDetail(firstProd, tasa, settings, session);
@@ -1278,10 +1099,59 @@ function processIncomingMessage(
   }
 
   // ============================================================================
-  // [SECCIÓN 36] Respuesta por Defecto (Fallback Amigable)
+  // [SECCIÓN 36] Respuesta por Defecto (Fallback con Doble Intento)
+  // [RED DE SEGURIDAD] 1er intento: ejemplos. 2º seguido: menú completo + asesor.
   // ============================================================================
   recordMetric('consulta_sin_match', text, jid);
+
+  let fallosPrevios = 0;
+  try {
+    fallosPrevios = parseInt(session?.fallos_consecutivos || 0, 10) || 0;
+  } catch { fallosPrevios = 0; }
+
+  const nuevosFallos = fallosPrevios + 1;
+  try {
+    db.prepare('UPDATE chat_sessions SET fallos_consecutivos = ? WHERE jid = ?').run(nuevosFallos, jid);
+  } catch {}
+
+  if (nuevosFallos >= 2) {
+    // El cliente ya lleva 2 mensajes sin coincidencia → menú + asesor
+    try { db.prepare('UPDATE chat_sessions SET fallos_consecutivos = 0 WHERE jid = ?').run(jid); } catch {}
+    return handleSecondFallback(pushName, settings);
+  }
+
   return handleDefaultFallback(pushName, settings);
+}
+
+/**
+ * [RED DE SEGURIDAD DEL BOT] Envoltorio público del router.
+ * Resetea el contador de "fallos consecutivos" cuando el bot SÍ logra responder
+ * algo útil (distinto del mensaje de fallback). Así el aviso de segundo intento
+ * (menú + asesor) solo aparece cuando el cliente realmente no es entendido 2 veces seguidas.
+ */
+function processIncomingMessage(
+  jid: string,
+  rawText: string,
+  pushName: string = 'amigo/a',
+  mediaInfo: BotMediaInfo | null = null
+): any {
+  const respuesta = processIncomingMessageCore(jid, rawText, pushName, mediaInfo);
+
+  try {
+    // Determinar si la respuesta fue un fallback (no entendido) o una respuesta útil
+    const textoResp = typeof respuesta === 'string'
+      ? respuesta
+      : (respuesta && typeof respuesta === 'object' ? (respuesta.text || respuesta.caption || '') : '');
+
+    const esFallback = !textoResp || textoResp.includes('No logré ubicar el producto') || textoResp.includes('Gracias por tu paciencia');
+
+    if (!esFallback && jid) {
+      // El bot entendió: reiniciar el contador de fallos consecutivos
+      db.prepare('UPDATE chat_sessions SET fallos_consecutivos = 0 WHERE jid = ?').run(jid);
+    }
+  } catch { /* nunca interrumpir la respuesta por un fallo de contador */ }
+
+  return respuesta;
 }
 
 export {

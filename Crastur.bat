@@ -11,7 +11,7 @@ echo ==============================================================
 echo.
 
 where node >nul 2>nul
-if %errorlevel% equ 0 goto start_launcher
+if %errorlevel% equ 0 goto check_install
 
 if exist "C:\Program Files\nodejs\node.exe" goto add_path_64
 if exist "C:\Program Files (x86)\nodejs\node.exe" goto add_path_32
@@ -32,7 +32,7 @@ goto check_again
 
 :check_again
 where node >nul 2>nul
-if %errorlevel% equ 0 goto start_launcher
+if %errorlevel% equ 0 goto check_install
 
 :error_no_node
 color 0C
@@ -49,6 +49,24 @@ echo.
 pause
 exit /b 1
 
+:check_install
+rem Si faltan dependencias o el panel compilado, abrir el INSTALADOR VISUAL
+if not exist "node_modules\express" goto needs_install
+if not exist "client\dist\index.html" goto needs_install
+goto start_launcher
+
+:needs_install
+color 0E
+echo.
+echo  ------------------------------------------------------------------
+echo   El sistema aun no esta instalado o le faltan componentes.
+echo   Se abrira el INSTALADOR VISUAL para dejarlo listo con un clic.
+echo  ------------------------------------------------------------------
+echo.
+pause
+node installer\server.js
+exit /b 0
+
 :start_launcher
 node launcher.js
 if %errorlevel% neq 0 (
@@ -56,6 +74,9 @@ if %errorlevel% neq 0 (
     echo ==============================================================
     echo  Ocurrio un problema al ejecutar Crastur.
     echo ==============================================================
+    echo.
+    echo  Puedes abrir el INSTALADOR VISUAL para reparar el sistema:
+    echo     doble clic en Instalar.bat
     echo.
     pause
 )

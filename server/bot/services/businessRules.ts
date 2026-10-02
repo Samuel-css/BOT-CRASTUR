@@ -64,6 +64,25 @@ export function isWithinBusinessHours(settingsOverride: Record<string, string> |
   const rawHorario = settings?.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
   const horarioStr = rawHorario.toLowerCase();
 
+  // [HORARIO ROBUSTO] ¿Aplica el horario de semana a TODOS los días (incluido domingo)?
+  const coversAllDays =
+    horarioStr.includes('todos los dias') ||
+    horarioStr.includes('todos los días') ||
+    horarioStr.includes('lunes a domingo') ||
+    horarioStr.includes('7 dias') ||
+    horarioStr.includes('7 días');
+
+  // [HORARIO ROBUSTO] Rango de días laborables de semana
+  const worksMonday = !(horarioStr.includes('domingo') && horarioStr.trim().startsWith('domingo'));
+  const weekdayRangeMatch = horarioStr.match(/lunes\s+a\s+(viernes|sabado|sábado|domingo)/);
+  let worksSaturday = true;
+  let worksSundayViaRange = false;
+  if (weekdayRangeMatch) {
+    const endDay = weekdayRangeMatch[1];
+    worksSaturday = endDay === 'sabado' || endDay === 'sábado' || endDay === 'domingo';
+    worksSundayViaRange = endDay === 'domingo';
+  }
+
   // Partición entre horario regular de semana y horario especial de domingo
   let weekdayPart = horarioStr;
   let sundayPart = '';
@@ -77,38 +96,42 @@ export function isWithinBusinessHours(settingsOverride: Record<string, string> |
     sundayPart = horarioStr.slice(idx).trim();
   }
 
+  // Extrae el par "apertura a cierre" de un fragmento de horario
+  const extractTimes = (fragment: string): { open: number | null; close: number | null } => {
+    const m = fragment.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*a\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+    if (!m) return { open: null, close: null };
+    return { open: parseTimeToMinutes(m[1]), close: parseTimeToMinutes(m[2]) };
+  };
+
+  // Horario general de semana (por defecto 8:00 AM - 8:00 PM)
+  const weekdayTimes = extractTimes(weekdayPart);
+  const weekdayOpen = weekdayTimes.open !== null ? weekdayTimes.open : 8 * 60;
+  const weekdayClose = weekdayTimes.close !== null ? weekdayTimes.close : 20 * 60;
+
   // 1. Caso Domingo (day === 0)
   if (day === 0) {
+    // Si el horario cubre todos los días, aplica el horario general
+    if (coversAllDays) {
+      return currentTotalMinutes >= weekdayOpen && currentTotalMinutes < weekdayClose;
+    }
+
     if (!sundayPart || sundayPart.includes('cerrado') || sundayPart.includes('no laborable')) {
-      return false;
+      // Sin horario de domingo explícito: solo abierto si el rango de días incluye domingo
+      return worksSundayViaRange && currentTotalMinutes >= weekdayOpen && currentTotalMinutes < weekdayClose;
     }
 
-    const timesMatch = sundayPart.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*a\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
-    let openMin = 8 * 60 + 30; // 8:30 AM
-    let closeMin = 14 * 60;     // 2:00 PM
-
-    if (timesMatch) {
-      const parsedOpen = parseTimeToMinutes(timesMatch[1]);
-      const parsedClose = parseTimeToMinutes(timesMatch[2]);
-      if (parsedOpen !== null) openMin = parsedOpen;
-      if (parsedClose !== null) closeMin = parsedClose;
-    }
-
+    const sundayTimes = extractTimes(sundayPart);
+    const openMin = sundayTimes.open !== null ? sundayTimes.open : 8 * 60 + 30;
+    const closeMin = sundayTimes.close !== null ? sundayTimes.close : 14 * 60;
     return currentTotalMinutes >= openMin && currentTotalMinutes < closeMin;
   }
 
-  // 2. Caso Lunes a Sábado (day >= 1 && day <= 6)
-  let weekdayOpen = 8 * 60;   // 8:00 AM
-  let weekdayClose = 20 * 60; // 8:00 PM (20:00)
-
-  const weekdayTimesMatch = weekdayPart.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*a\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
-  if (weekdayTimesMatch) {
-    const pOpen = parseTimeToMinutes(weekdayTimesMatch[1]);
-    const pClose = parseTimeToMinutes(weekdayTimesMatch[2]);
-    if (pOpen !== null) weekdayOpen = pOpen;
-    if (pClose !== null) weekdayClose = pClose;
+  // 2. Sábado (day === 6): respetar rangos "Lunes a Viernes"
+  if (day === 6 && !coversAllDays && !worksSaturday) {
+    return false;
   }
 
+  // 3. Caso Lunes a Viernes (day 1..5) y sábados laborables
   return currentTotalMinutes >= weekdayOpen && currentTotalMinutes < weekdayClose;
 }
 

@@ -2,7 +2,7 @@
  * @file infoHandlers.ts
  * @description Conjunto integral de manejadores de respuestas informativas del negocio:
  * medios de pago, promociones en divisas, delivery en Caracas, envíos nacionales, tasa BCV,
- * retiros en tienda, puntos de referencia, garantías, ventas al mayor y navegación por categorías.
+ * retiros en tienda, puntos de referencia, garantías y navegación por categorías.
  * 
  * [MERCADO VENEZUELA]
  * Contiene respuestas adaptadas a la realidad operativa de Caracas:
@@ -285,7 +285,7 @@ function handleCaucheraQueryResponse(): string {
   msg += `• ⚖️ *Plomos para balanceo:* Adhesivos para rines de aluminio y de pestaña para rines de hierro.\n`;
   msg += `• 🔧 *Herramientas de cauchera:* Agujas, terrajas, rodillos asentadores y manómetros medidores de presión.\n`;
   msg += `• 🧴 *Sellador de talón y pasta para montar cauchos.*\n\n`;
-  msg += `👉 Indícanos qué insumo necesitas y te damos precio al detal o por caja con delivery a tu taller en Caracas.`;
+  msg += `👉 Indícanos qué insumo necesitas y te damos el precio con delivery a tu taller en Caracas.`;
   return msg;
 }
 
@@ -305,26 +305,6 @@ function handleBinancePaymentResponse(tasa: number, settings: Record<string, str
   msg += `⚡ *Acreditación inmediata:* Verificamos el pago en segundos y te despachamos o apartamos tu pedido.\n\n`;
   msg += `🇻🇪 *Tasa oficial BCV del día:* Bs. ${tasaFormatted} / USD (también aceptamos Pago Móvil y Bolívares).\n\n`;
   msg += `👉 Escribe qué producto o combo deseas comprar o escribe *VENDEDOR* para recibir los datos de Binance Pay de la tienda.`;
-  return msg;
-}
-
-/**
- * Atiende solicitudes de compras por volumen, bultos y precios mayoristas para talleres o caucheras.
- * 
- * @param pushName - Nombre del remitente
- * @param settings - Configuración general
- * @returns Mensaje con beneficios mayoristas
- */
-function handleWholesaleQueryResponse(pushName: string, settings: Record<string, string>): string {
-  let msg = `📦 *Ventas al Mayor en Crastur - Insumos de Cauchera & Lubricantes* 🛞🛢️\n\n`;
-  msg += `¡Hola, *${pushName}*! 👋 ¡Sí, somos distribuidores y vendemos **al mayor** con precios especiales para talleres, caucheras y negocios!\n\n`;
-  msg += `🔥 *Beneficios Mayoristas:*\n`;
-  msg += `• 📦 *Precios por bulto y caja cerrada* en parches, cemento químico/pega azul, válvulas TR414, mechas, plomos y herramientas.\n`;
-  msg += `• 🛢️ *Cajas y tambores de lubricantes* (20W50 mineral, semi-sintético, 4T, 2T, valvulinas y grasas).\n`;
-  msg += `• 💵 *Precio Promoción en Divisas:* Pagando en Efectivo ($) o Binance Pay (USDT) 🪙.\n`;
-  msg += `• 🇻🇪 *Facturación y nota de entrega oficial* con tasa BCV.\n`;
-  msg += `• 🛵 *Despacho y entrega* directa a tu taller o negocio en Caracas.\n\n`;
-  msg += `👉 Escribe *VENDEDOR* o escribe la lista de insumos que necesitas por cantidad para que nuestro asesor de ventas al mayor te prepare una cotización con descuento por volumen.`;
   return msg;
 }
 
@@ -606,7 +586,6 @@ export {
   handleCaucheraQueryResponse,
   handleNonAcceptedPaymentsResponse,
   handleBinancePaymentResponse,
-  handleWholesaleQueryResponse,
   handleInvoicingQueryResponse,
   handleStoreHoursResponse,
   handleWarrantyResponse,
@@ -632,7 +611,6 @@ export default {
   handleCaucheraQueryResponse,
   handleNonAcceptedPaymentsResponse,
   handleBinancePaymentResponse,
-  handleWholesaleQueryResponse,
   handleInvoicingQueryResponse,
   handleStoreHoursResponse,
   handleWarrantyResponse,

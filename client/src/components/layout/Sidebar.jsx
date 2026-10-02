@@ -12,28 +12,13 @@ import {
   Clock,
   X,
   PanelLeftClose,
-  PanelLeftOpen,
-  Truck
+  PanelLeftOpen
 } from 'lucide-react';
-
-function MotorcycleIcon({ className = 'w-6 h-6' }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M19.44 9.03L15.41 5H11v2h3.59l2 2H5c-2.8 0-5 2.2-5 5s2.2 5 5 5c2.46 0 4.45-1.69 4.9-4h4.2c.45 2.31 2.44 4 4.9 4 2.8 0 5-2.2 5-5 0-2.55-1.92-4.63-4.41-4.97zM7.82 15C7.4 16.15 6.28 17 5 17c-1.63 0-3-1.37-3-3s1.37-3 3-3c1.28 0 2.4.85 2.82 2H5v2h2.82zm11.36 2c-1.63 0-3-1.37-3-3 0-.55.18-1.05.45-1.5l1.78 2.37 1.6-1.2-2.14-2.85c.41-.52 1.05-.82 1.71-.82 1.63 0 3 1.37 3 3s-1.37 3-3 3z" />
-    </svg>
-  );
-}
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'General' },
   { id: 'inbox', label: 'Live Inbox', icon: MessageSquare, section: 'Operaciones', type: 'inbox' },
   { id: 'products', label: 'Catálogo Productos', icon: Package, section: 'Operaciones', type: 'products' },
-  { id: 'suppliers', label: 'Proveedores', icon: Truck, section: 'Operaciones' },
   { id: 'reservations', label: 'Apartados (24h)', icon: Clock, section: 'Operaciones', type: 'reservations' },
   { id: 'calculator', label: 'Calculadora Cashea', icon: Calculator, section: 'Operaciones' },
   { id: 'whatsapp', label: 'Conexión WhatsApp', icon: QrCode, section: 'Sistema & Bot', type: 'whatsapp' },
@@ -88,7 +73,7 @@ export default function Sidebar({
 
         {/* Iconos de Navegación Compactos */}
         <nav className="space-y-1.5 flex flex-col items-center">
-          {NAV_ITEMS.map((item, idx) => {
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
 

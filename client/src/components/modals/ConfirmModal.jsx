@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { AlertTriangle, X, Loader2 } from 'lucide-react';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function ConfirmModal({
   isOpen,
@@ -16,16 +16,8 @@ export default function ConfirmModal({
   onCancel,
   isSubmitting = false
 }) {
-  // Manejo de tecla Escape
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen && !isSubmitting) {
-        onCancel && onCancel();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSubmitting, onCancel]);
+  // [UX] Cerrar con tecla Escape (centralizado en el hook compartido)
+  useEscapeToClose(isOpen, onCancel, !isSubmitting);
 
   if (!isOpen) return null;
 

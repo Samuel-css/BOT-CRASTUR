@@ -79,7 +79,8 @@ router.put('/:id/status', (req: Request, res: Response) => {
     broadcast('products_updated', { action: 'stock_changed' });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    // Errores de validación (estado inválido o apartado inexistente) → 400
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -95,7 +96,7 @@ router.delete('/:id', (req: Request, res: Response) => {
     broadcast('products_updated', { action: 'stock_changed' });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 

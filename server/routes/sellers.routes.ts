@@ -10,7 +10,7 @@
 
 import { Router, Request, Response } from 'express';
 const router = Router();
-import { db } from '../database';
+import { db, saveMasterSnapshotToDisk } from '../database';
 
 /**
  * GET /api/sellers
@@ -36,6 +36,7 @@ router.post('/', (req: Request, res: Response) => {
     VALUES (?, ?, ?, 1)
   `).run(nombre.trim(), telefono.trim(), (departamento || 'Ventas').trim());
 
+  saveMasterSnapshotToDisk();
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
@@ -62,6 +63,7 @@ router.put('/:id', (req: Request, res: Response) => {
     id
   );
 
+  saveMasterSnapshotToDisk();
   res.json({ success: true });
 });
 
@@ -72,6 +74,7 @@ router.put('/:id', (req: Request, res: Response) => {
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   db.prepare('DELETE FROM sellers WHERE id = ?').run(id);
+  saveMasterSnapshotToDisk();
   res.json({ success: true });
 });
 

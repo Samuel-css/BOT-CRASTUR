@@ -10,18 +10,19 @@ import {
   Check,
   AlertCircle,
   ChevronDown,
-  Loader2,
-  ShieldAlert
+  Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { handleNumericKeyDown, sanitizeCurrency } from '../../utils/inputSanitizers';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function BulkPriceModal({
   isOpen,
   onClose,
   products = [],
   categories = [],
-  bcvRate = 849.56,
+  // Reservado para previsualización del precio en Bs (aún no mostrada en el modal).
+  bcvRate: _bcvRate = 849.56,
   onSuccess
 }) {
   const [categoria, setCategoria] = useState('all');
@@ -30,6 +31,9 @@ export default function BulkPriceModal({
   const [valor, setValor] = useState('10');
   const [confirmedChecked, setConfirmedChecked] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Cerrar con tecla Escape de forma consistente con los demás modales
+  useEscapeToClose(isOpen, onClose, !loading);
 
   useEffect(() => {
     if (isOpen) {

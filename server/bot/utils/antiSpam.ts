@@ -3,12 +3,17 @@
  * @description Sistema de control de tasa de mensajes (Rate Limiting) estocástico de doble ventana.
  * 
  * [ANTI-BANEO META 2025]
- * Protege la cuenta de WhatsApp Business contra suspensiones automatizadas de Meta provocadas por:
- * 1. Ráfagas rápidas de flood: Máximo 5 mensajes en una ventana de 10 segundos.
- * 2. Sobrecarga por minuto: Máximo 8 mensajes en una ventana de 60 segundos.
- * 
- * Si un remitente supera cualquiera de los dos límites, el bot se silencia temporalmente
- * sin generar respuestas automáticas para no alimentar bucles infinitos de mensajería.
+ * Protege la cuenta de WhatsApp Business contra suspensiones automatizadas de Meta provocadas
+ * por bots o usuarios que inundan el chat con mensajes automatizados.
+ *
+ * Calibración de umbrales:
+ * 1. Ráfaga: 12 mensajes en 10 segundos (holgadamente por encima de una conversación humana).
+ * 2. Ventana extendida: 25 mensajes en 60 segundos.
+ *
+ * IMPORTANTE: los umbrales deben ser suficientemente altos para NO silenciar a un cliente
+ * real que escribe varios mensajes seguidos explicando lo que necesita (caso normal en
+ * WhatsApp). El anti-spam protege contra FLOOD, no contra uso legítimo. Solo los mensajes
+ * posteriores a superar el límite se silencian; la ventana se recupera automáticamente.
  */
 
 /**
@@ -28,6 +33,26 @@ interface SpamCounter {
 /** Mapa en memoria de contadores anti-spam indexados por JID */
 const spamCounters: Map<string, SpamCounter> = new Map();
 
+/** Marca de tiempo del último barrido de limpieza de contadores inactivos */
+let lastCleanupAt = 0;
+/** Ventana máxima en la que un contador se considera "activo" (5 minutos) */
+const COUNTER_IDLE_MS = 5 * 60 * 1000;
+
+/**
+ * [ANTI-FUGA DE MEMORIA] Elimina periódicamente los contadores de JIDs que ya no
+ * presentan actividad reciente, evitando que el mapa crezca indefinidamente.
+ */
+function cleanupStaleCounters(now: number): void {
+  if (now - lastCleanupAt < COUNTER_IDLE_MS) return;
+  lastCleanupAt = now;
+  for (const [jid, counter] of spamCounters.entries()) {
+    const newestWindow = Math.max(counter.resetAt, counter.burstResetAt);
+    if (now > newestWindow) {
+      spamCounters.delete(jid);
+    }
+  }
+}
+
 /**
  * Determina si el remitente ha superado los umbrales de seguridad de mensajería de Meta.
  * 
@@ -37,10 +62,21 @@ const spamCounters: Map<string, SpamCounter> = new Map();
 export function isSpamming(jid: string): boolean {
   const now = Date.now();
 
-  // Constantes de calibración alineadas con Meta Messaging Policies 2025
-  const LONG_LIMIT  = 8;              // Máximo de mensajes por minuto
+  // Limpieza oportunista de contadores inactivos para evitar fuga de memoria
+  cleanupStaleCounters(now);
+
+  // Constantes de calibración: protegen contra FLOOD sin silenciar conversaciones humanas.
+  // [AJUSTE] Umbrales anteriores (8/min y 5/10s) silenciaban a clientes reales que
+  // escribían varias líneas seguidas, dejando de responderles. Se elevan a valores
+  // que solo alcanza un flood automatizado real.
+  //
+  // COMPORTAMIENTO: esta función se invoca con CADA mensaje entrante. La ráfaga (12/10s)
+  // solo se dispara con mensajes escritos en cuestión de segundos. Cuando un cliente
+  // escribe más despacio (como en una conversación normal), la ventana corta se reinicia
+  // sola y nunca se activa. La ventana extendida (30/min) es una segunda red de seguridad.
+  const LONG_LIMIT  = 30;             // Máximo de mensajes por minuto
   const LONG_WINDOW = 60 * 1000;      // Duración de la ventana extendida: 60 segundos
-  const BURST_LIMIT  = 5;             // Máximo de mensajes en ráfaga
+  const BURST_LIMIT  = 12;            // Máximo de mensajes en ráfaga
   const BURST_WINDOW = 10 * 1000;     // Duración de la ventana corta: 10 segundos
 
   if (!spamCounters.has(jid)) {
@@ -72,7 +108,18 @@ export function isSpamming(jid: string): boolean {
   }
 
   // Disparar protección si se excede la ventana extendida o la ráfaga corta
-  return counter.count > LONG_LIMIT || counter.burstCount > BURST_LIMIT;
+  const excedeLimite = counter.count > LONG_LIMIT || counter.burstCount > BURST_LIMIT;
+
+  // [AMORTIGUACIÓN] Al cruzar el umbral se reinician AMBAS ventanas: el silencio dura
+  // una sola ráfaga de mensajes y el cliente no queda bloqueado el resto de la ventana.
+  if (excedeLimite) {
+    counter.count = 0;
+    counter.resetAt = now + LONG_WINDOW;
+    counter.burstCount = 0;
+    counter.burstResetAt = now + BURST_WINDOW;
+  }
+
+  return excedeLimite;
 }
 
 /**

@@ -9,7 +9,7 @@
  * [ANTI-BANEO META 2025] Muestra advertencias claras e indicadores de salud de la línea vinculada.
  */
 
-import { QrCode, CheckCircle2, RefreshCw, Smartphone, LogOut } from 'lucide-react';
+import { QrCode, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
 
 export default function WhatsAppView({
   waStatus = { status: 'disconnected', qr: null, user: null },

@@ -32,6 +32,9 @@ export const PRODUCT_TYPES: Set<string> = new Set([
   // 🏍️ Neumáticos y cauchos
   'caucho', 'cauchos', 'llanta', 'llantas', 'neumatico', 'neumaticos', 'sellomatic',
 
+  // 🎽 Cascos y seguridad (productos de la web)
+  'casco', 'cascos', 'coraza', 'corazas',
+
   // 🔋 Electricidad y encendido
   'bateria', 'baterias', 'acumulador', 'fusible', 'fusibles',
   'bombillo', 'bombillos', 'faro', 'faros', 'led', 'luces', 'luz',

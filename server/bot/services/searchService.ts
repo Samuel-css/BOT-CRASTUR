@@ -21,6 +21,30 @@ import { normalizeText, isFuzzyMatch } from '../utils/textUtils';
 import type { Product } from '../../types/database';
 
 /**
+ * Caché en memoria del catálogo activo para evitar leer toda la tabla en cada consulta.
+ * Se invalida mediante `invalidateProductCache()` cada vez que cambian los productos.
+ */
+let productCache: any[] | null = null;
+let productCacheAt = 0;
+const PRODUCT_CACHE_TTL_MS = 30 * 1000; // 30 segundos de respaldo si no se invalida explícitamente
+
+/** Fuerza la recarga del catálogo en la próxima búsqueda. */
+function invalidateProductCache(): void {
+  productCache = null;
+  productCacheAt = 0;
+}
+
+/** Retorna el catálogo activo desde caché (o lo recarga si expiró). */
+function getActiveProducts(): any[] {
+  const now = Date.now();
+  if (!productCache || (now - productCacheAt) > PRODUCT_CACHE_TTL_MS) {
+    productCache = db.prepare('SELECT * FROM products WHERE activo = 1').all();
+    productCacheAt = now;
+  }
+  return productCache;
+}
+
+/**
  * Ejecuta una búsqueda difusa inteligente sobre los productos activos del catálogo.
  * Tolera errores ortográficos y aplica coherencia estricta de tipo de pieza.
  * 
@@ -59,7 +83,7 @@ function searchProductsFuzzy(query: string): any[] {
   const specificTokens = meaningful.filter(t => !QUALIFIERS.has(t));
   const qualifierTokens = meaningful.filter(t => QUALIFIERS.has(t));
 
-  const allProducts: any[] = db.prepare('SELECT * FROM products WHERE activo = 1').all();
+  const allProducts: any[] = getActiveProducts();
 
   const scored = allProducts.map(p => {
     const normModelo = normalizeText(p.modelo);
@@ -155,7 +179,7 @@ function searchProductsFuzzy(query: string): any[] {
  */
 function searchByProductType(typeToken: string, extraTokens: string[] = []): any | null {
   const clean = normalizeText(typeToken);
-  const allProducts: any[] = db.prepare('SELECT * FROM products WHERE activo = 1').all();
+  const allProducts: any[] = getActiveProducts();
 
   const scored = allProducts.map(p => {
     const normModelo = normalizeText(p.modelo);
@@ -256,11 +280,13 @@ function searchMultipleProducts(query: string): any[] {
 export {
   searchProductsFuzzy,
   searchMultipleProducts,
-  searchByProductType
+  searchByProductType,
+  invalidateProductCache
 };
 
 export default {
   searchProductsFuzzy,
   searchMultipleProducts,
-  searchByProductType
+  searchByProductType,
+  invalidateProductCache
 };

@@ -20,7 +20,7 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 
-import { whenReady, cleanExpiredReservations } from './database';
+import { whenReady, cleanExpiredReservations, purgeOldData } from './database';
 import { initBCVService } from './bcvService';
 import { startWhatsApp } from './whatsappService';
 import { initWebSocket } from './websocket';
@@ -33,7 +33,21 @@ const server = http.createServer(app);
 initWebSocket(server);
 
 // Middlewares estándar de Express para el procesamiento de solicitudes HTTP
-app.use(cors());
+// [SEGURIDAD] CORS restringido a orígenes locales (evita acceso remoto no autorizado)
+const allowedOrigins = [
+  'http://localhost:3333',
+  'http://127.0.0.1:3333',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+];
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  }
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -104,7 +118,9 @@ server.on('error', (err: any) => {
 async function startServer() {
   // Esperar a que SQLite WASM compile esquemas y verifique integridad
   await whenReady();
-  server.listen(PORT, () => {
+  // [SEGURIDAD] Escuchar solo en localhost: el panel (chats, cédulas, teléfonos)
+  // no queda expuesto a la red local ni a otros equipos.
+  server.listen(PORT, '127.0.0.1', () => {
     console.log(`[Servidor Crastur] Escuchando en http://localhost:${PORT}`);
     // [MERCADO VENEZUELA] Iniciar sincronizador de tasa BCV en cascada
     initBCVService();

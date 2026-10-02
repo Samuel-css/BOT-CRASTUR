@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Search, DollarSign, Package, Upload, Copy, Check, Loader2 } from 'lucide-react';
+import { X, Search, DollarSign, Package, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AUTOMOTIVE_CATEGORIES } from '../../constants/categories';
 import { formatBs, formatRate } from '../../utils/formatters';
@@ -10,6 +10,7 @@ import {
   sanitizeInteger,
   sanitizeText
 } from '../../utils/inputSanitizers';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export default function ProductModal({ isOpen, onClose, onSave, editingProduct, bcvRate }) {
   const [form, setForm] = useState({
@@ -27,6 +28,9 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Cerrar con tecla Escape de forma consistente con los demás modales
+  useEscapeToClose(isOpen, onClose, !isSubmitting);
 
   useEffect(() => {
     if (editingProduct) {

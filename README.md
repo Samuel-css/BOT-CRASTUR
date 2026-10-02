@@ -6,33 +6,42 @@ Incluye conversión en tiempo real a Bolívares con tasa oficial del **Banco Cen
 
 ---
 
-## 🚀 Cómo Iniciar y Apagar el Sistema (1 Solo Clic)
+## 🚀 Cómo Iniciar, Instalar y Respaldar (Sin Consola ni Editor)
 
-El sistema está diseñado para que cualquier persona en la tienda, sin conocimientos técnicos, pueda encenderlo y apagarlo de forma rápida, limpia y segura:
+El sistema está diseñado para que cualquier persona en la tienda, sin conocimientos técnicos, pueda
+instalarlo, encenderlo, respaldarlo y apagarlo con simples clics.
 
-### 🟢 CÓMO ABRIR CRASTUR:
+### 🟢 INSTALACIÓN Y MANTENIMIENTO VISUAL (RECOMENDADO)
+
+Haz doble clic en **`Instalar.bat`** (Windows) o ejecuta `npm run instalar`. Se abrirá en tu navegador
+un **Panel de Instalación y Mantenimiento** con botones, donde puedes:
+
+- ▶ **Instalar / Verificar Sistema**: revisa e instala todo lo necesario (servidor, panel, datos).
+- 🖥️ **Actualizar Panel Visual**: recompila la interfaz tras una actualización.
+- 💾 **Crear Respaldo**: guarda tu **Catálogo + Asesores** en un archivo portable (entre versiones).
+- 📂 **Ver Respaldos y Restaurar**: lista tus respaldos guardados y restáuralos con un clic.
+- 🚀 **Iniciar Crastur**: arranca el sistema y abre el panel administrativo.
+
+> No necesitas escribir ni un solo comando. Todo se controla desde botones en el navegador.
+
+### 🟢 ENCENDIDO DIARIO
 
 #### 🪟 En Windows:
-1. **Primera vez (Instalación):**  
-   Haz doble clic en **`Crastur.bat`**. Comprobará el sistema, verificará la base de datos y **creará automáticamente 1 único acceso directo oficial en el Escritorio de Windows**:
-   - 🛞 **`Crastur`** (con el icono oficial naranja de la tienda).
-2. **Día a día del cliente:**  
-   ¡Listo! El cliente **solo hace doble clic en el acceso directo `Crastur` de su Escritorio**.  
-   - **Si está apagado:** Inicia el bot y el servidor silenciosamente en segundo plano sin dejar ventanas negras de consola abiertas, y abre de inmediato el navegador en `http://localhost:3333`.
-   - **Si ya estaba encendido (ej. cerraron la pestaña por descuido):** Detecta la sesión activa y **simplemente reabre la pestaña en el navegador**, sin dar errores de puerto ocupado.
+1. **Primera vez:** doble clic en **`Crastur.bat`**. Si el sistema aún no está instalado, abrirá
+   automáticamente el **Instalador Visual**. Una vez listo, crea el acceso directo **`Crastur`** en el Escritorio.
+2. **Día a día:** el cliente solo hace doble clic en el acceso directo **`Crastur`** de su Escritorio.
+   - **Si está apagado:** inicia el bot y el servidor en segundo plano y abre el navegador en `http://localhost:3333`.
+   - **Si ya estaba encendido:** detecta la sesión activa y solo reabre la pestaña.
 
 > [!TIP]
 > **Si Windows 11 o SmartScreen bloquea el archivo la primera vez:**  
-> Clic derecho en el archivo (`Crastur.bat`) ➔ **Propiedades** ➔ Marca la casilla **☑ Desbloquear** abajo ➔ Clic en **Aceptar**.
+> Clic derecho en el archivo (`Crastur.bat` o `Instalar.bat`) ➔ **Propiedades** ➔ Marca la casilla **☑ Desbloquear** ➔ **Aceptar**.
 
 #### 🐧 En Linux / macOS:
-Abre una terminal en la carpeta del proyecto y ejecuta:
 ```bash
-./crastur.sh
-# O alternativamente:
-npm start
+./crastur.sh        # Arranca el sistema
+npm run instalar    # Abre el panel visual de instalación y respaldos
 ```
-Luego el navegador se abrirá en **`http://localhost:3333`**.
 
 ---
 
@@ -45,10 +54,8 @@ Al apagar el sistema se guarda la base de datos de inmediato (`persistDB()`), se
    Aparecerá un mensaje de confirmación de seguridad. Al confirmar:
    - Se guarda la base de datos y se detiene el servidor.
    - La pantalla muestra una confirmación de apagado y **puedes cerrar la pestaña con total tranquilidad sin afectar tus demás pestañas del navegador**.
-2. **🛠️ Herramientas de Apagado de Emergencia (Para técnicos):**  
-   - **Windows:** Ejecutar `scripts/apagar_servidor.bat`.  
-   - **Linux / macOS:** Ejecutar `scripts/apagar_servidor.sh`.  
-   - **Terminal:** Ejecutar `npm run stop`.
+2. **🛠️ Herramienta de Apagado de Emergencia (Para técnicos):**  
+   - **Terminal (cualquier sistema):** Ejecutar `npm run stop`.
 
 ---
 
@@ -141,25 +148,33 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 El sistema incluye comandos dedicados para mantenimiento, diagnóstico y verificación:
 
 ```bash
-# 🧪 Ejecutar suite de pruebas de estrés y validación extrema (68 pruebas automáticas)
+# 🧪 Ejecutar suite de estrés y validación extrema (202 pruebas del bot)
 npm test
+
+# 🖥️ Ejecutar pruebas E2E de la interfaz web (18 pruebas en Chrome headless)
+npm run test:ui
 
 # 🔄 Restablecimiento limpio de fábrica (Opción A: 0 productos para producción)
 npm run reset
 
-# 🔍 Asistente interactivo de mantenimiento (menú visual 0-9)
-npm run maintenance
+# 🧹 Limpieza operacional (mensajes y métricas a cero)
+npm run clean
 
-# O ejecutar tareas de mantenimiento específicas directamente:
-npm run maintenance -- --diag            # Diagnóstico de salud, puertos y base de datos
-npm run maintenance -- --node-check      # Verificar versión de Node.js y compatibilidad LTS
-npm run maintenance -- --rebuild-deps    # Re-vincular dependencias tras actualizar Node.js
-npm run maintenance -- --clean           # Limpiar mensajes y métricas a 0 operacional
-npm run maintenance -- --vacuum          # Desfragmentar y compactar SQLite
-npm run maintenance -- --prune-backups   # Depurar respaldos antiguos (> 7 días)
-npm run maintenance -- --reset-wa        # Reiniciar sesión WhatsApp para nuevo QR
-npm run maintenance -- --build           # Recompilar el panel visual web
-npm run maintenance -- --all             # Mantenimiento completo automatizado
+# 💾 Exportar Catálogo + Asesores a un respaldo portable
+npm run migrar -- --db "data/crastur.db" --out "data/backups/catalogo.json"
+
+# ↩️ Restaurar Catálogo + Asesores desde un respaldo portable
+npm run migrar -- --db "data/crastur.db" --in "data/backups/catalogo.json"
+
+# 🖥️ Recompilar el panel visual web
+npm run build
+
+# 🧪 Verificar tipos del servidor / compilar backend
+npm run typecheck:server
+npm run build:server
+
+# 🛑 Apagar el sistema de forma segura
+npm run stop
 ```
 
 ---
@@ -172,29 +187,37 @@ crastur/
 ├── Crastur_SegundoPlano.vbs    # Lanzador silencioso en segundo plano para Windows
 ├── launcher.js                 # Verificador inteligente de arranque y auto-respaldo
 ├── crastur.ico                 # Icono oficial del sistema
+├── Instalar.bat                # Instalador visual de 1 clic para Windows
 ├── package.json                # Scripts de inicio, mantenimiento y pruebas
+├── installer/
+│   └── server.js               # Panel de Instalación y Mantenimiento (navegador)
 ├── scripts/
-│   ├── reset_clean_install.js  # Reseteo de fábrica para producción limpia (0 productos)
-│   ├── maintenance.js          # Script integral de mantenimiento y diagnóstico
-│   ├── clean_data.js           # Limpieza operacional a cero
-│   └── run_stress_and_edge_tests.js # Batería de estrés y 68 pruebas automatizadas
+│   ├── reset_clean_install.ts  # Reseteo de fábrica para producción limpia (0 productos)
+│   ├── clean_data.ts           # Limpieza operacional a cero
+│   ├── migrar_catalogo_asesores.ts # Respaldo/restauración de catálogo y asesores
+│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 202 pruebas del bot
+│   └── run_ui_e2e_tests.ts      # Pruebas E2E de la interfaz web (Chrome headless)
 │
 ├── client/                     # Panel web administrativo (React + Vite + TailwindCSS)
 │   ├── src/                    # Código fuente de vistas responsivas y modales
 │   └── dist/                   # Bundle de producción optimizado
 │
-├── server/                     # Backend modular en Node.js
+├── server/                     # Backend modular en Node.js + TypeScript
 │   ├── bot/                    # MOTOR MODULAR DEL BOT DE WHATSAPP
-│   │   ├── index.js            # Enrutador principal de mensajes y menú 1..6
+│   │   ├── index.ts            # Enrutador principal de mensajes y menú 1..6
+│   │   ├── router/             # Guardas de seguridad y comandos transversales
 │   │   ├── apartado/           # Flujo y validaciones de reserva por 24h
 │   │   ├── followUp/           # Seguimiento inteligente sin spam
 │   │   ├── handlers/           # Manejadores de intención (categorías, cashea, info, etc.)
 │   │   ├── services/           # Búsqueda difusa y reglas comerciales (horarios domingo/semana)
 │   │   └── utils/              # Formateadores BCV, delivery de Caracas y anti-spam
-│   ├── database.js             # Base de datos SQLite local (sql.js) con auto-respaldos
-│   ├── whatsappService.js      # Conexión WhatsApp (Baileys) con reconexión automática
-│   ├── bcvService.js           # Sincronización oficial con el BCV
-│   └── server.js               # Servidor Express y WebSockets
+│   ├── db/                     # Módulos de acceso a datos (catálogo, reservas, respaldos...)
+│   ├── whatsapp/               # Conexión Baileys modular (conexión, envío, ingesta...)
+│   ├── routes/                 # API REST modular (productos, apartados, ajustes...)
+│   ├── database.ts             # Base de datos SQLite local (sql.js) con auto-respaldos
+│   ├── whatsappService.ts      # Fachada de la conexión WhatsApp (Baileys)
+│   ├── bcvService.ts           # Sincronización oficial con el BCV
+│   └── server.ts               # Servidor Express y WebSockets
 │
 └── data/                       # Datos locales persistentes (NO BORRAR)
     ├── crastur.db              # Base de datos local

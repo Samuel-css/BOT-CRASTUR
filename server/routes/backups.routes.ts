@@ -3,7 +3,7 @@
  * RUTAS DE RESPALDO, RESTAURACIÓN Y MANTENIMIENTO DEL SISTEMA (BACKUPS.ROUTES.TS)
  * ============================================================================
  * Provee mecanismos de salvaguarda de datos tanto a nivel lógico (JSON) como físico (.db):
- * - Respaldo maestro integral (Catálogo + Proveedores + Vendedores + Configuración)
+ * - Respaldo maestro integral (Catálogo + Vendedores + Configuración)
  * - Importación y exportación de catálogo ligero en 1 clic
  * - Descarga y restauración binaria de la base de datos SQLite WASM
  * - Apagado seguro y controlado del servidor con persistencia previa a disco
@@ -22,9 +22,12 @@ import {
   exportCatalog,
   importCatalog,
   persistDB,
-  restoreDatabaseFromBuffer
+  restoreDatabaseFromBuffer,
+  exportCatalogoAsesores,
+  importCatalogoAsesores
 } from '../database';
 import { clearCatalogCache } from '../bot/services/catalogPdfService';
+import { invalidateProductCache } from '../bot/services/searchService';
 import { broadcast } from '../websocket';
 import { stopWhatsApp } from '../whatsappService';
 
@@ -45,11 +48,48 @@ router.get('/backup/export-full', (req: Request, res: Response) => {
 
 /**
  * POST /api/backup/import-full
- * Restaura o fusiona masivamente productos, proveedores y configuraciones desde un snapshot maestro JSON.
+ * Restaura o fusiona masivamente productos, vendedores y configuraciones desde un snapshot maestro JSON.
  */
 router.post('/backup/import-full', (req: Request, res: Response) => {
   try {
     const result = importMasterBackup(req.body);
+    // [CACHÉ] El catálogo cambió: invalidar caché de búsqueda y PDF para el bot
+    invalidateProductCache();
+    clearCatalogCache();
+    broadcast('products_updated', { action: 'master_backup_imported' });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/backup/catalog-sellers
+ * [MIGRACIÓN ENTRE VERSIONES] Descarga el respaldo portable de Catálogo + Asesores (JSON).
+ * No incluye configuración, chats ni apartados.
+ */
+router.get('/backup/catalog-sellers', (req: Request, res: Response) => {
+  try {
+    const data = exportCatalogoAsesores();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=catalogo_asesores_crastur_${new Date().toISOString().slice(0, 10)}.json`);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/backup/catalog-sellers/import
+ * [MIGRACIÓN ENTRE VERSIONES] Restaura Catálogo + Asesores desde el respaldo portable JSON.
+ * Fusiona por clave natural (marca+modelo / nombre) sin tocar la configuración.
+ */
+router.post('/backup/catalog-sellers/import', (req: Request, res: Response) => {
+  try {
+    const result = importCatalogoAsesores(req.body);
+    clearCatalogCache();
+    invalidateProductCache();
+    broadcast('products_updated', { action: 'catalog_sellers_restored' });
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -62,6 +102,7 @@ router.post('/backup/import-full', (req: Request, res: Response) => {
  */
 router.get('/catalog/export', (req: Request, res: Response) => {
   const data = exportCatalog();
+  // Nota: solo lectura, no requiere invalidar caché.
   const filename = `crastur_catalogo_${new Date().toISOString().slice(0, 10)}.json`;
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', 'application/json');
@@ -79,6 +120,7 @@ router.post('/catalog/import', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Formato inválido. Se esperaba una lista de productos.' });
     }
     const result = importCatalog(productos);
+    invalidateProductCache();
     clearCatalogCache();
     broadcast('products_updated', { action: 'imported' });
     res.json(result);
@@ -111,11 +153,22 @@ router.get('/database/backup', (req: Request, res: Response) => {
 
 /**
  * POST /api/database/restore
- * Recibe un archivo binario SQLite vía stream crudo, verifica su firma e integridad y sustituye la base de datos activa.
+ * Recibe un archivo binario SQLite vía stream crudo o multipart, verifica su firma e integridad y sustituye la base de datos activa.
+ * Soporta binario crudo (raw) y subidas multipart/form-data con el campo 'backupFile'.
  */
-router.post('/database/restore', raw({ type: ['application/octet-stream', 'application/x-sqlite3', 'multipart/form-data', '*/*'], limit: '60mb' }), (req: Request, res: Response) => {
+const restoreRaw = raw({ type: ['application/octet-stream', 'application/x-sqlite3', 'multipart/form-data', '*/*'], limit: '60mb' });
+
+router.post('/database/restore', restoreRaw, (req: Request, res: Response) => {
   try {
-    const buffer = req.body;
+    // Compatibilidad: si llega multipart/form-data real, recuperar el buffer binario del cuerpo crudo
+    let buffer: any = req.body;
+    if (Buffer.isBuffer(buffer)) {
+      const ct = String(req.headers['content-type'] || '');
+      if (ct.includes('multipart/form-data')) {
+        const extracted = extractMultipartFile(buffer);
+        if (extracted.length > 0) buffer = extracted;
+      }
+    }
     if (!buffer || buffer.length === 0) {
       return res.status(400).json({ success: false, error: 'No se recibieron datos de archivo.' });
     }
@@ -123,11 +176,32 @@ router.post('/database/restore', raw({ type: ['application/octet-stream', 'appli
     if (!result.success) {
       return res.status(400).json(result);
     }
+    // [CACHÉ] Se reemplazó toda la base: el catálogo en caché quedó obsoleto.
+    invalidateProductCache();
+    clearCatalogCache();
+    broadcast('products_updated', { action: 'database_restored' });
     res.json({ success: true, message: 'Base de datos restaurada exitosamente.' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * Extrae el contenido binario de un archivo dentro de un cuerpo multipart/form-data crudo.
+ * Busca el encabezado 'SQLite format 3' en el buffer como ancla de inicio.
+ */
+function extractMultipartFile(buf: Buffer): Buffer {
+  const marker = Buffer.from('SQLite format 3\0', 'utf8');
+  const idx = buf.indexOf(marker);
+  if (idx === -1) return Buffer.alloc(0);
+  let end = buf.length;
+  const boundaryMarker = Buffer.from('------WebKitFormBoundary');
+  const boundaryGen = Buffer.from('--');
+  // Recortar hasta el último boundary si existe
+  const lastBoundary = buf.lastIndexOf(Buffer.from('\r\n--'));
+  if (lastBoundary > idx) end = lastBoundary;
+  return buf.slice(idx, end);
+}
 
 /**
  * POST /api/system/shutdown

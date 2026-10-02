@@ -37,31 +37,6 @@ export interface Product {
   actualizado_en?: string;
 }
 
-/**
- * Representa a un aliado comercial o proveedor mayorista de repuestos e insumos.
- */
-export interface Supplier {
-  /** Identificador único autoincremental */
-  id: number;
-  /** Razón social o nombre comercial de la distribuidora/proveedor */
-  empresa: string;
-  /** Nombre del asesor o persona de contacto comercial directo */
-  contacto_nombre?: string | null;
-  /** Número de teléfono o WhatsApp para reposición de inventario */
-  telefono: string;
-  /** Rubros o marcas que suministra (ej: 'Cauchos, Tripas, Parches') */
-  categorias?: string | null;
-  /** Días programados de despacho o recepción de pedidos (ej: 'Martes y Jueves') */
-  dias_despacho?: string | null;
-  /** Términos crediticios o de cobranza acordados (ej: 'Crédito 15 días', 'Contado') */
-  condiciones_pago?: string | null;
-  /** Observaciones internas de compras */
-  notas?: string | null;
-  /** Estado de la relación comercial (1: proveedor activo, 0: inactivo) */
-  activo: number;
-  /** Fecha de registro en el sistema */
-  creado_en?: string;
-}
 
 /**
  * Representa a un vendedor o asesor comercial de la tienda física Crastur.
@@ -165,7 +140,7 @@ export interface ChatMessage {
 
 /**
  * Respaldo maestro integral exportable e importable en formato JSON.
- * [PERSISTENCIA ATÓMICA] Permite clonar o migrar el catálogo comercial, proveedores y parámetros.
+ * [PERSISTENCIA ATÓMICA] Permite clonar o migrar el catálogo comercial y parámetros.
  */
 export interface MasterSnapshot {
   /** Versión del esquema de respaldo maestro */
@@ -174,14 +149,10 @@ export interface MasterSnapshot {
   exportado_en: string;
   /** Conteo total de productos exportados */
   total_productos: number;
-  /** Conteo total de proveedores exportados */
-  total_proveedores: number;
   /** Conteo total de vendedores/asesores exportados */
   total_vendedores: number;
   /** Colección íntegra de artículos del catálogo */
   productos: Product[];
-  /** Colección íntegra de proveedores */
-  proveedores: Supplier[];
   /** Colección de vendedores del equipo comercial */
   vendedores: Seller[];
   /** Diccionario de clave/valor con la parametrización de la tienda */

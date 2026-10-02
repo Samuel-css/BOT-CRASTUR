@@ -117,7 +117,7 @@ function handleProductResults(
   msg += `💡 *Opciones rápidas:*\n`;
   msg += `👉 Responde con el *número* (ej: *1*) para ver detalles y fotos.\n`;
   msg += `👉 Escribe *APARTAR* para reservarlo por 24 horas.\n`;
-  msg += `👉 Escribe *VENDEDOR* para precio al mayor o atención de asesor.`;
+  msg += `👉 Escribe *VENDEDOR* para atención personalizada de un asesor.`;
 
   return msg;
 }

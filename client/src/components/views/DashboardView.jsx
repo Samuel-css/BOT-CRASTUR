@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  Car,
   Clock,
   Sparkles,
-  DollarSign,
   Plus,
   QrCode,
   MapPin,
@@ -14,11 +12,9 @@ import {
   Package,
   Layers,
   CheckCircle2,
-  Copy,
   TrendingUp,
   MessageSquare
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { formatRate } from '../../utils/formatters';
 import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
 
@@ -127,7 +123,7 @@ export default function DashboardView({
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Venta al mayor y detal • Insumos de cauchera, lubricantes y repuestos de moto
+              Insumos de cauchera, lubricantes y repuestos de moto
             </p>
           </div>
         </div>
@@ -350,7 +346,7 @@ export default function DashboardView({
               </h3>
             </div>
             <button
-              onClick={() => onNavigate('catalog')}
+              onClick={() => onNavigate('products')}
               className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1 font-semibold cursor-pointer"
             >
               <span>Ver catálogo</span>
