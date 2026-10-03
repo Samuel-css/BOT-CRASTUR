@@ -8,6 +8,16 @@
 
 import { db } from './engine';
 import { cleanExpiredReservations } from './reservations';
+import { canonicalCategoryOf } from '../bot/config/categoryGroups';
+
+/**
+ * Cuenta los productos pertenecientes a la línea "Combos & Kits" (por prefijo),
+ * tolerando subcategorías como "Combos & Kits - Promociones".
+ */
+function countCombos(): number {
+  const all: any[] = db.prepare('SELECT categoria FROM products WHERE activo = 1').all();
+  return all.filter(p => String(p.categoria || '').toLowerCase().includes('combo')).length;
+}
 
 /**
  * Registra un evento analítico o métrica operativa en SQLite para tableros de control.
@@ -52,8 +62,24 @@ export function getMetricsSummary() {
   const stockBajoItems = db.prepare("SELECT id, marca, modelo, categoria, stock, precio_usd FROM products WHERE activo = 1 AND stock IS NOT NULL AND stock <= 3 ORDER BY stock ASC LIMIT 6").all();
   const totalStockBajo = db.prepare("SELECT COUNT(*) as count FROM products WHERE activo = 1 AND stock IS NOT NULL AND stock <= 3").get()?.count || 0;
 
-  const totalCombos = db.prepare("SELECT COUNT(*) as count FROM products WHERE activo = 1 AND categoria = 'Combos & Kits'").get()?.count || 0;
-  const totalProductosActivos = db.prepare("SELECT COUNT(*) as count FROM products WHERE activo = 1").get()?.count || 0;
+  // [CATEGORÍAS CANÓNICAS] Conteo real por categoría agrupando subcategorías del panel
+  // (ej. "Lubricantes & Fluidos - ..." cuenta como "Otros Productos"). Permite detectar
+  // qué líneas comerciales aún no tienen productos cargados.
+  const allActive: any[] = db.prepare('SELECT categoria FROM products WHERE activo = 1').all();
+  const conteoCategorias: Record<string, number> = {
+    'Insumos Cauchera': 0,
+    'Repuestos Moto': 0,
+    'Accesorios Moto': 0,
+    'Otros Productos': 0,
+    'Sin clasificar': 0
+  };
+  for (const p of allActive) {
+    const canon = canonicalCategoryOf(p.categoria);
+    conteoCategorias[canon || 'Sin clasificar'] += 1;
+  }
+
+  const totalCombos = countCombos();
+  const totalProductosActivos = allActive.length;
 
   return {
     consultas_hoy: totalHoy,
@@ -65,6 +91,7 @@ export function getMetricsSummary() {
     stock_bajo_total: totalStockBajo,
     stock_bajo_items: stockBajoItems,
     combos_total: totalCombos,
-    total_productos_activos: totalProductosActivos
+    total_productos_activos: totalProductosActivos,
+    productos_por_categoria: conteoCategorias
   };
 }

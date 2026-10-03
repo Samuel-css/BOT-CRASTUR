@@ -2,6 +2,9 @@
 
 Este documento constituye la documentación formal de entrega del sistema **Crastur - Sistema de Ventas y Bot de WhatsApp para Tiendas de Repuestos e Insumos**. Ha sido redactado para servir como manual operativo para el comerciante y su personal de mostrador, y como dictamen técnico-jurídico que respalda la legalidad y libre distribución del producto en la República Bolivariana de Venezuela.
 
+> 🔴 **AVISO OPERATIVO CLAVE (Sistema 100% Local):**
+> Crastur funciona íntegramente en la computadora de la tienda. **Mientras la computadora esté apagada, el bot no responderá a ningún cliente.** Al volver a encenderla, el sistema se recupera solo (recalcula apartados, repone stock vencido y resincroniza la tasa BCV). Para una atención sin interrupciones, **se recomienda dejar la computadora encendida durante el horario comercial** o, idealmente, las 24 horas.
+
 ---
 
 ## 📑 ÍNDICE
@@ -145,6 +148,8 @@ Para su despliegue comercial oficial, el sistema se entrega con **`0 productos`*
   npm run reset
   ```
 
+> **Entrega a otra PC:** si vas a **descargar el sistema desde Git** (clonado o archivo RAR/ZIP del repositorio), arranca limpio de forma automática, ya que la base de datos, los respaldos y la sesión de WhatsApp no forman parte del repositorio. Si en cambio **copias la carpeta a mano** (USB o red), ejecuta primero `npm run preparar-entrega -- --confirmar`: respalda tus datos fuera del proyecto y deja la instalación en 0 productos, sin chats, sin respaldos y sin la sesión de WhatsApp del equipo anterior.
+
 ### B. Gestión de Horarios: Lunes a Sábado vs. Cierre Temprano Dominical
 Crastur opera de lunes a sábado en horario corrido y los domingos con horario reducido:
 - **Preset Oficial Predeterminado:**  
@@ -204,6 +209,7 @@ Se abre en el navegador un panel con botones para: **Instalar/Verificar Sistema*
 También disponibles por terminal:
 - **`npm run clean`**: Vaciado de mensajes y métricas a cero operativo.
 - **`npm run reset`**: Restablecimiento limpio de fábrica (0 productos para producción).
+- **`npm run preparar-entrega -- --confirmar`**: Limpieza total para copiar el sistema a otra PC (respalda los datos fuera del proyecto y deja la instalación en 0 productos, sin chats, sin respaldos ni sesión de WhatsApp).
 - **`npm run migrar -- --out ...` / `--in ...`**: Respaldo y restauración portable de Catálogo + Asesores.
 - **`npm run build`**: Compilación del panel visual web en Vite.
 - **`npm run typecheck:server` / `build:server`**: Verificación de tipos y compilación del backend.
@@ -213,7 +219,7 @@ El sistema cuenta con una batería de **202 pruebas automatizadas** que validan:
 - **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en pocos milisegundos (> 1.000 req/s).
 - **35 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
 - **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (ráfaga de flood masivo, sin silenciar conversaciones humanas normales).
-- **Auto-Limpieza Post-Pruebas:** El script inyecta fixtures temporales para ejecutar las pruebas y los elimina al terminar, garantizando que el catálogo de producción permanezca en **0 productos**.
+- **Auto-Limpieza Post-Pruebas:** la suite completa se ejecuta sobre una **base de datos temporal aislada** (`CRASTUR_DATA_DIR`). Al terminar, esa carpeta temporal se elimina, garantizando que el catálogo, los chats y los respaldos reales de producción **nunca se modifiquen** (verificado: quedan intactos, 0 cambios).
 
 ### C. Copias de Seguridad y Protección contra Apagones
 - **Descarga en 1 Clic:** En **Configuración ➔ 5. Copia de Seguridad**, haz clic en **"Descargar Copia de Seguridad"** para obtener tu archivo `.db`.

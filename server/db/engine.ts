@@ -13,8 +13,13 @@
 import path from 'path';
 import fs from 'fs';
 
-// Ubicación de almacenamiento local persistente
-export const dataDir = path.join(__dirname, '..', '..', 'data');
+// Ubicación de almacenamiento local persistente.
+// [AISLAMIENTO DE PRUEBAS] CRASTUR_DATA_DIR permite redirigir la base de datos a una
+// carpeta temporal (usado por las suites de prueba) sin tocar los datos de producción.
+const defaultDataDir = path.join(__dirname, '..', '..', 'data');
+export const dataDir = process.env.CRASTUR_DATA_DIR
+  ? path.resolve(process.env.CRASTUR_DATA_DIR)
+  : defaultDataDir;
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }

@@ -20,6 +20,7 @@ import {
   getMetricsSummary
 } from '../database';
 import { getStatus } from '../whatsappService';
+import { isWhatsAppReconnectionPaused } from '../whatsappService';
 import { broadcast } from '../websocket';
 
 /**
@@ -49,6 +50,7 @@ router.get('/status', (req: Request, res: Response) => {
 
   res.json({
     whatsapp: waStatus,
+    reconexion_pausada: isWhatsAppReconnectionPaused(),
     bot_pausado_global: isBotGloballyPaused(),
     tasa,
     fecha_tasa: settings.fecha_tasa,

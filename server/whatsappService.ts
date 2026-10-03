@@ -33,7 +33,9 @@ export {
   startWhatsApp,
   stopWhatsApp,
   logoutWhatsApp,
-  resetWhatsApp
+  resetWhatsApp,
+  resumeWhatsAppReconnection,
+  isWhatsAppReconnectionPaused
 } from './whatsapp/connection';
 
 import {
@@ -52,9 +54,10 @@ import {
   startWhatsApp,
   stopWhatsApp,
   logoutWhatsApp,
-  resetWhatsApp
+  resetWhatsApp,
+  resumeWhatsAppReconnection,
+  isWhatsAppReconnectionPaused
 } from './whatsapp/connection';
-
 export default {
   startWhatsApp,
   stopWhatsApp,

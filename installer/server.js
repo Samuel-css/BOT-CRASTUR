@@ -167,7 +167,7 @@ const server = http.createServer(async (req, res) => {
   const key = `${req.method} ${url}`;
   if (routes[key]) {
     const body = req.method === 'POST' ? await readBody(req) : null;
-    if (url === '/api/instalar' || url === '/api/actualizar-panel' || url === '/api/respaldar' || url === '/api/respaldar' || url === '/api/restaurar' || url === '/api/arrancar') {
+    if (url === '/api/instalar' || url === '/api/actualizar-panel' || url === '/api/respaldar' || url === '/api/restaurar' || url === '/api/arrancar') {
       // Streaming NDJSON de progreso
       res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Transfer-Encoding': 'chunked' });
       const send = (obj) => { try { res.write(JSON.stringify(obj) + '\n'); } catch {} };

@@ -15,6 +15,7 @@ import { db } from '../../database';
 import { formatRate, formatBs } from '../utils/formatters';
 import { detectCaracasZone } from '../utils/caracasDelivery';
 import { searchProductsFuzzy } from '../services/searchService';
+import { getProductsByCanonicalCategory } from '../config/categoryGroups';
 
 /**
  * Responde a consultas generales sobre los métodos de pago aceptados en la tienda.
@@ -263,7 +264,7 @@ function handleMotoQueryResponse(): string {
   msg += `• Guayas de croche y acelerador.\n`;
   msg += `• Tripas y cauchos para moto (diversas medidas).\n`;
   msg += `• Baterías para moto.\n\n`;
-  msg += `🎽 *Accesorios:*\n`;
+  msg += `🏍️ *Repuestos y Accesorios:*\n`;
   msg += `• Puños para manubrio, mallas porta-casco, pulpos elásticos, retrovisores, luces LED y spray para cadena.\n\n`;
   msg += `💡 *Dinos qué repuesto o accesorio necesitas o el modelo de tu moto* y te confirmamos disponibilidad al instante.\n`;
   msg += `👉 O escribe *VENDEDOR* para que un asesor te atienda directamente.`;
@@ -495,20 +496,14 @@ function handleCategoryBrowseResponse(
   const categoryEmojis: Record<string, string> = {
     'Insumos Cauchera': '🛞',
     'Repuestos Moto': '🏍️',
-    'Accesorios Moto': '🎽',
+    'Accesorios Moto': '🪖',
     'Otros Productos': '📦'
   };
 
   const emoji = categoryEmojis[categoryName] || '📦';
-  const prods: any[] = db.prepare(`
-    SELECT * FROM products
-    WHERE activo = 1 AND (
-      categoria = ? OR
-      categoria LIKE ? OR
-      categoria LIKE ?
-    )
-    ORDER BY modelo ASC
-  `).all(categoryName, `${categoryName} - %`, `${categoryName}%`);
+  // [AGRUPACIÓN CANÓNICA] Incluye productos guardados en subcategorías del panel
+  // (ej. "Lubricantes & Fluidos - ..." o "Repuestos Moto - ...") dentro de su menú.
+  const prods: any[] = getProductsByCanonicalCategory(categoryName);
 
   if (prods.length === 0) {
     let msg = `${emoji} *${categoryName} - Crastur* ✨\n\n`;

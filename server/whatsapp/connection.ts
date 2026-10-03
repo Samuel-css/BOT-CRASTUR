@@ -36,6 +36,50 @@ let connectingTimeout: any = null;
 let botReady = { value: false };
 let botReadyTimer: any = null;
 
+// [CONTROL DE RECONEXIÓN] Contador de intentos consecutivos de reconexión y bandera
+// de pausa manual. Evita el bucle infinito de reconexión cuando WhatsApp rechaza la
+// conexión (p. ej. error 428 connectionClosed) sin que el usuario haya escaneado un QR.
+let reconnectAttempts = 0;
+let reconnectPaused = false;
+let manualStartRequested = false;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
+/**
+ * [NUEVO QR LIMPIO] Reactiva manualmente la reconexión tras una pausa.
+ * Se invoca cuando el usuario pulsa "Generar QR" / "Resetear" en el panel.
+ */
+export function resumeWhatsAppReconnection(): void {
+  reconnectPaused = false;
+  reconnectAttempts = 0;
+  qrTimeoutCount = 0;
+  manualStartRequested = true;
+}
+
+/**
+ * Habilita una ventana de gracia tras una solicitud manual: durante los próximos
+ * intentos no se pausa por "sin credenciales", dando tiempo a Baileys a emitir el QR.
+ */
+let manualGraceUntil = 0;
+const MANUAL_GRACE_MS = 60000;
+function manualGraceActive(): boolean {
+  return Date.now() < manualGraceUntil;
+}
+
+/** Indica si la conexión automática quedó pausada por intentos fallidos. */
+export function isWhatsAppReconnectionPaused(): boolean {
+  return reconnectPaused;
+}
+
+/** True si existen credenciales de sesión guardadas en disco. */
+function hasSavedCredentials(): boolean {
+  try {
+    if (!fs.existsSync(authFolder)) return false;
+    return fs.readdirSync(authFolder).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // Enlazar el estado botReady con el módulo de ingestión
 bindBotReady(botReady);
 
@@ -49,6 +93,20 @@ export async function startWhatsApp(): Promise<void> {
     console.log('[WhatsApp] Ya está conectado.');
     return;
   }
+
+  // [SIN SESIÓN] Si no hay credenciales guardadas y la reconexión no fue solicitada
+  // explícitamente por el usuario, NO reintentar en bucle: se deja el estado en
+  // desconectado y se espera a que el usuario pulse "Generar QR" en el panel.
+  // Salvo que haya una solicitud manual (Generar QR / Reset), en cuyo caso SÍ se intenta.
+  if (reconnectPaused && !hasSavedCredentials() && !manualStartRequested && !manualGraceActive()) {
+    console.log('[WhatsApp] Reconexión automática pausada (sin sesión vinculada). Escanea el QR desde el panel para conectar.');
+    return;
+  }
+  // La solicitud manual habilita una ventana de gracia para generar el QR.
+  if (manualStartRequested) {
+    manualGraceUntil = Date.now() + MANUAL_GRACE_MS;
+  }
+  manualStartRequested = false;
 
   if (connectionStatus === 'connecting') {
     console.log('[WhatsApp] Ya hay un intento de conexión en curso. Esperando o forzando renovación...');
@@ -98,8 +156,12 @@ export async function startWhatsApp(): Promise<void> {
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      // [ANTI-BANEO META 2025] Generador de perfiles dinámico para evitar fingerprints obsoletos
-      browser: Browsers.windows('Desktop')
+      // [ANTI-BANEO META 2025] Perfil de navegador estable.
+      // NOTA: el perfil `windows('Desktop')` provoca que WhatsApp cierre el
+      // handshake con código 428 ("Connection Terminated") en algunas redes/regiones,
+      // impidiendo generar el QR. Se usa un perfil `ubuntu('Chrome')`, verificado
+      // como estable para emitir el QR de vinculación.
+      browser: Browsers.ubuntu('Chrome')
     });
     setSock(newSock);
 
@@ -151,27 +213,50 @@ export async function startWhatsApp(): Promise<void> {
           followUpInterval = null;
         }
 
-        // Freno ante timeout de QR repetido (error 408) para no saturar CPU
-        if (statusCode === 408) {
-          qrTimeoutCount++;
-          console.log(`[WhatsApp] Tiempo de espera de escaneo QR agotado (${qrTimeoutCount}/3).`);
-          if (qrTimeoutCount >= 3) {
-            console.log('[WhatsApp] ⏸️ Reconexión de QR pausada tras 3 intentos para ahorrar recursos. Genera un nuevo código desde la app.');
+        // [FRENO ANTI-BUCLE]
+        // Baileys usa 428 (connectionClosed) cuando WhatsApp rechaza/cierra la conexión
+        // (p. ej. sin sesión vinculada) y 408 (connectionLost/timedOut) por timeout.
+        // Antes solo se contemplaba el 408, por lo que el 428 reconectaba infinitamente.
+        // Ahora ambos cuentan como intento fallido y se detiene tras MAX_RECONNECT_ATTEMPTS.
+        const isRetryableClose = statusCode === 408 || statusCode === 428;
+        if (isRetryableClose) {
+          reconnectAttempts++;
+          console.log(`[WhatsApp] Intento de reconexión ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} (código ${statusCode}).`);
+          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            reconnectPaused = true;
+            console.log('[WhatsApp] ⏸️ Reconexión pausada tras 3 intentos para ahorrar recursos. Escanea un nuevo QR desde el panel para reintentar.');
             return;
           }
         } else if (statusCode !== undefined) {
-          qrTimeoutCount = 0;
+          // Otros códigos (p. ej. 440 connectionReplaced) reinician el contador
+          reconnectAttempts = 0;
+        }
+
+        // [PAUSA SIN SESIÓN] Si ya no quedan credenciales guardadas, no tiene sentido
+        // seguir reintentando en automático: se espera a que el usuario genere el QR.
+        // Durante la ventana de gracia tras una solicitud manual, sí se reintenta
+        // (Baileys necesita varios intentos para emitir el QR de vinculación).
+        if (!hasSavedCredentials() && !manualGraceActive()) {
+          reconnectPaused = true;
+          console.log('[WhatsApp] ⏸️ Sin credenciales guardadas. Reconexión pausada hasta que se genere un nuevo QR.');
+          return;
         }
 
         if (shouldReconnect) {
-          const delay = statusCode === 408 ? 8000 : 4000;
+          // [BACKOFF PROGRESIVO] 4s → 8s → 16s → 30s (tope) en vez de martillar cada 4s
+          const baseDelay = isRetryableClose ? 4000 : 4000;
+          const delay = Math.min(baseDelay * Math.pow(2, Math.max(0, reconnectAttempts - 1)), 30000);
+          console.log(`[WhatsApp] Reintentando conexión en ${Math.round(delay / 1000)}s...`);
           reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
             startWhatsApp();
           }, delay);
         }
       } else if (connection === 'open') {
         if (connectingTimeout) clearTimeout(connectingTimeout);
         qrTimeoutCount = 0;
+        reconnectAttempts = 0;
+        reconnectPaused = false;
         setConnectionStatus('connected');
         setCurrentQR(null);
         const jid = newSock.user?.id || '';
@@ -264,6 +349,9 @@ export async function logoutWhatsApp(): Promise<void> {
 export async function resetWhatsApp(): Promise<{ success: boolean; message: string }> {
   console.log('[WhatsApp] 🔄 Ejecutando reseteo forzoso de WhatsApp...');
   qrTimeoutCount = 0;
+  // [REACTIVACIÓN MANUAL] Limpia la pausa para permitir un nuevo intento con QR fresco
+  reconnectPaused = false;
+  reconnectAttempts = 0;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;

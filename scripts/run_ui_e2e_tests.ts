@@ -21,6 +21,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import puppeteer from 'puppeteer-core';
 
@@ -113,18 +114,24 @@ async function runUiTests(): Promise<void> {
 
   // ── Arranque del servidor (si no está ya encendido) ──────────────────────
   let serverProc: ChildProcess | null = null;
+  let isolatedDataDir: string | null = null;
   const alreadyUp = await isServerUp();
   if (!alreadyUp) {
     console.log('🚀 Arrancando servidor Crastur para las pruebas...');
+    // [AISLAMIENTO] El servidor de prueba usa una base de datos temporal para no
+    // ensuciar el catálogo, los chats ni los respaldos de producción.
+    isolatedDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crastur-ui-e2e-'));
+    console.log(`🗄️  Datos aislados en: ${isolatedDataDir}`);
     serverProc = spawn('node', ['--import', 'tsx', 'server/server.ts'], {
       cwd: ROOT,
       stdio: 'ignore',
-      env: { ...process.env, PORT: String(PORT) }
+      env: { ...process.env, PORT: String(PORT), CRASTUR_DATA_DIR: isolatedDataDir }
     });
     const ready = await waitForServer(60000);
     if (!ready) {
       console.error(`${C.red}❌ El servidor no respondió a tiempo. Abortando E2E.${C.reset}`);
       if (serverProc) serverProc.kill();
+      if (isolatedDataDir) { try { fs.rmSync(isolatedDataDir, { recursive: true, force: true }); } catch {} }
       process.exit(1);
     }
   } else {
@@ -259,6 +266,9 @@ async function runUiTests(): Promise<void> {
     await browser.close();
     if (serverProc) {
       try { serverProc.kill(); } catch {}
+    }
+    if (isolatedDataDir) {
+      try { fs.rmSync(isolatedDataDir, { recursive: true, force: true }); } catch {}
     }
   }
 

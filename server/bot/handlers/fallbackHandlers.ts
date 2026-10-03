@@ -31,7 +31,7 @@ export function handleSecondFallback(pushName: string, settings?: Record<string,
   msg += `Para no hacerte perder tiempo, te dejo las opciones más rápidas:\n\n`;
   msg += `1️⃣ *Insumos Cauchera* 🛞 _(parches, pegas, válvulas, plomos, tripas)_\n`;
   msg += `2️⃣ *Repuestos Moto* 🏍️ _(kits de arrastre, pastillas, bujías, bandas)_\n`;
-  msg += `3️⃣ *Accesorios Moto* 🎽 _(puños, retrovisores, luces LED, cascos)_\n`;
+  msg += `3️⃣ *Accesorios Moto* 🪖 _(puños, retrovisores, luces LED, cascos)_\n`;
   msg += `4️⃣ *Otros Productos* 📦 _(aceites, refrigerantes, aditivos)_\n`;
   msg += `5️⃣ *Pagar con Cashea* 💛 _(en tienda física)\n`;
   msg += `6️⃣ *Hablar con un Asesor* 👨‍🔧\n\n`;

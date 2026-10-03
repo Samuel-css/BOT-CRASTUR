@@ -15,9 +15,14 @@ import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { db, getSettings, getEffectiveRate } from '../../database';
 import { formatBs, formatRate } from '../utils/formatters';
+import { canonicalCategoryOf, getProductsByCanonicalCategory } from '../config/categoryGroups';
 
-/** Directorio en disco para almacenamiento persistente de catálogos PDF cacheados */
-const catalogsDir = path.join(__dirname, '..', '..', '..', 'data', 'catalogs');
+/** Directorio en disco para almacenamiento persistente de catálogos PDF cacheados.
+ *  [AISLAMIENTO] Respeta CRASTUR_DATA_DIR para que las pruebas no escriban en data/. */
+const catalogsRoot = process.env.CRASTUR_DATA_DIR
+  ? path.resolve(process.env.CRASTUR_DATA_DIR)
+  : path.join(__dirname, '..', '..', '..', 'data');
+const catalogsDir = path.join(catalogsRoot, 'catalogs');
 if (!fs.existsSync(catalogsDir)) {
   fs.mkdirSync(catalogsDir, { recursive: true });
 }
@@ -78,6 +83,8 @@ function resolveCanonicalCategory(input) {
     norm.includes('otro') ||
     norm.includes('aceite') ||
     norm.includes('lubricante') ||
+    norm.includes('fluido') ||
+    norm.includes('combo') ||
     norm.includes('motul')
   ) {
     return { key: 'Otros Productos', title: 'Lubricantes y Otros Productos', slug: 'otros_productos' };
@@ -98,7 +105,9 @@ function resolveCanonicalCategory(input) {
 }
 
 /**
- * Consulta los productos de la categoría desde la base de datos
+ * Consulta los productos de la categoría desde la base de datos.
+ * [AGRUPACIÓN CANÓNICA] Usa el mapeo de categorías para incluir productos
+ * guardados en subcategorías del panel (ej. "Repuestos Moto - Tripas y Cauchos").
  */
 function getProductsForCategory(categoryKey) {
   if (categoryKey === 'Todos') {
@@ -109,15 +118,18 @@ function getProductsForCategory(categoryKey) {
     `).all();
   }
 
-  return db.prepare(`
-    SELECT * FROM products
-    WHERE activo = 1 AND (
-      categoria = ? OR
-      categoria LIKE ? OR
-      categoria LIKE ?
-    )
-    ORDER BY modelo ASC
-  `).all(categoryKey, `${categoryKey} - %`, `${categoryKey}%`);
+  // Ruta principal: agrupación canónica (tolera subcategorías)
+  const grouped = getProductsByCanonicalCategory(categoryKey);
+  if (grouped.length > 0) return grouped;
+
+  // Compatibilidad con categorías exactas antiguas que no estén en el mapeo
+  const all: any[] = db.prepare('SELECT * FROM products WHERE activo = 1').all();
+  return all
+    .filter(p => {
+      const cat = String(p.categoria || '');
+      return cat === categoryKey || cat.startsWith(`${categoryKey} - `) || cat.startsWith(`${categoryKey}%`);
+    })
+    .sort((a, b) => String(a.modelo || '').localeCompare(String(b.modelo || ''), 'es'));
 }
 
 /**
@@ -359,7 +371,7 @@ function drawHeader(doc, margin, contentWidth, categoryInfo, rate, todayStr, tot
   doc.fillColor('#F59E0B')
      .font('Helvetica-Bold')
      .fontSize(8.5)
-     .text(`${totalCount} PRODUCTOS DISPONIBLES`, margin + contentWidth - 190, bannerY + 9.5, {
+     .text(`${totalCount} ${totalCount === 1 ? 'PRODUCTO DISPONIBLE' : 'PRODUCTOS DISPONIBLES'}`, margin + contentWidth - 190, bannerY + 9.5, {
        width: 180,
        align: 'right',
        lineBreak: false
@@ -458,12 +470,14 @@ function drawSpaciousProductRow(doc, prod, x, y, width, height, rate, settings) 
      .fontSize(8)
      .text(marcaText, infoX + 6, y + 17.5, { lineBreak: false });
 
-  // Categoría secundaria al lado de la marca
+  // Categoría secundaria al lado de la marca (se muestra el grupo principal,
+  // limpiando subcategorías largas como "Repuestos Moto - Tripas y Cauchos").
   if (prod.categoria) {
+    const categoriaCorta = String(prod.categoria).split(' - ')[0].trim();
     doc.fillColor('#64748B')
        .font('Helvetica-Bold')
        .fontSize(8)
-       .text(`•  ${prod.categoria}`, infoX + marcaW + 8, y + 17.5, { lineBreak: false });
+       .text(`•  ${categoriaCorta}`, infoX + marcaW + 8, y + 17.5, { lineBreak: false, width: infoW - marcaW - 8, ellipsis: true });
   }
 
   // Título / Modelo del Producto (Grande 13 pt para excelente lectura móvil)

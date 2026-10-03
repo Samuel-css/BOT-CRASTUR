@@ -13,6 +13,7 @@ import { QrCode, CheckCircle2, RefreshCw, LogOut } from 'lucide-react';
 
 export default function WhatsAppView({
   waStatus = { status: 'disconnected', qr: null, user: null },
+  reconexionPausada = false,
   loading,
   onStartWhatsApp,
   onResetWhatsApp,
@@ -123,6 +124,14 @@ export default function WhatsAppView({
                   Haz clic en el botón naranja de arriba para generar el código QR y conectar la línea de tu tienda.
                 </p>
               </div>
+              {reconexionPausada && (
+                <div className="mt-2 p-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl text-left">
+                  <p className="text-xs text-amber-300 leading-relaxed">
+                    ⏸️ <span className="font-bold">Reconexión automática en pausa</span> tras varios intentos fallidos.
+                    Pulsa <span className="font-bold">"Nuevo QR Limpio"</span> para reintentar y escanear el código.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

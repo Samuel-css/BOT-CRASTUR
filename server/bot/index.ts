@@ -1137,6 +1137,21 @@ function processIncomingMessage(
 ): any {
   const respuesta = processIncomingMessageCore(jid, rawText, pushName, mediaInfo);
 
+  // [RESPUESTA ASÍNCRONA] Algunas rutas (p. ej. entrega de catálogo PDF) devuelven
+  // una Promesa. Se resuelve y se aplica el mismo reinicio de contador de fallos.
+  if (respuesta && typeof respuesta.then === 'function') {
+    return respuesta.then((resuelta: any) => {
+      evaluarFallback(resuelta, jid);
+      return resuelta;
+    });
+  }
+
+  evaluarFallback(respuesta, jid);
+  return respuesta;
+}
+
+/** Ajusta el contador de fallos consecutivos según si la respuesta fue útil o un fallback. */
+function evaluarFallback(respuesta: any, jid: string): void {
   try {
     // Determinar si la respuesta fue un fallback (no entendido) o una respuesta útil
     const textoResp = typeof respuesta === 'string'
@@ -1150,8 +1165,6 @@ function processIncomingMessage(
       db.prepare('UPDATE chat_sessions SET fallos_consecutivos = 0 WHERE jid = ?').run(jid);
     }
   } catch { /* nunca interrumpir la respuesta por un fallo de contador */ }
-
-  return respuesta;
 }
 
 export {

@@ -67,6 +67,7 @@ export default function App() {
   const [settings, setSettings] = useState({});
   const [bcvData, setBcvData] = useState({ tasa_efectiva: null, tasa_bcv: null, fecha_tasa: '' });
   const [waStatus, setWaStatus] = useState({ status: 'disconnected', qr: null, user: null });
+  const [waReconexionPausada, setWaReconexionPausada] = useState(false);
   const [botPausedGlobal, setBotPausedGlobal] = useState(false);
   const [metrics, setMetrics] = useState({ consultas_hoy: 0, total_mensajes: 0, total_clientes: 0, top_busquedas: [] });
   const [loading, setLoading] = useState(false);
@@ -272,6 +273,7 @@ export default function App() {
             setWaStatus({ status: 'disconnected', qr: null, user: null });
           }
           if (data && data.bot_pausado_global !== undefined) setBotPausedGlobal(data.bot_pausado_global);
+          if (data && data.reconexion_pausada !== undefined) setWaReconexionPausada(!!data.reconexion_pausada);
         })
         .catch(() => {});
       loadMetrics();
@@ -857,6 +859,7 @@ export default function App() {
             {activeTab === 'whatsapp' && (
               <WhatsAppView
                 waStatus={waStatus}
+                reconexionPausada={waReconexionPausada}
                 loading={loading}
                 onStartWhatsApp={handleStartWhatsApp}
                 onResetWhatsApp={handleResetWhatsApp}

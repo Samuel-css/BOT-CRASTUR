@@ -21,9 +21,30 @@ import {
   startWhatsApp,
   logoutWhatsApp,
   resetWhatsApp,
-  sendManualMessage
+  sendManualMessage,
+  resumeWhatsAppReconnection,
+  isWhatsAppReconnectionPaused
 } from '../whatsappService';
 import { broadcast } from '../websocket';
+
+/**
+ * GET /api/whatsapp/reconnection
+ * Informa si la reconexión automática de WhatsApp está pausada tras varios intentos
+ * fallidos (p. ej. error 428 sin sesión vinculada).
+ */
+router.get('/whatsapp/reconnection', (req: Request, res: Response) => {
+  res.json({ pausada: isWhatsAppReconnectionPaused() });
+});
+
+/**
+ * POST /api/whatsapp/reconnection/resume
+ * Reactiva manualmente la reconexión automática (usado por "Generar QR"/"Resetear").
+ */
+router.post('/whatsapp/reconnection/resume', (req: Request, res: Response) => {
+  resumeWhatsAppReconnection();
+  startWhatsApp();
+  res.json({ success: true, pausada: false });
+});
 
 /**
  * POST /api/start
@@ -32,6 +53,9 @@ import { broadcast } from '../websocket';
  */
 const startHandler = async (req: Request, res: Response) => {
   try {
+    // [SOLICITUD MANUAL] Conectar desde el panel siempre habilita un intento limpio,
+    // aunque no haya credenciales guardadas (para poder generar el QR).
+    resumeWhatsAppReconnection();
     startWhatsApp();
     res.json({ success: true, message: 'Iniciando servicio de WhatsApp...' });
   } catch (err: any) {

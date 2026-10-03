@@ -1,6 +1,6 @@
 {
   "name": "crastur",
-  "version": "1.0.0",
+  "version": "2.8.0",
   "description": "Sistema de Ventas y Bot de WhatsApp para Crastur",
   "scripts": {
     "start": "tsx server/server.ts",
@@ -10,11 +10,12 @@
     "dev:client": "npm --prefix client run dev",
     "clean": "tsx scripts/clean_data.ts",
     "reset": "tsx scripts/reset_clean_install.ts",
+    "preparar-entrega": "tsx scripts/preparar_entrega.ts",
     "migrar": "tsx scripts/migrar_catalogo_asesores.ts",
     "stop": "node -e \"const http=require('http'); const req=http.request('http://localhost:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "build:server": "tsc -p tsconfig.server.json",
-    "test": "tsx scripts/run_stress_and_edge_tests.ts",
+    "test": "node scripts/run_stress_and_edge_tests_isolated.js",
     "test:ui": "tsx scripts/run_ui_e2e_tests.ts"
   },
   "keywords": [
@@ -25,6 +26,9 @@
   ],
   "author": "Crastur",
   "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "axios": "^1.20.0",
