@@ -30,17 +30,25 @@ export function setCurrentUser(value: any): void { currentUser = value; }
 
 /**
  * Suscribe un callback a las actualizaciones de estado del socket de WhatsApp.
+ * @returns Función para cancelar la suscripción (evita callbacks duplicados al reiniciar).
  */
-export function subscribeStatusChange(cb: (status: WhatsAppStatusPayload) => void): void {
+export function subscribeStatusChange(cb: (status: WhatsAppStatusPayload) => void): () => void {
   statusChangeCallbacks.push(cb);
   cb({ status: connectionStatus, qr: currentQR, user: currentUser });
+  return () => {
+    statusChangeCallbacks = statusChangeCallbacks.filter(c => c !== cb);
+  };
 }
 
 /**
  * Suscribe un callback a los mensajes en tiempo real para el Live Inbox.
+ * @returns Función para cancelar la suscripción.
  */
-export function subscribeLiveMessages(cb: (msg: any) => void): void {
+export function subscribeLiveMessages(cb: (msg: any) => void): () => void {
   liveMessageCallbacks.push(cb);
+  return () => {
+    liveMessageCallbacks = liveMessageCallbacks.filter(c => c !== cb);
+  };
 }
 
 /**

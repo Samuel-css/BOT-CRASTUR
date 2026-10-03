@@ -18,20 +18,45 @@ const snapshotDir = backupDir;
 export const masterSnapshotPath = path.join(snapshotDir, 'snapshot_maestro_crastur.json');
 
 /**
+ * Escribe un buffer de respaldo en disco de forma atómica (archivo .tmp + rename)
+ * para que un corte de energía no deje el respaldo a medio escribir.
+ */
+function writeBackupAtomic(targetPath: string, buffer: Buffer): void {
+  const tmp = targetPath + '.tmp';
+  fs.writeFileSync(tmp, buffer);
+  try {
+    fs.renameSync(tmp, targetPath);
+  } catch (e: any) {
+    // Windows/NTFS puede bloquear el rename por antivirus: fallback a copia directa
+    if (process.platform === 'win32' || e?.code === 'EPERM' || e?.code === 'EBUSY') {
+      fs.copyFileSync(tmp, targetPath);
+      try { fs.unlinkSync(tmp); } catch {}
+    } else {
+      throw e;
+    }
+  }
+}
+
+/**
  * [SNAPSHOT MAESTRO Y BACKUP CIRCULAR 7 DÍAS]
  * Genera una copia de seguridad diaria fechada y elimina automáticamente aquellas
  * que superen los 7 días de antigüedad para mantener el almacenamiento acotado.
+ *
+ * [INTEGRIDAD] El respaldo del día se ACTUALIZA en cada ejecución (antes solo se creaba
+ * una vez y quedaba congelado con los datos del primer arranque del día, perdiendo todas
+ * las ventas y apartados posteriores). Así el respaldo diario siempre refleja el estado
+ * más reciente.
+ *
+ * @param force - Si es true, actualiza el respaldo del día aunque ya exista (usado al apagar).
  */
-export function performDailyBackup(): void {
+export function performDailyBackup(force: boolean = true): void {
   if (!rawDb) return;
   try {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const dailyBackupPath = path.join(backupDir, `crastur_backup_${today}.db`);
-    if (!fs.existsSync(dailyBackupPath)) {
-      const backupData = rawDb.export();
-      fs.writeFileSync(dailyBackupPath, Buffer.from(backupData));
-      console.log(`[DB Backup] Respaldo diario creado: crastur_backup_${today}.db`);
-    }
+    const backupData = Buffer.from(rawDb.export());
+
+    writeBackupAtomic(dailyBackupPath, backupData);
 
     // Política de retención circular: mantener solo los 7 respaldos diarios más recientes
     const files = fs.readdirSync(backupDir)
@@ -45,10 +70,25 @@ export function performDailyBackup(): void {
       });
     }
 
-    // Actualizar el archivo de respaldo maestro unificado
-    fs.writeFileSync(latestBackupPath, Buffer.from(rawDb.export()));
+    // Actualizar el archivo de respaldo maestro unificado (para auto-recuperación)
+    writeBackupAtomic(latestBackupPath, backupData);
   } catch (bkErr: any) {
     console.error('[DB Backup] Error en backup diario:', bkErr?.message || bkErr);
+  }
+}
+
+/**
+ * [RESPALDO AL APAGAR] Garantiza que toda la jornada quede salvada antes de cerrar.
+ * Se invoca desde el apagado seguro del servidor y del panel. Es tolerante a fallos:
+ * si el respaldo no se puede escribir, el apagado continúa sin interrumpirse.
+ */
+export function performShutdownBackup(): void {
+  try {
+    console.log('[DB Backup] Guardando respaldo de cierre de jornada...');
+    performDailyBackup(true);
+    console.log('[DB Backup] Respaldo de cierre guardado correctamente.');
+  } catch (e: any) {
+    console.error('[DB Backup] No se pudo guardar el respaldo de cierre:', e?.message || e);
   }
 }
 
@@ -337,6 +377,9 @@ export function restoreDatabaseFromBuffer(buffer: Buffer | any) {
     }
 
     fs.writeFileSync(dbPath, buffer);
+    // [INTEGRIDAD] Cerrar la base anterior en memoria WASM antes de reemplazarla evita
+    // fugas de memoria acumuladas en cada restauración.
+    try { if (rawDb && typeof rawDb.close === 'function') rawDb.close(); } catch {}
     setRawDb(testDb);
 
     // [ROBUSTEZ ENTRE VERSIONES] Re-aplicar esquema, migraciones, índices y valores base

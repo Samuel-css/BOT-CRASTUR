@@ -239,7 +239,12 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Escuchar mensajes en tiempo real vía WebSocket
+  // [INTEGRIDAD] Referencia viva al chat seleccionado, para que el WebSocket
+  // no tenga que reconectarse cada vez que el usuario cambia de conversación.
+  const selectedJidRef = useRef(selectedJid);
+  useEffect(() => { selectedJidRef.current = selectedJid; }, [selectedJid]);
+
+  // Escuchar mensajes en tiempo real vía WebSocket (una sola conexión durante toda la vista)
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -248,12 +253,13 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     try {
       ws = new WebSocket(wsUrl);
       ws.onmessage = (event) => {
+        const currentJid = selectedJidRef.current;
         try {
           const { type, data } = JSON.parse(event.data);
           if (type === 'live_chat_message') {
             if (data?.action === 'deleted') {
               setSessions((prev) => prev.filter((s) => s.jid !== data.jid));
-              if (selectedJid === data.jid) {
+              if (currentJid === data.jid) {
                 setSelectedJid(null);
                 setActiveSession(null);
                 setMessages([]);
@@ -269,7 +275,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
             }
             loadInbox();
 
-            if (data && data.jid === selectedJid) {
+            if (data && data.jid === currentJid) {
               setMessages((prev) => appendDeduplicatedMessage(prev, {
                 id: data.id || Date.now(),
                 jid: data.jid,
@@ -279,7 +285,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
               }));
             }
           } else if (type === 'chat_pause_changed') {
-            if (data && data.jid === selectedJid) {
+            if (data && data.jid === currentJid) {
               setActiveSession((prev) => prev ? { ...prev, bot_pausado: data.pausado ? 1 : 0 } : null);
             }
             loadInbox();
@@ -295,7 +301,8 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     return () => {
       if (ws) ws.close();
     };
-  }, [selectedJid]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pausar o reanudar el bot en este chat específico (Human Takeover)
   const handleToggleBotPause = async () => {
@@ -1000,7 +1007,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                 onClick={() => setShortcutsModalOpen(true)}
                 className="ml-auto px-2.5 py-1 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 hover:bg-orange-500/25 text-[11px] font-bold transition shrink-0 whitespace-nowrap cursor-pointer flex items-center gap-1"
               >
-                <span>Ver Todos (8)</span>
+                <span>Ver Todos ({CANNED_SHORTCUTS.length})</span>
                 <ChevronRight size={13} />
               </button>
             </div>

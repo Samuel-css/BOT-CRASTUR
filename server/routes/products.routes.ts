@@ -21,6 +21,20 @@ import { broadcast } from '../websocket';
 import type { Product } from '../types/database';
 
 /**
+ * [RESILIENCIA] Envuelve un handler síncrono para capturar errores y responder 500
+ * en formato JSON, sin dejar que una excepción no capturada tumbe el proceso.
+ */
+const safe = (handler: (req: Request, res: Response) => any) => (req: Request, res: Response) => {
+  try {
+    return handler(req, res);
+  } catch (err: any) {
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err?.message || 'Error interno del servidor' });
+    }
+  }
+};
+
+/**
  * GET /api/products
  * Retorna todos los productos del catálogo enriquecidos con su equivalencia en Bs y cuotas de Cashea.
  */
@@ -54,11 +68,36 @@ router.get('/', (req: Request, res: Response) => {
  * POST /api/products
  * Registra un nuevo producto o kit en el catálogo comercial.
  */
-router.post('/', (req: Request, res: Response) => {
-  const { marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock } = req.body;
+router.post('/', safe((req: Request, res: Response) => {
+  const { marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock, permitir_duplicado } = req.body;
 
   if (!marca || !modelo || !categoria || precio_usd === undefined) {
     return res.status(400).json({ error: 'Marca, modelo, categoría y precio en USD son obligatorios' });
+  }
+
+  // [VALIDACIÓN] Los campos de texto deben ser cadenas; evita TypeError por datos malformados.
+  const safeMarca = String(marca).trim();
+  const safeModelo = String(modelo).trim();
+  const safeCategoria = String(categoria).trim();
+  if (!safeMarca || !safeModelo || !safeCategoria) {
+    return res.status(400).json({ error: 'Marca, modelo y categoría no pueden estar vacíos' });
+  }
+
+  // [PREVENCIÓN DE DUPLICADOS] Evita crear dos veces el mismo repuesto (misma marca + modelo),
+  // un error frecuente al cargar inventario. Se compara sin distinguir mayúsculas ni espacios.
+  // El panel puede forzar la creación enviando `permitir_duplicado: true`.
+  if (!permitir_duplicado) {
+    const duplicado = db.prepare(
+      'SELECT id, marca, modelo FROM products WHERE LOWER(TRIM(marca)) = LOWER(TRIM(?)) AND LOWER(TRIM(modelo)) = LOWER(TRIM(?)) LIMIT 1'
+    ).get(safeMarca, safeModelo);
+    if (duplicado) {
+      return res.status(409).json({
+        success: false,
+        duplicado: true,
+        existingId: duplicado.id,
+        error: `Ya existe un repuesto igual en el catálogo: "${duplicado.marca} - ${duplicado.modelo}". Actualízalo en vez de crearlo de nuevo.`
+      });
+    }
   }
 
   const parsedPrice = parseFloat(precio_usd);
@@ -79,12 +118,12 @@ router.post('/', (req: Request, res: Response) => {
     INSERT INTO products (marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock, activo)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
   `).run(
-    marca.trim(),
-    modelo.trim(),
-    categoria.trim(),
+    safeMarca,
+    safeModelo,
+    safeCategoria,
     parsedPrice,
-    (descripcion || '').trim(),
-    (imagen_url || '').trim(),
+    typeof descripcion === 'string' ? descripcion.trim() : '',
+    typeof imagen_url === 'string' ? imagen_url.trim() : '',
     parsedStock
   );
 
@@ -93,15 +132,32 @@ router.post('/', (req: Request, res: Response) => {
   broadcast('products_updated', { action: 'created', id: result.lastInsertRowid });
   saveMasterSnapshotToDisk();
   res.json({ success: true, id: result.lastInsertRowid });
-});
+}));
 
 /**
  * PUT /api/products/:id
  * Modifica las propiedades, precio, existencias o estado de un producto existente.
  */
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', safe((req: Request, res: Response) => {
   const { id } = req.params;
   const { marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock, activo } = req.body;
+
+  // [INTEGRIDAD] El producto debe existir; antes se respondía "success" aunque el id no existiera.
+  const exists = db.prepare('SELECT id FROM products WHERE id = ?').get(id);
+  if (!exists) {
+    return res.status(404).json({ success: false, error: 'El repuesto indicado no existe en el catálogo.' });
+  }
+
+  // [VALIDACIÓN] Si se envía un campo de texto, no puede quedar vacío (rompería el catálogo).
+  const safeText = (val: any, campo: string): string | null | { error: string } => {
+    if (val === undefined) return null;
+    const t = String(val).trim();
+    if (!t) return { error: `El campo "${campo}" no puede quedar vacío.` };
+    return t;
+  };
+  const m = safeText(marca, 'marca'); if (m && typeof m === 'object') return res.status(400).json({ error: m.error });
+  const mo = safeText(modelo, 'modelo'); if (mo && typeof mo === 'object') return res.status(400).json({ error: mo.error });
+  const ca = safeText(categoria, 'categoría'); if (ca && typeof ca === 'object') return res.status(400).json({ error: ca.error });
 
   let parsedPrice: number | null = null;
   if (precio_usd !== undefined) {
@@ -135,12 +191,12 @@ router.put('/:id', (req: Request, res: Response) => {
         activo = COALESCE(?, activo)
     WHERE id = ?
   `).run(
-    marca ? marca.trim() : null,
-    modelo ? modelo.trim() : null,
-    categoria ? categoria.trim() : null,
+    m,
+    mo,
+    ca,
     parsedPrice,
-    descripcion !== undefined ? (descripcion || '').trim() : null,
-    imagen_url !== undefined ? (imagen_url || '').trim() : null,
+    descripcion !== undefined ? (typeof descripcion === 'string' ? descripcion.trim() : '') : null,
+    imagen_url !== undefined ? (typeof imagen_url === 'string' ? imagen_url.trim() : '') : null,
     parsedStock,
     activo !== undefined ? (activo ? 1 : 0) : null,
     id
@@ -151,20 +207,40 @@ router.put('/:id', (req: Request, res: Response) => {
   broadcast('products_updated', { action: 'updated', id });
   saveMasterSnapshotToDisk();
   res.json({ success: true });
-});
+}));
 
 /**
  * DELETE /api/products/:id
  * Elimina físicamente un producto del catálogo de la base de datos.
+ * [INTEGRIDAD] Rechaza el borrado si el producto tiene apartados activos, para no dejar
+ * reservas huérfanas y evitar inconsistencias de stock.
  */
 router.delete('/:id', (req: Request, res: Response) => {
-  const { id } = req.params;
-  db.prepare('DELETE FROM products WHERE id = ?').run(id);
-  clearCatalogCache();
-  invalidateProductCache();
-  broadcast('products_updated', { action: 'deleted', id });
-  saveMasterSnapshotToDisk();
-  res.json({ success: true });
+  try {
+    const { id } = req.params;
+    const activas = db.prepare(`
+      SELECT COUNT(*) AS c FROM reservations r
+      WHERE r.estado = 'activo' AND (
+        r.producto_id = ? OR (r.items_json IS NOT NULL AND r.items_json LIKE ?)
+      )
+    `).get(id, `%\"id\":${Number(id)}%`) as any;
+
+    if (activas && Number(activas.c) > 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'No se puede eliminar: este repuesto tiene un apartado activo. Cancela o entrega el apartado primero.'
+      });
+    }
+
+    db.prepare('DELETE FROM products WHERE id = ?').run(id);
+    clearCatalogCache();
+    invalidateProductCache();
+    broadcast('products_updated', { action: 'deleted', id });
+    saveMasterSnapshotToDisk();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /**

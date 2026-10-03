@@ -21,8 +21,10 @@ export async function cleanData(): Promise<void> {
   db.prepare('DELETE FROM bot_metrics').run();
   console.log('✅ bot_metrics vaciado (0)');
 
-  // 5. Eliminar productos de prueba (e.g. TEST-PIECE)
-  db.prepare("DELETE FROM products WHERE modelo LIKE '%TEST%' OR categoria LIKE '%Test%' OR marca = 'TEST'").run();
+  // 5. Eliminar SOLO productos de prueba creados por las suites (marcador exacto "TEST").
+  // [SEGURIDAD] No usar LIKE '%TEST%': en SQLite LIKE es case-insensitive y borraría
+  // inventario real cuyo modelo contenga "test" como subcadena (p. ej. "Contestador").
+  db.prepare("DELETE FROM products WHERE marca = 'TEST' OR modelo LIKE 'TEST%' OR modelo LIKE '% TEST%' OR categoria = 'Test'").run();
   console.log('✅ Productos de prueba eliminados');
 
   // 6. Estandarizar y corregir categorías para evitar discrepancias

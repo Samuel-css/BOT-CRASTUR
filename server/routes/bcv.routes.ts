@@ -54,11 +54,20 @@ router.post('/refresh', async (req: Request, res: Response) => {
  */
 router.post('/override', (req: Request, res: Response) => {
   const { activa, tasa } = req.body;
+
+  // [VALIDACIÓN] La tasa personalizada debe ser un número finito y positivo.
+  if (tasa !== undefined) {
+    const num = Number(tasa);
+    if (!Number.isFinite(num) || num <= 0) {
+      return res.status(400).json({ success: false, error: 'La tasa personalizada debe ser un número mayor a 0.' });
+    }
+  }
+
   if (activa !== undefined) {
     updateSetting('tasa_manual_activa', activa ? '1' : '0');
   }
   if (tasa !== undefined) {
-    updateSetting('tasa_personalizada', String(tasa));
+    updateSetting('tasa_personalizada', String(Number(tasa)));
   }
   clearCatalogCache();
   const nuevaTasaEfectiva = getEffectiveRate();

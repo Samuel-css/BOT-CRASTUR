@@ -46,7 +46,7 @@ export function runGuards(
   }
 
   // Validaciones de Mensajes Vacíos o de Confusión Extrema
-  if (/^[\?¿\s\.]+$/.test(text) && text.length >= 1) {
+  if (/^[\?¿\s\.]+$/.test(text)) {
     return `¡Hola! 👋 Veo tus signos de interrogación y entiendo que puede estar confundido/a. Le atiendo con toda la *paciencia* del mundo 🙌\n\nSoy el *asistente virtual* de la tienda física de *Crastur* en Caracas. Con gusto le ayudo a encontrar su repuesto:\n\n👉 Escriba el nombre de la pieza o el modelo de la moto, con sus propias palabras (ej: *"bujía"*, *"aceite"*, *"pastillas"*).\n👉 Si prefiere hablar con una *persona real*, escriba *ASESOR* o *HUMANO* y le comunicamos con el mostrador.\n👉 Escriba *MENU* para ver todas las opciones.`;
   }
 
@@ -65,6 +65,12 @@ export function runGuards(
       };
       const expectedField = stepNames[session.step] || 'el dato solicitado';
       return `¡Recibido! 📎 Recuerda que para completar tu apartado y emitir tu ticket oficial por 24 horas, necesitamos que nos indiques en texto ${expectedField}.\n\n_(Escribe *cancelar* si deseas salir)_`;
+    }
+    // [INTEGRIDAD] Si el usuario está eligiendo categoría de catálogo PDF y envía multimedia,
+    // se resetea el step para que el flujo no quede colgado en 'catalogo_esperando_opcion'.
+    if (session.step === 'catalogo_esperando_opcion') {
+      try { db.prepare("UPDATE chat_sessions SET step = 'start' WHERE jid = ?").run(jid); } catch (_) {}
+      session.step = 'start';
     }
     return handleMediaResponse(mediaInfo.type, pushName);
   }

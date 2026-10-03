@@ -509,16 +509,20 @@ export default function App() {
         fetch(`/api/reservations/${reservationId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ estado: 'retirado' })
+          // [INTEGRIDAD] El estado oficial del backend es 'entregado' (no 'retirado').
+          body: JSON.stringify({ estado: 'entregado' })
         })
-          .then(r => r.json())
-          .then(() => {
+          .then(async (r) => {
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || data.success === false) {
+              throw new Error(data.error || 'No se pudo actualizar el apartado');
+            }
             setReservationModal({ isOpen: false, data: null });
             loadReservations();
             loadProducts();
             toast.success('Apartado marcado como retirado ✅');
           })
-          .catch(() => toast.error('Error al actualizar el apartado'));
+          .catch((err) => toast.error(err.message || 'Error al actualizar el apartado'));
       }
     });
   };

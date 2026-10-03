@@ -34,6 +34,20 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
   const now = Date.now();
   const expiraEn = now + (24 * 60 * 60 * 1000); // 24 horas continuas de vigencia
 
+  // [INTEGRIDAD] Validación estricta de tipos ANTES de tocar el inventario.
+  // Evita que un `nombre: 123` descuente stock y luego falle al persistir la reserva.
+  const requireText = (value: any, field: string): string => {
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new Error(`El campo "${field}" del apartado es obligatorio y debe ser texto.`);
+    }
+    return value.trim();
+  };
+
+  const safeNombre = requireText(nombre, 'nombre');
+  const safeCedula = requireText(cedula, 'cedula').toUpperCase();
+  const safeTelefono = requireText(telefono, 'telefono');
+  const safeProductoNombre = typeof producto_nombre === 'string' ? producto_nombre.trim() : '';
+
   // Normalizar la lista de ítems a reservar: usa el detalle del combo si viene, o el producto único
   let itemsToReserve: Array<{ id: number; nombre: string }> = [];
   if (Array.isArray(items) && items.length > 0) {
@@ -41,7 +55,12 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
       .filter((it: any) => it && it.id !== undefined && it.id !== null)
       .map((it: any) => ({ id: Number(it.id), nombre: String(it.nombre || '') }));
   } else if (producto_id !== undefined && producto_id !== null && producto_id !== '') {
-    itemsToReserve = [{ id: Number(producto_id), nombre: String(producto_nombre || '') }];
+    itemsToReserve = [{ id: Number(producto_id), nombre: safeProductoNombre }];
+  }
+
+  // [INTEGRIDAD] Un apartado sin ítems dejaría stock inconsistente: se rechaza explícitamente.
+  if (itemsToReserve.length === 0 || itemsToReserve.some(it => !Number.isFinite(it.id))) {
+    throw new Error('El apartado debe incluir al menos un repuesto válido del catálogo.');
   }
 
   // Eliminar duplicados por id (un mismo producto no debe descontarse dos veces)
@@ -58,45 +77,63 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
     if (!prod) {
       throw new Error(`El repuesto "${item.nombre}" ya no está disponible en el catálogo.`);
     }
-    if (prod.stock !== null && prod.stock !== undefined && prod.stock <= 0) {
+    // [INTEGRIDAD] Un stock NULL se trata como 0 (agotado), no como "sin límite".
+    const stock = (prod.stock === null || prod.stock === undefined) ? 0 : Number(prod.stock);
+    if (!Number.isFinite(stock) || stock <= 0) {
       throw new Error(`El repuesto "${item.nombre || `${prod.marca} ${prod.modelo}`}" no cuenta con stock disponible para apartar.`);
     }
-  }
-
-  // 2. Descontar atómicamente una unidad de cada ítem del apartado
-  for (const item of itemsToReserve) {
-    db.prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0').run(item.id);
   }
 
   // Almacenar el detalle de ítems para poder reponer el stock exacto al vencer/cancelar
   const itemsJson = itemsToReserve.length > 0 ? JSON.stringify(itemsToReserve) : null;
 
-  const stmt = db.prepare(`
-    INSERT INTO reservations (jid, nombre, cedula, telefono, producto_id, producto_nombre, precio_usd, precio_bs, creado_en, expira_en, estado, items_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo', ?)
-  `);
-  const res = stmt.run(
-    jid || '',
-    nombre.trim(),
-    cedula.trim().toUpperCase(),
-    telefono.trim(),
-    producto_id || (itemsToReserve[0]?.id ?? null),
-    producto_nombre.trim(),
-    parseFloat(precio_usd) || 0,
-    parseFloat(precio_bs) || 0,
-    now,
-    expiraEn,
-    itemsJson
-  );
+  // [TRANSACCIÓN ATÓMICA] El descuento de stock y la inserción de la reserva se ejecutan
+  // como una sola unidad. Si el INSERT falla, se revierte TODO (ROLLBACK) y el inventario
+  // no queda descontado "a medias".
+  let lastInsertId = 0;
+  db.exec('BEGIN TRANSACTION;');
+  try {
+    for (const item of itemsToReserve) {
+      const upd = db.prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0').run(item.id);
+      const changed = db.prepare('SELECT changes() AS c').get()?.c;
+      if (!changed) {
+        throw new Error(`El repuesto "${item.nombre}" se agotó mientras se generaba el apartado.`);
+      }
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO reservations (jid, nombre, cedula, telefono, producto_id, producto_nombre, precio_usd, precio_bs, creado_en, expira_en, estado, items_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo', ?)
+    `);
+    const res = stmt.run(
+      jid || '',
+      safeNombre,
+      safeCedula,
+      safeTelefono,
+      producto_id || (itemsToReserve[0]?.id ?? null),
+      safeProductoNombre || itemsToReserve[0]?.nombre || '',
+      parseFloat(precio_usd) || 0,
+      parseFloat(precio_bs) || 0,
+      now,
+      expiraEn,
+      itemsJson
+    );
+    lastInsertId = res.lastInsertRowid;
+    db.exec('COMMIT;');
+  } catch (e) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    throw e;
+  }
+
   persistDB();
   return {
-    id: res.lastInsertRowid,
+    id: lastInsertId,
     jid,
-    nombre: nombre.trim(),
-    cedula: cedula.trim().toUpperCase(),
-    telefono: telefono.trim(),
+    nombre: safeNombre,
+    cedula: safeCedula,
+    telefono: safeTelefono,
     producto_id: producto_id || (itemsToReserve[0]?.id ?? null),
-    producto_nombre: producto_nombre.trim(),
+    producto_nombre: safeProductoNombre || itemsToReserve[0]?.nombre || '',
     precio_usd: parseFloat(precio_usd) || 0,
     precio_bs: parseFloat(precio_bs) || 0,
     creado_en: now,
@@ -134,6 +171,9 @@ export function restoreReservationStock(current: any): void {
 
 /**
  * Descuenta del inventario las unidades correspondientes a un apartado (al reactivarlo).
+ * [INTEGRIDAD] Valida que cada ítem tenga stock disponible antes de reactivar, evitando
+ * sobreventa silenciosa cuando el producto ya fue vendido durante el tiempo en que el
+ * apartado estuvo cancelado/vencido.
  */
 export function deductReservationStock(current: any): void {
   let items: Array<{ id: number }> = [];
@@ -150,6 +190,19 @@ export function deductReservationStock(current: any): void {
     items = [{ id: Number(current.producto_id) }];
   }
 
+  // 1. Verificación previa de disponibilidad real para todos los ítems del apartado
+  for (const it of items) {
+    const prod = db.prepare('SELECT id, stock, marca, modelo FROM products WHERE id = ?').get(it.id);
+    if (!prod) {
+      throw new Error(`No se puede reactivar el apartado: el repuesto #${it.id} ya no existe en el catálogo.`);
+    }
+    const stock = (prod.stock === null || prod.stock === undefined) ? 0 : Number(prod.stock);
+    if (!Number.isFinite(stock) || stock <= 0) {
+      throw new Error(`No se puede reactivar el apartado: "${prod.marca} ${prod.modelo}" no tiene stock disponible.`);
+    }
+  }
+
+  // 2. Descontar una unidad por cada ítem (sin bajar de 0 por seguridad)
   const seen = new Set<number>();
   for (const it of items) {
     if (seen.has(it.id)) continue;
@@ -220,15 +273,39 @@ export function cleanExpiredReservations() {
   const now = Date.now();
   const GRACE_PERIOD_MS = 12 * 60 * 60 * 1000; // 12 horas adicionales de gracia
 
-  // Paso 1: Vencer apartados que superaron las 24 horas y restituir inventario
+  // Paso 1: Vencer apartados que superaron las 24 horas y restituir inventario.
+  // [TRANSACCIÓN ATÓMICA] Marcar como 'vencido' y reponer el stock ocurre en una sola
+  // unidad: así, aunque dos timers (servidor, conexión, métricas) se solapen, ninguno
+  // puede reponer el mismo apartado dos veces (el UPDATE condicionado a estado='activo'
+  // y el conteo de filas afectadas garantizan exclusividad).
   const newlyExpired = db.prepare("SELECT id, producto_id, producto_nombre, nombre, items_json FROM reservations WHERE expira_en <= ? AND estado = 'activo'").all(now);
   if (newlyExpired.length > 0) {
-    for (const item of newlyExpired) {
-      db.prepare("UPDATE reservations SET estado = 'vencido' WHERE id = ?").run(item.id);
-      restoreReservationStock(item);
-      console.log(`[Apartados 24h] Apartado #${item.id} (${item.nombre} - ${item.producto_nombre}) marcado como VENCIDO. Stock restablecido.`);
+    const expiredIds: number[] = [];
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      for (const item of newlyExpired) {
+        const upd = db.prepare("UPDATE reservations SET estado = 'vencido' WHERE id = ? AND estado = 'activo'").run(item.id);
+        const changed = db.prepare('SELECT changes() AS c').get()?.c;
+        // Solo repone stock si ESTA ejecución fue la que marcó el apartado como vencido.
+        if (changed) {
+          restoreReservationStock(item);
+          expiredIds.push(item.id);
+        }
+      }
+      db.exec('COMMIT;');
+    } catch (e) {
+      try { db.exec('ROLLBACK;'); } catch {}
+      throw e;
     }
-    persistDB();
+
+    if (expiredIds.length > 0) {
+      persistDB();
+      for (const item of newlyExpired) {
+        if (expiredIds.includes(item.id)) {
+          console.log(`[Apartados 24h] Apartado #${item.id} (${item.nombre} - ${item.producto_nombre}) marcado como VENCIDO. Stock restablecido.`);
+        }
+      }
+    }
   }
 
   // Paso 2: Purgar definitivamente registros que sobrepasaron las 12 horas posteriores al vencimiento

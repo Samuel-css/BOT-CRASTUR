@@ -234,11 +234,16 @@ function searchByProductType(typeToken: string, extraTokens: string[] = []): any
 function searchMultipleProducts(query: string): any[] {
   if (!query) return [];
 
-  // Separadores conjuntivos en español
-  const parts = query
-    .split(/\s+y\s+|\s+con\s+|\s+mas\s+|\s*\+\s*|,\s*/i)
-    .map(p => p.trim())
+  // [CONSISTENCIA] Se divide el texto CRUDO por separadores explícitos (+, coma, y, con, más)
+  // y LUEGO se normaliza cada parte. Es necesario dividir antes de normalizar porque
+  // normalizeText elimina los símbolos "+" y "," (quedan como espacios) y se perderían.
+  // Antes "bujía + kit de arrastre" no se descomponía y devolvía un solo producto.
+  const rawParts = String(query)
+    .split(/\s*\+\s*|[,;/]|\s+y\s+|\s+con\s+|\s+m[aá]s\s+/i)
+    .map(p => normalizeText(p).trim())
     .filter(p => p.length >= 2);
+
+  const parts = rawParts;
 
   if (parts.length < 2) return [];
 
@@ -250,7 +255,10 @@ function searchMultipleProducts(query: string): any[] {
     if (results.length > 0) {
       const best = results[0];
       if (!foundMap.has(best.id)) {
-        foundMap.set(best.id, best);
+        // [CANTIDAD] Se extrae el número que precede al producto ("4 aceites" -> cantidad 4).
+        // Si no hay número, la cantidad por defecto es 1.
+        const qty = extractLeadingQuantity(part);
+        foundMap.set(best.id, qty > 1 ? { ...best, cantidad: qty } : best);
       }
       continue;
     }
@@ -268,7 +276,8 @@ function searchMultipleProducts(query: string): any[] {
       const extraTokens = partTokens.filter(t => t !== typeToken && !QUALIFIERS.has(t));
       const fallback = searchByProductType(typeToken, extraTokens);
       if (fallback && !foundMap.has(fallback.id)) {
-        foundMap.set(fallback.id, fallback);
+        const qty = extractLeadingQuantity(part);
+        foundMap.set(fallback.id, qty > 1 ? { ...fallback, cantidad: qty } : fallback);
       }
     }
   }
@@ -277,10 +286,37 @@ function searchMultipleProducts(query: string): any[] {
   return items.length >= 2 ? items : [];
 }
 
+/**
+ * Extrae la cantidad indicada al inicio de un fragmento de consulta.
+ * Soporta dígitos ("4 aceites", "2 bujías") y números escritos ("cuatro aceites").
+ *
+ * @param part - Fragmento normalizado (ej. "4 aceites")
+ * @returns Cantidad entre 1 y 99 (1 si no se indica)
+ */
+function extractLeadingQuantity(part: string): number {
+  const wordNums: Record<string, number> = {
+    un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6,
+    siete: 7, ocho: 8, nueve: 9, diez: 10, doce: 12
+  };
+  // Se busca un número en cualquier parte del fragmento ("dame 5 parches", "quiero 4").
+  const m = part.match(/\b(\d{1,2})\b/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    return n >= 1 && n <= 99 ? n : 1;
+  }
+  // Números escritos en palabras ("cuatro aceites", "tres parches")
+  const tokens = part.trim().split(/\s+/);
+  for (const tk of tokens) {
+    if (wordNums[tk]) return wordNums[tk];
+  }
+  return 1;
+}
+
 export {
   searchProductsFuzzy,
   searchMultipleProducts,
   searchByProductType,
+  extractLeadingQuantity,
   invalidateProductCache
 };
 
@@ -288,5 +324,6 @@ export default {
   searchProductsFuzzy,
   searchMultipleProducts,
   searchByProductType,
+  extractLeadingQuantity,
   invalidateProductCache
 };

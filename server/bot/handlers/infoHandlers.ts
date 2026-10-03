@@ -418,6 +418,26 @@ function handleLocationResponse(settings: Record<string, string>): string {
 }
 
 /**
+ * Explica con claridad y de forma cercana cómo comprar o apartar en Crastur.
+ * Pensado para clientes nuevos que preguntan "¿cómo compro?" o "¿cómo hago el pedido?".
+ *
+ * @param settings - Configuración general de la tienda
+ * @returns Guía amable de compra en 3 pasos
+ */
+function handleHowToBuyResponse(settings: Record<string, string>): string {
+  let msg = `¡Con mucho gusto te explico! 😊 Comprar en *Crastur* es muy fácil:\n\n`;
+  msg += `1️⃣ *Dime qué repuesto buscas.* Puedes escribir el nombre (ej. *"bujía"*, *"aceite 20w50"*, *"caucho"*) o responder con el número del menú.\n`;
+  msg += `2️⃣ *Te doy el precio* en dólares y en bolívares a tasa BCV, y te confirmo disponibilidad.\n`;
+  msg += `3️⃣ *Elige cómo recibirlo:*\n`;
+  msg += `   🏢 *Retiro en tienda* en San Agustín Norte (sin costo).\n`;
+  msg += `   🛵 *Delivery* en Caracas (motorizado).\n`;
+  msg += `   ⏱️ *Apartado por 24h* sin costo: escribe *APARTAR* y te guardo la pieza.\n\n`;
+  msg += `💳 Pagas en *Efectivo ($)*, *Binance Pay (USDT)*, *Pago Móvil* a tasa BCV o *Cashea* en tienda.\n\n`;
+  msg += `👉 Escríbeme el repuesto que necesitas y empezamos. Si prefieres una persona, escribe *VENDEDOR*.`;
+  return msg;
+}
+
+/**
  * Aclara educadamente que Crastur no comercializa repuestos internos pesados para automóviles de 4 ruedas.
  * 
  * @returns Mensaje delimitando el catálogo de motos y caucheras
@@ -501,6 +521,9 @@ function handleCategoryBrowseResponse(
   };
 
   const emoji = categoryEmojis[categoryName] || '📦';
+  // [CONSISTENCIA] Inicial Cashea configurable desde el panel.
+  const inicialPctCat = (parseFloat(settings.cashea_inicial_pct || '40') || 40) / 100;
+  const cuotasCat = parseInt(settings.cashea_cuotas || '3', 10);
   // [AGRUPACIÓN CANÓNICA] Incluye productos guardados en subcategorías del panel
   // (ej. "Lubricantes & Fluidos - ..." o "Repuestos Moto - ...") dentro de su menú.
   const prods: any[] = getProductsByCanonicalCategory(categoryName);
@@ -550,8 +573,8 @@ function handleCategoryBrowseResponse(
     msg += `   💵 Precio: *$${precioUsd.toFixed(2)} USD* _(🔥 ¡Descuento en divisas!)_\n`;
     msg += `   🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}*\n`;
     if (precioUsd >= 25) {
-      const n1 = precioUsd * 0.40;
-      msg += `   💛 Cashea: Inicial *$${n1.toFixed(2)} USD* + 3 cuotas\n`;
+      const n1 = precioUsd * inicialPctCat;
+      msg += `   💛 Cashea: Inicial *$${n1.toFixed(2)} USD* + ${cuotasCat} cuotas\n`;
     }
     msg += `   📦 Stock: ${p.stock > 0 ? '✅ Disponible en tienda' : '⚠️ Consultar'}\n\n`;
   });
@@ -587,6 +610,7 @@ export {
   handleAvailabilityResponse,
   handleLocationResponse,
   handleCarInquiryResponse,
+  handleHowToBuyResponse,
   handleElderlyOrConfusedResponse,
   handleHostilityOrComplaintResponse,
   handleCategoryBrowseResponse
@@ -612,6 +636,7 @@ export default {
   handleAvailabilityResponse,
   handleLocationResponse,
   handleCarInquiryResponse,
+  handleHowToBuyResponse,
   handleElderlyOrConfusedResponse,
   handleHostilityOrComplaintResponse,
   handleCategoryBrowseResponse

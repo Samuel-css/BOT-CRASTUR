@@ -34,8 +34,8 @@ import {
 
 // Utilidades y Reglas de Negocio
 import { normalizeText } from './utils/textUtils';
-import { isWithinBusinessHours, handleOutOfHoursTransactionResponse } from './services/businessRules';
-import { searchProductsFuzzy, searchMultipleProducts } from './services/searchService';
+import { handleOutOfHoursTransactionResponse } from './services/businessRules';
+import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from './services/searchService';
 import { extractVenezuelanPhones } from './utils/formatters';
 import { detectCaracasZone } from './utils/caracasDelivery';
 
@@ -66,6 +66,7 @@ import {
   handleAvailabilityResponse,
   handleLocationResponse,
   handleCarInquiryResponse,
+  handleHowToBuyResponse,
   handleCategoryBrowseResponse
 } from './handlers/infoHandlers';
 import { handleCasheaSmart, handleCasheaResponse } from './handlers/casheaHandlers';
@@ -354,19 +355,27 @@ function processIncomingMessageCore(
   const isKitProductSearch = norm.includes('kit de arrastre') || norm.includes('kit arrastre') ||
     norm.includes('kit de freno') || norm.includes('kit cadena') || norm.includes('kit pastilla');
 
+  // [PRIORIDAD DE PRODUCTO] Si el cliente describe un combo con repuestos concretos
+  // (ej. "combo de bujía y pastillas"), NO se debe responder el combo promocional genérico:
+  // gana la cotización real de esos productos. La sección solo atiende consultas de
+  // promociones/combos sin productos específicos.
+  const comboConProductosReales = searchMultipleProducts(text).length >= 2;
+
   if (
-    norm.includes('combo') ||
-    norm.includes('combos') ||
-    (!isKitProductSearch && norm.includes('kits')) ||
-    (!isKitProductSearch && norm === 'kit') ||
-    norm.includes('instagram') ||
-    norm.includes('promo') ||
-    norm.includes('promos') ||
-    norm.includes('promocion') ||
-    norm.includes('promociones') ||
-    norm.includes('vi en ig') ||
-    norm.includes('vi en instagram') ||
-    norm.includes('publicacion')
+    !comboConProductosReales && (
+      norm.includes('combo') ||
+      norm.includes('combos') ||
+      (!isKitProductSearch && norm.includes('kits')) ||
+      (!isKitProductSearch && norm === 'kit') ||
+      norm.includes('instagram') ||
+      norm.includes('promo') ||
+      norm.includes('promos') ||
+      norm.includes('promocion') ||
+      norm.includes('promociones') ||
+      norm.includes('vi en ig') ||
+      norm.includes('vi en instagram') ||
+      norm.includes('publicacion')
+    )
   ) {
     recordMetric('consulta_combos_instagram', text, jid);
     return handleInstagramCombosResponse(text, tasa, settings, session, jid);
@@ -698,7 +707,16 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 24] Búsqueda Multi-Producto / Carrito Combinado
   // ============================================================================
-  const multiProducts = searchMultipleProducts(text);
+  // [QUITAR DEL COMBO] Si el cliente pide quitar productos ("saca la bujía y el parche",
+  // "quita el aceite"), NO se debe interpretar como una búsqueda nueva de esos productos.
+  // Se deja pasar para que la sección 29 (selección contextual) procese la eliminación.
+  const pideQuitarEnCombo =
+    norm.includes('quita') || norm.includes('quitame') || norm.includes('quitar') ||
+    norm.includes('elimina') || norm.includes('eliminar') || norm.includes('remueve') ||
+    norm.includes('remover') || norm.includes('borra') || norm.includes('borrar') ||
+    norm.includes('saca ') || norm.includes('sacar ') || norm.startsWith('saca ') || norm.startsWith('sin ');
+
+  const multiProducts = pideQuitarEnCombo ? [] : searchMultipleProducts(text);
   if (multiProducts.length >= 2) {
     recordMetric('busqueda_multi_producto', `${multiProducts.length} repuestos`, jid);
 
@@ -826,10 +844,14 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 30] Menú Principal y Categorías Canónicas (1 a 6)
   // ============================================================================
+  // [ROBUSTEZ] La opción numérica del menú solo se acepta si el mensaje ORIGINAL es un
+  // dígito simple (ej. "1"), para que entradas raras como "-1" o "1." no activen el menú
+  // por accidente al normalizar (normalizeText convierte "-" en espacio y dejaría "1").
+  const esNumeroMenuSeguro = /^\s*[1-6]\s*$/.test(text);
 
   // 1️⃣ Insumos Cauchera
   if (
-    norm === '1' ||
+    (esNumeroMenuSeguro && norm === '1') ||
     norm === '1️⃣' ||
     norm === 'opcion 1' ||
     norm === 'insumos cauchera' ||
@@ -844,7 +866,7 @@ function processIncomingMessageCore(
 
   // 2️⃣ Repuestos Moto
   if (
-    norm === '2' ||
+    (esNumeroMenuSeguro && norm === '2') ||
     norm === '2️⃣' ||
     norm === 'opcion 2' ||
     norm === 'repuestos moto' ||
@@ -860,7 +882,7 @@ function processIncomingMessageCore(
 
   // 3️⃣ Accesorios Moto
   if (
-    norm === '3' ||
+    (esNumeroMenuSeguro && norm === '3') ||
     norm === '3️⃣' ||
     norm === 'opcion 3' ||
     norm === 'accesorios moto' ||
@@ -875,7 +897,7 @@ function processIncomingMessageCore(
 
   // 4️⃣ Otros Productos
   if (
-    norm === '4' ||
+    (esNumeroMenuSeguro && norm === '4') ||
     norm === '4️⃣' ||
     norm === 'opcion 4' ||
     norm === 'otros productos' ||
@@ -888,7 +910,7 @@ function processIncomingMessageCore(
 
   // 5️⃣ Cashea en Tienda
   if (
-    norm === '5' ||
+    (esNumeroMenuSeguro && norm === '5') ||
     norm === '5️⃣' ||
     norm === 'opcion 5'
   ) {
@@ -898,7 +920,7 @@ function processIncomingMessageCore(
 
   // 6️⃣ Hablar con un Asesor / Vendedor
   const wantsHumanAgent =
-    norm === '6' ||
+    (esNumeroMenuSeguro && norm === '6') ||
     norm === '6️⃣' ||
     norm === 'opcion 6' ||
     norm === 'vendedor' ||
@@ -933,9 +955,17 @@ function processIncomingMessageCore(
   if (
     norm.includes('cashea') ||
     norm.includes('financiamiento') ||
+    norm.includes('financiado') ||
+    norm.includes('financiar') ||
+    norm.includes('financiera') ||
+    norm.includes('a credito') ||
+    norm.includes('credito') ||
     norm.includes('cuotas') ||
+    norm.includes('cuota') ||
     norm.includes('inicial') ||
-    norm.includes('nivel')
+    norm.includes('nivel') ||
+    norm.includes('pagar por partes') ||
+    norm.includes('pago por partes')
   ) {
     recordMetric('consulta_cashea', text, jid);
     return handleCasheaSmart(text, norm, settings, tasa, session);
@@ -969,6 +999,27 @@ function processIncomingMessageCore(
   }
 
   // ============================================================================
+  // [SECCIÓN 32b] Cómo Comprar / Hacer un Pedido (Guía para Clientes Nuevos)
+  // ============================================================================
+  if (
+    norm.includes('como compro') ||
+    norm.includes('como comprar') ||
+    norm.includes('como hago para comprar') ||
+    norm.includes('como puedo comprar') ||
+    norm.includes('como se compra') ||
+    norm.includes('como hago un pedido') ||
+    norm.includes('como pido') ||
+    norm.includes('como hago el pedido') ||
+    norm.includes('como hacer el pedido') ||
+    norm.includes('quiero comprar') ||
+    norm.includes('quiero hacer un pedido') ||
+    norm.includes('como se hace la compra')
+  ) {
+    recordMetric('consulta_como_comprar', text, jid);
+    return handleHowToBuyResponse(settings);
+  }
+
+  // ============================================================================
   // [SECCIÓN 33] Búsqueda Difusa en Catálogo (Fuzzy Search Levenshtein)
   // ============================================================================
   const productSearchResults = searchProductsFuzzy(text);
@@ -989,12 +1040,16 @@ function processIncomingMessageCore(
       prevHistory = [];
     }
 
+    // [CANTIDAD] Si el cliente pidió una cantidad ("quiero 4 aceites"), se propaga a cada
+    // resultado para que, al elegir el número, el carrito respete esa cantidad.
+    const qtySolicitada = extractLeadingQuantity(norm);
     const currentMatches = productSearchResults.map(p => ({
       id: p.id,
       marca: p.marca,
       modelo: p.modelo,
       precio_usd: p.precio_usd,
-      categoria: p.categoria
+      categoria: p.categoria,
+      ...(qtySolicitada > 1 ? { cantidad: qtySolicitada } : {})
     }));
 
     const combinedHistory = [...currentMatches];
@@ -1015,6 +1070,22 @@ function processIncomingMessageCore(
     `).run(firstProd.id, `${firstProd.marca} ${firstProd.modelo}`, contextJson, yaSeguido ? 1 : 0, jid);
 
     if (productSearchResults.length === 1) {
+      // [CANTIDAD] Si el cliente pide una cantidad mayor a 1 de un solo producto
+      // ("4 aceites", "2 bujías"), se muestra el carrito con esa cantidad en vez de la ficha simple.
+      const qty = extractLeadingQuantity(norm);
+      if (qty > 1) {
+        const conCantidad = [{ ...firstProd, cantidad: qty }];
+        const contextQty = JSON.stringify([{
+          id: firstProd.id, marca: firstProd.marca, modelo: firstProd.modelo,
+          precio_usd: firstProd.precio_usd, categoria: firstProd.categoria, cantidad: qty
+        }]);
+        db.prepare(`
+          UPDATE chat_sessions
+          SET contexto_productos = ?, ultimo_producto_id = ?, ultimo_producto_nombre = ?, seguimiento_enviado = 0
+          WHERE jid = ?
+        `).run(contextQty, firstProd.id, `${firstProd.marca} ${firstProd.modelo}`, jid);
+        return handleMultiProductResults(conCantidad, tasa, settings, session, text);
+      }
       return handleSingleProductDetail(firstProd, tasa, settings, session);
     }
 
@@ -1078,7 +1149,22 @@ function processIncomingMessageCore(
     norm.includes('que mas') ||
     norm.includes('que tal') ||
     norm.includes('saludos') ||
-    norm.includes('mi pana')
+    norm.includes('mi pana') ||
+    // [CLIENTE NUEVO] Preguntas de sondeo: "¿qué tienen?", "¿qué venden?", "¿qué manejan?".
+    // Deben mostrar el menú de categorías, no un fallback genérico.
+    norm === 'que tienen' ||
+    norm === 'que venden' ||
+    norm === 'que manejan' ||
+    norm === 'que tienen disponible' ||
+    norm === 'que ofrecen' ||
+    norm === 'que productos tienen' ||
+    norm === 'que productos venden' ||
+    norm === 'que venden aqui' ||
+    norm === 'que tienes' ||
+    norm.startsWith('que venden ') ||
+    norm.startsWith('que tienen ') ||
+    norm === 'tienen catalogo' ||
+    norm === 'que hay'
   ) {
     recordMetric('saludo_menu', text, jid);
     if (jid) {

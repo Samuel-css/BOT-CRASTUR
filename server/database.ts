@@ -133,13 +133,17 @@ async function initDB() {
   // 3. Creación de tablas, migraciones de esquema, índices y valores por defecto
   applySchemaAndMigrations();
 
-  // Garantizar que la tabla de vendedores inicie limpia (0 asesores ficticios de prueba)
-  // y normalizar categorías históricas para prevenir discordancias.
+  // Normalizar categorías históricas para prevenir discordancias entre versiones.
+  //
+  // [ADVERTENCIA / NO REINTRODUCIR BORRADOS AUTOMÁTICOS]
+  // Versiones anteriores ejecutaban aquí un `DELETE FROM products WHERE modelo LIKE '%TEST%'...`.
+  // Eso BORRABA inventario real en cada arranque, porque en SQLite `LIKE` es *case-insensitive*
+  // y compara por subcadena: "Con-test-ador" o "Protesta" contienen "test". Nunca se debe
+  // eliminar catálogo del cliente de forma automática; la limpieza de datos de prueba es
+  // responsabilidad exclusiva de los scripts `npm run clean` / `npm run reset`.
   try {
-    db.prepare("DELETE FROM sellers WHERE nombre LIKE ?").run('%Asesor de Repuestos%');
     db.prepare("UPDATE products SET categoria = 'Repuestos Moto' WHERE categoria = 'Repuestos para Moto' OR categoria LIKE 'Repuestos para Moto%'").run();
     db.prepare("UPDATE products SET categoria = 'Insumos Cauchera' WHERE categoria = 'Insumos para Caucheras' OR categoria LIKE 'Insumos para Caucheras%'").run();
-    db.prepare("DELETE FROM products WHERE modelo LIKE '%TEST%' OR categoria LIKE '%Test%' OR marca = 'TEST'").run();
 
     const curMetodos = db.prepare("SELECT value FROM settings WHERE key = 'metodos_pago'").get()?.value;
     if (curMetodos && curMetodos.includes('Precio Promoción') && curMetodos.includes('Efectivo $')) {

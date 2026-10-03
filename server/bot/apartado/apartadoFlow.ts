@@ -47,6 +47,21 @@ function detectInterruption(text: string, norm: string): { type: string } | null
     return { type: 'cancel' };
   }
 
+  // [SALIDA DE EMERGENCIA] Comandos universales que SIEMPRE deben poder escapar del flujo de
+  // apartado (menú, saludo, catálogo, catálogo PDF, hablar con asesor). Sin esto, un cliente
+  // que inicia un apartado y luego escribe "hola" o "1" queda atrapado hasta cancelar o completar.
+  // Se clasifican como 'general_question' para que el router les dé una salida útil.
+  if (
+    norm === 'menu' || norm === 'inicio' || norm === 'ayuda' ||
+    norm === 'hola' || norm.startsWith('hola ') || norm === 'ola' ||
+    norm === '1' || norm === '2' || norm === '3' || norm === '4' || norm === '5' || norm === '6' ||
+    norm.includes('catalogo') || norm.includes('catalogos') ||
+    norm.includes('vendedor') || norm.includes('asesor') || norm.includes('humano') ||
+    norm.includes('no me interesa') || norm.includes('dejame')
+  ) {
+    return { type: 'general_question' };
+  }
+
   // Detección de intención de anexar un repuesto adicional al apartado (construcción de combo)
   const wantsToAddProduct =
     norm.includes('agrega') ||
@@ -257,8 +272,12 @@ function handleInterruptionResponse(
     answer = `🛡️ *Garantía:* Todos nuestros repuestos cuentan con garantía contra defectos de fábrica y garantía de calce (cambio inmediato en tienda con empaque original).`;
   } else if (norm.includes('tasa') || norm.includes('dolar') || norm.includes('bcv')) {
     answer = `🇻🇪 *Tasa BCV:* Calculamos todos los pagos a tasa oficial BCV del día (Bs. ${formatRate(tasa)} / USD).`;
+  } else if (norm.includes('menu') || norm === 'hola' || norm.startsWith('hola ') || norm === 'catalogo' || norm.includes('catalogo')) {
+    answer = `👋 Puedes escribir *MENU* para ver todas las opciones, *CATALOGO* para los PDF, o directamente el repuesto que buscas. También puedes escribir *CANCELAR* para salir del apartado.`;
   } else {
-    answer = `Con gusto te aclaramos cualquier consulta.`;
+    // [NO ATRAPAR AL CLIENTE] Si no se reconoce la consulta, se da una salida clara en vez de
+    // repetir un genérico vacío. El cliente siempre puede cancelar para volver a consultar.
+    answer = `Con gusto te ayudamos. Si deseas continuar con el apartado, responde el dato solicitado. También puedes escribir *CANCELAR* para salir del apartado y consultar cualquier otra cosa del catálogo.`;
   }
 
   return `${answer}\n\n━━━━━━━━━━━━━━━━━━━━━\n📌 _Para completar tu apartado por 24 horas:_\n${stepPrompt}`;
@@ -388,8 +407,21 @@ function initiateApartadoFlow(
 
   const isComboAlready = session.ultimo_producto_nombre && session.ultimo_producto_nombre.startsWith('Combo');
 
-  if ((isComboAlready || wantsBoth) && Array.isArray(comboItems) && comboItems.length >= 2) {
-    const selectedItems = wantsBoth ? comboItems.slice(0, 2) : comboItems;
+  // [CONTEXTO] El cliente puede pedir "apartar todo lo que te pedí", "todo eso", "la cotización",
+  // refiriéndose a los productos ya cotizados en la conversación. En ese caso se aparta el combo completo.
+  const wantsEverything =
+    norm.includes('todo lo que') ||
+    norm.includes('todo eso') ||
+    norm.includes('todo esto') ||
+    norm.includes('todo el pedido') ||
+    norm.includes('todos los productos') ||
+    norm.includes('la cotizacion') ||
+    norm.includes('el combo completo') ||
+    norm.includes('todos') ||
+    norm.includes('todo');
+
+  if ((isComboAlready || wantsBoth || wantsEverything) && Array.isArray(comboItems) && comboItems.length >= 2) {
+    const selectedItems = (wantsBoth && !wantsEverything) ? comboItems.slice(0, 2) : comboItems;
     const comboTotalUsd = selectedItems.reduce((sum, p) => sum + (parseFloat(p.precio_usd) || 0), 0);
     const comboTitle = `Combo: ${selectedItems.map(p => `${p.marca} ${p.modelo}`).join(' + ')}`;
     const metadata = {
@@ -694,7 +726,13 @@ function handleApartadoTelefono(
     norm === 'usa este' ||
     norm === 'claro' ||
     norm === 'dale' ||
-    norm === 'por favor';
+    norm === 'por favor' ||
+    norm === 'confirmo' ||
+    norm === 'te confirmo' ||
+    norm === 'correcto' ||
+    norm === 'afirmativo' ||
+    norm === 'asi es' ||
+    norm === 'exacto';
 
   if (!isAffirmative) {
     const promptMsg = isLid

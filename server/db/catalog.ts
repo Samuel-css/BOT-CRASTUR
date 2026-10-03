@@ -23,18 +23,35 @@ export function exportCatalog() {
 
 /**
  * Importa por lote una colección de productos al catálogo de la tienda.
+ * [UPSERT SIN DUPLICADOS] Si un producto ya existe (misma marca + modelo), se ACTUALIZA
+ * en lugar de insertarse de nuevo. Antes, reimportar el mismo catálogo duplicaba todo el
+ * inventario, un problema grave y muy común al migrar entre versiones o PCs.
+ *
+ * @param productsList - Lista de productos a importar
+ * @returns Conteo de productos nuevos y actualizados
  */
 export function importCatalog(productsList: any[]) {
   if (!Array.isArray(productsList)) throw new Error('El formato debe ser una lista de productos');
 
+  const findStmt = db.prepare(
+    'SELECT id FROM products WHERE LOWER(TRIM(marca)) = LOWER(TRIM(?)) AND LOWER(TRIM(modelo)) = LOWER(TRIM(?)) LIMIT 1'
+  );
   const insertStmt = db.prepare(`
     INSERT INTO products (marca, modelo, categoria, precio_usd, descripcion, stock, activo)
     VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
+  const updateStmt = db.prepare(`
+    UPDATE products SET categoria = ?, precio_usd = ?, descripcion = ?, stock = ?, activo = 1 WHERE id = ?
+  `);
 
-  let count = 0;
+  let inserted = 0;
+  let updated = 0;
   for (const p of productsList) {
     if (p.marca && p.modelo && p.precio_usd !== undefined) {
+      const marca = String(p.marca).trim();
+      const modelo = String(p.modelo).trim();
+      if (!marca || !modelo) continue;
+
       let cat = String(p.categoria || 'Otros Productos').trim();
       if (cat === 'Repuestos para Moto' || cat.startsWith('Repuestos para Moto')) {
         cat = cat.replace('Repuestos para Moto', 'Repuestos Moto');
@@ -43,20 +60,23 @@ export function importCatalog(productsList: any[]) {
         cat = cat.replace('Insumos para Caucheras', 'Insumos Cauchera');
       }
 
-      insertStmt.run(
-        String(p.marca).trim(),
-        String(p.modelo).trim(),
-        cat,
-        parseFloat(p.precio_usd) || 0,
-        String(p.descripcion || '').trim(),
-        parseInt(p.stock || 1, 10)
-      );
-      count++;
+      const precio = parseFloat(p.precio_usd) || 0;
+      const desc = String(p.descripcion || '').trim();
+      const stock = parseInt(p.stock || 1, 10);
+
+      const existing = findStmt.get(marca, modelo);
+      if (existing) {
+        updateStmt.run(cat, precio, desc, stock, existing.id);
+        updated++;
+      } else {
+        insertStmt.run(marca, modelo, cat, precio, desc, stock);
+        inserted++;
+      }
     }
   }
 
   persistDB();
-  return { success: true, count };
+  return { success: true, count: inserted + updated, inserted, updated };
 }
 
 /**

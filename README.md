@@ -65,11 +65,15 @@ un **Panel de Instalación y Mantenimiento** con botones, donde puedes:
 npm run instalar    # Abre el panel visual de instalación y respaldos
 ```
 
+> **Nota para Linux/macOS:** `crastur.sh` confía en que la instalación ya existe. Si es la primera
+> vez, ejecuta primero `npm install` y `npm run build`.
+
 ---
 
 ### 🛑 CÓMO APAGAR CRASTUR:
 
-Al apagar el sistema se guarda la base de datos de inmediato (`persistDB()`), se desconecta la sesión de WhatsApp de forma limpia y se libera el puerto `3333`.
+Al apagar el sistema se guarda la base de datos de inmediato (`persistDB()`), se desconecta la sesión
+de WhatsApp de forma limpia (incluyendo sus temporizadores internos) y se libera el puerto `3333`.
 
 1. **🔴 Desde la propia Interfaz Web (Oficial y más cómoda):**  
    En la barra superior del panel (esquina superior derecha, al lado del botón de WhatsApp), haz clic en el botón rojo **"Apagar"**.  
@@ -103,6 +107,33 @@ npm start
 4. Apunta la cámara de tu celular y escanea el código **QR** que aparece en pantalla.
 5. Una vez conectado, el panel mostrará el estado en verde **Conectado** y el bot comenzará a responder automáticamente a los clientes.
 
+> **Nota:** las credenciales de la sesión se guardan en `data/auth_info_baileys/`. Esa carpeta está
+> excluida del repositorio por seguridad. Si cambias de PC, deberás escanear el QR de nuevo.
+
+---
+
+## 💾 Respaldos: tu tranquilidad, garantizada
+
+Crastur protege tus datos de varias formas, todas automáticas:
+
+- **Al apagar**: el botón rojo **"Apagar"** guarda un respaldo completo de la jornada (ventas,
+  apartados, catálogo y configuración) antes de cerrar.
+- **Cada día**: se conserva un respaldo con fecha y se mantienen los **últimos 7 días**.
+- **Copia maestra**: una copia adicional lista para la auto-recuperación ante fallos.
+- **Recuperación automática**: si el archivo principal se dañara por un apagón, al encender el
+  sistema lo detecta y **restaura solo** desde el respaldo más reciente.
+- **Respaldo portable**: desde el **Panel de Instalación** (`Instalar.bat` / `npm run instalar`)
+  puedes guardar tu **Catálogo + Asesores** en un archivo para llevarlo a otra PC.
+
+### Cómo restaurar tus datos con total seguridad
+1. Abre el **Panel de Instalación y Mantenimiento**.
+2. Si Crastur está encendido, el panel te pedirá con calma **cerrarlo primero** (así tus datos
+   quedan protegidos). Ciérralo con el botón **"Apagar"** del panel administrativo.
+3. Entra a **Copias de Seguridad**, elige tu respaldo y pulsa **Restaurar**. Listo.
+
+> Tus respaldos y tu base de datos **nunca se suben a internet ni al repositorio**: son 100% locales
+> y privados.
+
 ---
 
 ## 🗂️ Las 4 Categorías Comerciales de Crastur
@@ -115,6 +146,10 @@ El bot y el inventario están organizados en 4 líneas comerciales maestras sin 
 | 🏍️ **Repuestos Moto** | Kits de arrastre reforzados (cadena 428H, piñón, corona), pastillas y bandas de freno, bujías de encendido (NGK), repuestos de motor y tripas aro 18/17. |
 | 🪖 **Accesorios Moto** | Puños para manubrio, mallas porta-casco (pulpos), retrovisores, luces exploradoras LED, fundas y spray para cadena. |
 | 📦 **Otros Productos** | Aceites de motor 4T/2T (Motul 20W50), refrigerantes para radiador, limpiadores de inyectores, aditivos de combustible y bombillos. |
+
+> Los productos guardados en **subcategorías** (por ejemplo `Repuestos Moto - Frenos` o
+> `Lubricantes & Fluidos`) se agrupan automáticamente dentro de su línea canónica, así que el bot
+> nunca los pierde.
 
 ### 🧭 Menú Numérico de Bienvenida del Bot (1 al 6)
 El bot responde tanto a preguntas en lenguaje natural como a selecciones numéricas directas desde el menú de inicio:
@@ -131,7 +166,7 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 
 ### 1. 🕒 Horario Crastur: Semana vs. Cierre Temprano Dominical
 - **Horario Predeterminado Oficial:** `Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM`.
-- **Motor Horario Inteligente (`businessRules.js`):**
+- **Motor Horario Inteligente (`businessRules.ts`):**
   - Evalúa la hora oficial en zona de Caracas (UTC-4).
   - De lunes a sábado opera en horario corrido (8:00 AM a 8:00 PM).
   - Los domingos aplica el horario especial de cierre temprano (8:30 AM a 2:00 PM) o cerrado si el comerciante lo configura así.
@@ -143,25 +178,43 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
   - Si un repuesto cuesta menos de $25 USD (ej. aceite a $6 o bujía a $3.50), el vendedor puede sumar cantidades con `[-] [qty] [+]` o pulsar **"Sumar a Combo Cashea"** para armar un paquete personalizado.
   - **Barra de Progreso Dinámica:** Muestra en tiempo real cuánto dinero falta para alcanzar los $25 USD y chips con sugerencias rápidas.
   - **Cotización para WhatsApp en 1 Clic:** Genera un mensaje detallado con subtotales, total en $ y Bs, inicial según el nivel del cliente (Nivel 1: 40%, Nivel 2: 30%, Nivel 3+: 20%), 3 cuotas quincenales exactas y dirección para retirar en San Agustín Norte.
+- **Configurable:** el porcentaje de inicial (`cashea_inicial_pct`) y el número de cuotas (`cashea_cuotas`)
+  se leen desde **Configuración**, por lo que tanto el chat como el PDF muestran siempre los valores reales de la tienda.
 
 ### 3. 🇻🇪 Tasa Oficial BCV en Vivo (Estricta a 2 Decimales)
 - Conexión directa y automática al Banco Central de Venezuela. Todos los precios se muestran en dólares (`$ USD`) y en bolívares (`Bs.`) calculados con la tasa del día oficial (sin recargos punitivos).
 - Resalta siempre el beneficio del **precio especial con descuento directo pagando en efectivo en divisas** en tienda física.
+- Si no hay internet, el sistema cae en cascada a un espejo (DolarApi) y finalmente a la última tasa guardada, para no dejar los precios en blanco.
 
 ### 4. 🛒 Búsqueda Difusa (*Fuzzy Search*) y Venezolanismos
 - Si el cliente escribe con faltas de ortografía o modismos (*"chamo tienes pastiyas y bujya?"*), el motor identifica los repuestos exactos sin mezclar categorías ajenas.
+- Soporta múltiples productos en un solo mensaje (*"bujía y más aceite motul"*), incluyendo la conjunción con tilde.
 
 ### 5. ⏱️ Flujo de Apartado por 24 Horas sin Costo
 - Los clientes pueden reservar repuestos para retirar en tienda física en San Agustín Norte:
   1. **Nombre y Apellido:** Validación de persona real (rechaza apodos).
-  2. **Cédula de Identidad:** Validación venezolana (`V-` o `E-`).
+  2. **Cédula de Identidad:** Validación venezolana (`V-` o `E-`, y RIF `J-`).
   3. **Teléfono de Contacto:** Normalización a formato nacional (`0412`, `0414`, `0424`, `0416`, `0426`).
   4. **Emisión de Comprobante:** Genera un ticket digital oficial con código único `CRA-` y fecha límite estricta de 24 horas continuas más 12 horas de gracia.
-- **Protección de Datos:** Incorpora leyenda legal conforme al **Art. 28 de la CRBV**.
+- **Tolerante a interrupciones:** el cliente puede consultar precios, delivery o el total en medio del apartado sin perder sus datos. También puede escribir `CANCELAR` en cualquier momento.
+- **Protección de Datos:** Incorpora leyenda legal de confidencialidad conforme a la normativa venezolana.
 
 ### 6. 🛵 Delivery en Caracas y Métodos de Pago
 - Reconoce sectores de la Gran Caracas (San Agustín, Centro, Chacao, Catia, El Valle, Baruta, Petare, etc.) e informa tarifas estimadas de motorizado.
 - Métodos configurables con tarjetas interactivas de encendido/apagado en 1 clic (Efectivo $, Binance USDT, Pago Móvil BCV, Cashea, Punto de Venta y Transferencia).
+
+### 7. 🚫 No Molestar (Opt-Out) Coherente
+- Si un cliente pide *"no me escriban más"*, el sistema detiene **todos los mensajes automáticos
+  proactivos** (seguimientos y recordatorios), pero **no bloquea al cliente**: si vuelve a escribir,
+  el bot lo atiende con normalidad, tal como promete el mensaje de confirmación.
+
+### 8. 💾 Respaldo que nunca pierde la jornada
+- Cada vez que apagas Crastur con el botón **"Apagar"**, el sistema guarda automáticamente un
+  **respaldo del día** con todas las ventas, apartados y cambios. Antes de apagar, tus datos quedan
+  asegurados sin que tengas que hacer nada.
+- Además, se mantiene una copia maestra y hasta **7 días de respaldos** en `data/backups/`.
+- Si la base de datos se dañara por un corte de energía, el sistema **se recupera solo** al encender,
+  usando el respaldo más reciente.
 
 ---
 
@@ -170,11 +223,12 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 El sistema incluye comandos dedicados para mantenimiento, diagnóstico y verificación:
 
 ```bash
-# 🧪 Ejecutar suite de estrés y validación extrema (202 pruebas del bot)
+# 🧪 Ejecutar suite de estrés y validación extrema (204 pruebas del bot)
 # Corre sobre una base de datos temporal: NO toca el catálogo real ni los respaldos.
 npm test
 
-# 🖥️ Ejecutar pruebas E2E de la interfaz web (18 pruebas en Chrome headless)
+# 🖥️ Ejecutar pruebas E2E de la interfaz web (Chrome headless)
+# Requiere tener Chrome/Chromium instalado; si no lo encuentra, avisa y no falla en falso.
 npm run test:ui
 
 # 📦 Preparar el sistema para entrega u otra PC (100% limpio)
@@ -185,7 +239,7 @@ npm run preparar-entrega -- --confirmar
 # 🔄 Restablecimiento limpio de fábrica (Opción A: 0 productos para producción)
 npm run reset
 
-# 🧹 Limpieza operacional (mensajes y métricas a cero)
+# 🧹 Limpieza operacional (mensajes, apartados y métricas a cero)
 npm run clean
 
 # 💾 Exportar Catálogo + Asesores a un respaldo portable
@@ -207,6 +261,10 @@ npm run stop
 
 > **Nota:** `npm test` y `npm run test:ui` se ejecutan sobre una **base de datos temporal aislada**, por lo que **no modifican** tu catálogo, tus chats, tus respaldos ni la sesión de WhatsApp reales.
 
+> **Importante:** `npm run clean` y `npm run reset` **borran chats, apartados y métricas**. Úsalos solo
+> cuando de verdad quieras dejar el sistema a cero. No borran tu catálogo de productos (salvo `reset`,
+> que lo deja vacío por diseño de entrega limpia).
+
 ---
 
 ## 📂 Estructura del Proyecto
@@ -216,6 +274,7 @@ crastur/
 ├── Crastur.bat                 # Lanzador principal de 1 clic para Windows
 ├── Crastur_SegundoPlano.vbs    # Lanzador silencioso en segundo plano para Windows
 ├── launcher.js                 # Verificador inteligente de arranque y auto-respaldo
+├── crastur.sh                  # Lanzador para Linux / macOS
 ├── crastur.ico                 # Icono oficial del sistema
 ├── Instalar.bat                # Instalador visual de 1 clic para Windows
 ├── package.json                # Scripts de inicio, mantenimiento y pruebas
@@ -223,16 +282,16 @@ crastur/
 │   └── server.js               # Panel de Instalación y Mantenimiento (navegador)
 ├── scripts/
 │   ├── reset_clean_install.ts  # Reseteo de fábrica para producción limpia (0 productos)
-│   ├── preparar_entrega.ts     # Limpieza total para copiar a otra PC / entregar (npm run preparar-entrega)
+│   ├── preparar_entrega.ts     # Limpieza total para copiar a otra PC / entregar
 │   ├── clean_data.ts           # Limpieza operacional a cero
 │   ├── migrar_catalogo_asesores.ts # Respaldo/restauración de catálogo y asesores
-│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 202 pruebas del bot
+│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 204 pruebas del bot
 │   ├── run_stress_and_edge_tests_isolated.js # Runner que ejecuta las pruebas en BD temporal
 │   └── run_ui_e2e_tests.ts      # Pruebas E2E de la interfaz web (Chrome headless)
 │
 ├── client/                     # Panel web administrativo (React + Vite + TailwindCSS)
 │   ├── src/                    # Código fuente de vistas responsivas y modales
-│   └── dist/                   # Bundle de producción optimizado
+│   └── dist/                   # Bundle de producción optimizado (versionado)
 │
 ├── server/                     # Backend modular en Node.js + TypeScript
 │   ├── bot/                    # MOTOR MODULAR DEL BOT DE WHATSAPP
@@ -242,12 +301,16 @@ crastur/
 │   │   ├── apartado/           # Flujo y validaciones de reserva por 24h
 │   │   ├── followUp/           # Seguimiento inteligente sin spam
 │   │   ├── handlers/           # Manejadores de intención (categorías, cashea, info, etc.)
-│   │   ├── services/           # Búsqueda difusa y reglas comerciales (horarios domingo/semana)
+│   │   ├── services/           # Búsqueda difusa, reglas comerciales y PDF del catálogo
 │   │   └── utils/              # Formateadores BCV, delivery de Caracas y anti-spam
 │   ├── db/                     # Módulos de acceso a datos (catálogo, reservas, respaldos...)
+│   │   ├── engine.ts           # Singleton SQL.js, persistencia atómica y whenReady
+│   │   ├── schema.ts           # Esquema, migraciones e índices
+│   │   ├── reservations.ts     # Apartados 24h con transacciones y control de stock
+│   │   └── ...
 │   ├── whatsapp/               # Conexión Baileys modular (conexión, envío, ingesta...)
 │   ├── routes/                 # API REST modular (productos, apartados, ajustes...)
-│   ├── database.ts             # Base de datos SQLite local (sql.js) con auto-respaldos
+│   ├── database.ts             # Barril del subsistema de base de datos SQLite (sql.js)
 │   ├── whatsappService.ts      # Fachada de la conexión WhatsApp (Baileys)
 │   ├── bcvService.ts           # Sincronización oficial con el BCV
 │   └── server.ts               # Servidor Express y WebSockets
@@ -255,7 +318,8 @@ crastur/
 └── data/                       # Datos locales persistentes (NO BORRAR)
     ├── crastur.db              # Base de datos local
     ├── backups/                # Copias de seguridad automáticas diarias
-    └── auth_info_baileys/      # Sesión guardada de WhatsApp
+    ├── catalogs/               # PDF de catálogos generados
+    └── auth_info_baileys/      # Sesión guardada de WhatsApp (secreta, no se versiona)
 ```
 
 ---
@@ -268,6 +332,9 @@ Siguiendo la **Opción A**, el sistema de producción se entrega **100% limpio**
 - **Descargando desde Git** (clonado o RAR/ZIP del repositorio): arranca **limpio automáticamente**, porque la base de datos, los respaldos y la sesión de WhatsApp están excluidos del repositorio (`.gitignore`). No hay que hacer nada.
 - **Copiando la carpeta a mano a otra PC**: primero ejecuta `npm run preparar-entrega -- --confirmar` en la PC de origen. Ese comando respalda los datos fuera del proyecto y deja la instalación limpia (0 productos, sin chats, sin respaldos y sin la sesión de WhatsApp).
 - **Para volver a cero en cualquier momento**: ejecuta `npm run reset`.
+
+> ⚠️ El sistema **nunca borra productos automáticamente al arrancar**. La limpieza de datos de prueba
+> es responsabilidad exclusiva de `npm run clean` / `npm run reset`.
 
 ### 2. ¿Qué pasa si la tienda abre un domingo y cierra más temprano?
 En **Configuración** ➔ **1. Mi Tienda & Horario**, puedes seleccionar el preset oficial **Horario Completo Crastur** (`Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM`) o personalizar las horas exactas de apertura y cierre para domingos. El bot respetará el horario de forma autónoma.
@@ -293,6 +360,11 @@ Sí, **mientras la PC esté encendida**. Atiende consultas de catálogo, precios
 ### 7. ¿Cómo sé qué repuestos me faltan por cargar?
 En el **Dashboard** verás la tarjeta **"Inventario por Línea Comercial"**: muestra cuántos productos tienes en cada categoría y marca en amarillo las que están **sin productos**, para que sepas qué falta cargar.
 
+### 8. Comencé un apartado y quiero consultar otra cosa, ¿puedo?
+Sí. Mientras el bot pide tu nombre, cédula o teléfono, puedes preguntar precios, delivery, total u
+horario sin perder el avance. Si quieres salir por completo, escribe **`CANCELAR`** y el bot vuelve
+al inicio. También puedes escribir **`MENU`** o **`hola`** para recibir ayuda y recordarte cómo continuar.
+
 ---
 
 ## 🧯 Solución de Problemas Rápidos
@@ -305,6 +377,8 @@ En el **Dashboard** verás la tarjeta **"Inventario por Línea Comercial"**: mue
 | **Los precios en Bs. se ven viejos** | La PC estuvo apagada y aún no sincronizó el BCV | Espera un minuto (se sincroniza solo) o revisa el widget de tasa en la barra superior |
 | **No responde a un cliente específico** | Se activó "Pausar Bot (Atender Yo)" en ese chat | En el **Live Inbox**, abre el chat y pulsa **"Reanudar Bot"** |
 | **Faltan productos en el menú del bot** | La categoría del producto usa una subcategoría no reconocida | Verifica la categoría en **Catálogo**; las 4 líneas canónicas son: Insumos Cauchera, Repuestos Moto, Accesorios Moto, Otros Productos |
+| **No puedo eliminar un producto** | Ese repuesto tiene un apartado activo | Ve a **Apartados**, entrega o cancela el apartado, y vuelve a intentar |
+| **"Marcar Retirado" no cambia el apartado** | (Corregido) El panel enviaba un estado no válido | Actualiza el panel con `npm run build`; el estado oficial es `entregado` |
 
 ---
 
@@ -324,3 +398,20 @@ En el **Dashboard** verás la tarjeta **"Inventario por Línea Comercial"**: mue
 - Puedes **dejar la PC encendida** (recomendado para no perder clientes nocturnos) o apagar con el botón rojo **"Apagar"** del panel.
 
 > El sistema se entrega con **0 productos** para que cargues tu inventario real desde el menú **Catálogo**.
+
+---
+
+## 🧩 Notas Técnicas para Desarrolladores
+
+- **Base de datos:** SQLite embebido en WebAssembly (`sql.js`). El archivo vive en `data/crastur.db`
+  y se persiste de forma atómica (archivo `.tmp` + reemplazo). Las operaciones críticas de stock
+  (crear apartado, vencer/cancelar, reactivar) usan **transacciones** para no descontar inventario a medias.
+- **Aislamiento de pruebas:** la variable de entorno `CRASTUR_DATA_DIR` redirige la base de datos a una
+  carpeta temporal. `npm test` la usa para no tocar datos reales.
+- **Servidor local:** escucha solo en `127.0.0.1:3333`. El panel (con chats, cédulas y teléfonos) **no**
+  queda expuesto a la red local ni a otros equipos.
+- **WebSockets:** un canal `/ws` difunde estado de WhatsApp, mensajes del Live Inbox y cambios de
+  apartados. Incluye heartbeat para cerrar conexiones muertas del navegador.
+- **Integridad de stock:** eliminar un producto con apartado activo se rechaza con HTTP `409`.
+- **Cola de salida anti-baneo:** los recordatorios se envían con retardos humanizados; si WhatsApp está
+  desconectado, los mensajes **se reencolan** en lugar de perderse.

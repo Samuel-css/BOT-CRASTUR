@@ -50,6 +50,21 @@ function dbExists() {
   return fs.existsSync(path.join(ROOT, 'data', 'crastur.db'));
 }
 
+/**
+ * Consulta con serenidad si el sistema Crastur ya está en ejecución (panel en el puerto 3333).
+ * Se usa para evitar restaurar datos mientras el bot tiene la base de datos abierta en memoria.
+ */
+function estaCrasturEncendido() {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port: 3333, path: '/api/health', timeout: 1200 }, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+}
+
 // ─── API del instalador ─────────────────────────────────────────────────────
 const routes = {
   'GET /api/estado': () => {
@@ -70,30 +85,39 @@ const routes = {
   'POST /api/instalar': async (send) => {
     send({ paso: 1, total: 4, texto: 'Instalando componentes del servidor...' });
     if (!hasModules()) {
-      await run('npm', ['install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
+      const r1 = await run('npm', ['install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
+      // [VERACIDAD] Si la instalación falla, no se puede declarar éxito.
+      if (r1.code !== 0) { send({ completado: true, exito: false, texto: 'No se pudieron instalar los componentes. Revisa tu conexión a internet e inténtalo nuevamente.' }); return; }
     }
+
     send({ paso: 2, total: 4, texto: 'Instalando componentes del panel visual...' });
     if (!hasClientModules()) {
-      await run('npm', ['--prefix', 'client', 'install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
+      const r2 = await run('npm', ['--prefix', 'client', 'install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
+      if (r2.code !== 0) { send({ completado: true, exito: false, texto: 'No se pudieron instalar los componentes del panel visual. Revisa tu conexión a internet e inténtalo nuevamente.' }); return; }
     }
+
     send({ paso: 3, total: 4, texto: 'Compilando el panel administrativo...' });
     if (!hasClientDist()) {
-      await run('npm', ['--prefix', 'client', 'run', 'build'], { onData: (d) => send({ log: d }) });
+      const r3 = await run('npm', ['--prefix', 'client', 'run', 'build'], { onData: (d) => send({ log: d }) });
+      if (r3.code !== 0) { send({ completado: true, exito: false, texto: 'No se pudo preparar el panel administrativo. Inténtalo nuevamente.' }); return; }
     }
+
     send({ paso: 4, total: 4, texto: 'Preparando carpetas de datos...' });
     const dataDir = path.join(ROOT, 'data');
     const backupDir = path.join(dataDir, 'backups');
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-    send({ completado: true, texto: '¡Instalación completada con éxito!' });
+    send({ completado: true, exito: true, texto: '¡Instalación completada con éxito!' });
   },
 
   'POST /api/actualizar-panel': async (send) => {
     send({ paso: 1, total: 2, texto: 'Instalando dependencias del panel...' });
-    await run('npm', ['--prefix', 'client', 'install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
+    const r1 = await run('npm', ['--prefix', 'client', 'install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
+    if (r1.code !== 0) { send({ completado: true, exito: false, texto: 'No se pudieron instalar las dependencias del panel. Inténtalo nuevamente.' }); return; }
     send({ paso: 2, total: 2, texto: 'Compilando el panel actualizado...' });
-    await run('npm', ['--prefix', 'client', 'run', 'build'], { onData: (d) => send({ log: d }) });
-    send({ completado: true, texto: '¡Panel actualizado con éxito!' });
+    const r2 = await run('npm', ['--prefix', 'client', 'run', 'build'], { onData: (d) => send({ log: d }) });
+    if (r2.code !== 0) { send({ completado: true, exito: false, texto: 'No se pudo actualizar el panel. Inténtalo nuevamente.' }); return; }
+    send({ completado: true, exito: true, texto: '¡Panel actualizado con éxito!' });
   },
 
   'POST /api/respaldar': async (send) => {
@@ -106,8 +130,29 @@ const routes = {
 
   'POST /api/restaurar': async (body, send) => {
     // body: { archivo: 'ruta/al/archivo.json' }
-    const archivo = body?.archivo;
-    if (!archivo) { send({ completado: true, exito: false, texto: 'No se indicó archivo a restaurar.' }); return; }
+    if (!body?.archivo) { send({ completado: true, exito: false, texto: 'No se indicó archivo a restaurar.' }); return; }
+
+    // [SEGURIDAD] La ruta debe vivir dentro de la carpeta de respaldos del propio proyecto.
+    // Esto evita que un valor manipulado pueda apuntar a otra ubicación del disco.
+    const backupsDir = path.resolve(ROOT, 'data', 'backups');
+    const archivo = path.resolve(ROOT, body.archivo);
+    if (!archivo.startsWith(backupsDir + path.sep) && !archivo.startsWith(path.resolve(ROOT) + path.sep)) {
+      send({ completado: true, exito: false, texto: 'El archivo de respaldo no se encuentra en la carpeta permitida.' });
+      return;
+    }
+    if (!fs.existsSync(archivo) || !archivo.endsWith('.json')) {
+      send({ completado: true, exito: false, texto: 'No encontramos ese archivo de respaldo.' });
+      return;
+    }
+
+    // [COHERENCIA] Si Crastur está encendido, el servidor tiene la base de datos en memoria y
+    // podría sobrescribir la restauración. Avisamos con calma y pedimos cerrarlo primero.
+    const encendido = await estaCrasturEncendido();
+    if (encendido) {
+      send({ completado: true, exito: false, texto: 'Para restaurar con total seguridad, primero cierra Crastur (botón "Apagar" del panel) y vuelve a intentarlo. Así tus datos quedan protegidos.' });
+      return;
+    }
+
     send({ paso: 1, total: 1, texto: 'Restaurando catálogo y asesores...' });
     const result = await run('npx', ['tsx', 'scripts/migrar_catalogo_asesores.ts', '--db', 'data/crastur.db', '--in', archivo], { onData: (d) => send({ log: d }) });
     send({ completado: true, exito: result.code === 0, texto: result.code === 0 ? '¡Catálogo y asesores restaurados!' : 'No se pudo restaurar el archivo.' });
@@ -124,19 +169,18 @@ const routes = {
   'GET /api/respaldos': () => {
     const dir = path.join(ROOT, 'data', 'backups');
     const list = [];
+    const addIfFile = (full, nombre) => {
+      try {
+        const st = fs.statSync(full);
+        if (st.isFile()) list.push({ nombre, ruta: full, bytes: st.size });
+      } catch {}
+    };
     if (fs.existsSync(dir)) {
       for (const f of fs.readdirSync(dir)) {
-        if (f.endsWith('.json')) {
-          const full = path.join(dir, f);
-          list.push({ nombre: f, ruta: full, bytes: fs.statSync(full).size });
+        // Solo respaldos portables de catálogo + asesores (no los .db binarios ni carpetas)
+        if (f.endsWith('.json') && f !== 'snapshot_maestro_crastur.json') {
+          addIfFile(path.join(dir, f), f);
         }
-      }
-    }
-    // También archivos json sueltos en la raíz
-    for (const f of fs.readdirSync(ROOT)) {
-      if (f.startsWith('catalogo_asesores') && f.endsWith('.json')) {
-        const full = path.join(ROOT, f);
-        list.push({ nombre: f, ruta: full, bytes: fs.statSync(full).size });
       }
     }
     return { respaldos: list };
@@ -214,6 +258,20 @@ server.listen(PORT, '127.0.0.1', () => {
   } catch {}
 });
 
+// [LIMPIEZA] Liberar el puerto 4545 al cerrar la ventana del instalador (evita el
+// error de "puerto ocupado" si el usuario vuelve a abrir el instalador).
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.log('ℹ️ El panel de mantenimiento ya estaba abierto. Puedes usar esa pestaña del navegador.');
+  } else {
+    console.error('Error del instalador:', err?.message || err);
+  }
+});
+const cerrarInstalador = () => { try { server.close(); } catch {} process.exit(0); };
+process.on('SIGINT', cerrarInstalador);
+process.on('SIGTERM', cerrarInstalador);
+process.on('SIGHUP', cerrarInstalador);
+
 // Página HTML embebida (interfaz visual)
 const PAGE_HTML = `<!doctype html>
 <html lang="es">
@@ -271,6 +329,7 @@ const PAGE_HTML = `<!doctype html>
   <div class="card">
     <h2>2. Copias de Seguridad</h2>
     <p>Crea un respaldo de tu Catálogo y Asesores, o restaura uno existente.</p>
+    <p style="font-size:12px;color:var(--mut)">💡 Consejo: para restaurar tus datos con total seguridad, cierra primero Crastur desde el botón <b>“Apagar”</b> del panel y luego vuelve aquí.</p>
     <div class="row">
       <button class="b-2" id="btnRespaldar">💾 Crear Respaldo (Catálogo + Asesores)</button>
       <button class="b-2" id="btnVerRespaldos">📂 Ver Respaldos Guardados</button>

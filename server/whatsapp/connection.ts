@@ -10,7 +10,7 @@ import fs from 'fs';
 import QRCode from 'qrcode';
 import pino from 'pino';
 import { checkPendingFollowUps, check22hReservationReminders } from '../bot';
-import { cleanExpiredReservations } from '../database';
+import { cleanExpiredReservations, dataDir } from '../database';
 import { loadBaileys, getWASocket, getDisconnectReason, getUseMultiFileAuthState, getFetchLatestBaileysVersion, getBrowsers } from './baileysLoader';
 import {
   sock,
@@ -26,10 +26,10 @@ import {
 import { enqueueOutboundMessage } from './outboundQueue';
 import { registerHistoryHandler, registerMessageHandler, flushPendingStartupMessages, bindBotReady } from './ingest';
 
-/** Ruta del sistema de archivos donde se almacenan las llaves de sesión criptográficas */
-const authFolder = path.join(__dirname, '..', '..', 'data', 'auth_info_baileys');
+/** Ruta del sistema de archivos donde se almacenan las llaves de sesión criptográficas.
+ *  [AISLAMIENTO] Usa `dataDir` para respetar CRASTUR_DATA_DIR (pruebas/entornos aislados). */
+const authFolder = path.join(dataDir || path.join(__dirname, '..', '..', 'data'), 'auth_info_baileys');
 
-let qrTimeoutCount = 0;
 let reconnectTimer: any = null;
 let followUpInterval: any = null;
 let connectingTimeout: any = null;
@@ -51,7 +51,6 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 export function resumeWhatsAppReconnection(): void {
   reconnectPaused = false;
   reconnectAttempts = 0;
-  qrTimeoutCount = 0;
   manualStartRequested = true;
 }
 
@@ -244,7 +243,7 @@ export async function startWhatsApp(): Promise<void> {
 
         if (shouldReconnect) {
           // [BACKOFF PROGRESIVO] 4s → 8s → 16s → 30s (tope) en vez de martillar cada 4s
-          const baseDelay = isRetryableClose ? 4000 : 4000;
+          const baseDelay = 4000;
           const delay = Math.min(baseDelay * Math.pow(2, Math.max(0, reconnectAttempts - 1)), 30000);
           console.log(`[WhatsApp] Reintentando conexión en ${Math.round(delay / 1000)}s...`);
           reconnectTimer = setTimeout(() => {
@@ -254,8 +253,7 @@ export async function startWhatsApp(): Promise<void> {
         }
       } else if (connection === 'open') {
         if (connectingTimeout) clearTimeout(connectingTimeout);
-        qrTimeoutCount = 0;
-        reconnectAttempts = 0;
+              reconnectAttempts = 0;
         reconnectPaused = false;
         setConnectionStatus('connected');
         setCurrentQR(null);
@@ -327,6 +325,16 @@ export async function logoutWhatsApp(): Promise<void> {
     console.log('[WhatsApp] Error al cerrar sesión:', e?.message || e);
   }
 
+  // [INTEGRIDAD / LIMPIEZA DE RECURSOS] Detener timers y soltar el socket tras el logout.
+  // Antes quedaban vivos el intervalo de follow-ups y el temporizador de "bot listo",
+  // dejando el estado inconsistente y consumiendo recursos.
+  try { if (followUpInterval) { clearInterval(followUpInterval); followUpInterval = null; } } catch {}
+  try { if (botReadyTimer) { clearTimeout(botReadyTimer); botReadyTimer = null; } } catch {}
+  try { if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } } catch {}
+  try { if (connectingTimeout) { clearTimeout(connectingTimeout); connectingTimeout = null; } } catch {}
+  botReady.value = false;
+  try { if (sock) { sock.ev?.removeAllListeners?.(); setSock(null); } } catch {}
+
   try {
     if (fs.existsSync(authFolder)) {
       fs.rmSync(authFolder, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -348,7 +356,6 @@ export async function logoutWhatsApp(): Promise<void> {
  */
 export async function resetWhatsApp(): Promise<{ success: boolean; message: string }> {
   console.log('[WhatsApp] 🔄 Ejecutando reseteo forzoso de WhatsApp...');
-  qrTimeoutCount = 0;
   // [REACTIVACIÓN MANUAL] Limpia la pausa para permitir un nuevo intento con QR fresco
   reconnectPaused = false;
   reconnectAttempts = 0;

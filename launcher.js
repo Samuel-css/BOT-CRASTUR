@@ -75,6 +75,11 @@ function openBrowser() {
   } catch (e) {}
 }
 
+/** Escapa una cadena como literal de PowerShell (comillas simples duplicadas). */
+function psString (value) {
+  return "'" + String(value).replace(/'/g, "''") + "'";
+}
+
 function ensureDesktopShortcuts() {
   if (process.platform !== 'win32') return;
   try {
@@ -93,8 +98,25 @@ function ensureDesktopShortcuts() {
 
     const shortcut = path.join(desktop, 'Crastur.lnk');
     if (!fs.existsSync(shortcut) && fs.existsSync(startVbs)) {
-      const cmd = `powershell -NoProfile -Command "$w=New-Object -ComObject WScript.Shell;$s=$w.CreateShortcut('${shortcut.replace(/\\/g, '\\\\')}');$s.TargetPath='wscript.exe';$s.Arguments='\\\"${startVbs.replace(/\\/g, '\\\\')}\\\"';$s.WorkingDirectory='${__dirname.replace(/\\/g, '\\\\')}';$s.IconLocation='${ico.replace(/\\/g, '\\\\')},0';$s.Description='Crastur - Sistema de Ventas y Bot de WhatsApp';$s.Save()"`;
-      execSync(cmd, { stdio: 'ignore' });
+      // [WINDOWS-ROBUSTO] Se crea el acceso directo con un script de PowerShell escrito en un
+      // archivo temporal (con codificación UTF-8 y comillas simples escapadas), en lugar de
+      // una sola línea con triple escape de comillas, que fallaba con rutas que contienen
+      // espacios o caracteres especiales (ej. "C:\Users\Juan Pérez\...").
+      const psScript = [
+        '$ErrorActionPreference = "Stop"',
+        '$ws = New-Object -ComObject WScript.Shell',
+        `$s = $ws.CreateShortcut(${psString(shortcut)})`,
+        `$s.TargetPath = ${psString('wscript.exe')}`,
+        `$s.Arguments = ${psString('"' + startVbs + '"')}`,
+        `$s.WorkingDirectory = ${psString(__dirname)}`,
+        `$s.IconLocation = ${psString(ico + ',0')}`,
+        '$s.Description = "Crastur - Sistema de Ventas y Bot de WhatsApp"',
+        '$s.Save()'
+      ].join('\r\n');
+      const psFile = path.join(__dirname, 'data', 'crear_acceso_directo.ps1');
+      fs.writeFileSync(psFile, psScript, 'utf8');
+      execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`, { stdio: 'ignore' });
+      try { fs.unlinkSync(psFile); } catch (e) {}
     }
 
     // Limpiar accesos redundantes anteriores si existieran
@@ -103,14 +125,6 @@ function ensureDesktopShortcuts() {
       if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) {} }
     }
   } catch (e) {}
-}
-
-function runCommand(command, args, cwd = process.cwd()) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { cwd, shell: true, stdio: 'ignore' });
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Comando falló con código ${code}`))));
-    proc.on('error', reject);
-  });
 }
 
 async function main() {
@@ -135,7 +149,7 @@ async function main() {
   if (!hasRootModules || !hasDist) {
     console.log(`\n${yellow}${bold}⚠️ El sistema aún no está instalado o le faltan componentes.${reset}`);
     console.log(`${cyan}Abriendo el INSTALADOR VISUAL para dejarlo listo con un clic...${reset}\n`);
-    spawn('node', ['installer/server.js'], { cwd: __dirname, shell: true, stdio: 'inherit' });
+    spawn(process.execPath, ['installer/server.js'], { cwd: __dirname, stdio: 'inherit' });
     return;
   }
 
@@ -157,9 +171,11 @@ async function main() {
   let serverExitedEarly = false;
   let serverExitCode = null;
 
-  const serverProc = spawn('node', ['--import', 'tsx', 'server/server.ts'], {
+  // [WINDOWS-ROBUSTO] Sin `shell:true`: evita que cmd.exe rompa la ruta cuando el usuario
+  // o la carpeta contienen espacios (ej. "C:\Users\Juan Pérez\Crastur"). Se invoca node
+  // directamente con argumentos ya separados.
+  const serverProc = spawn(process.execPath, ['--import', 'tsx', 'server/server.ts'], {
     cwd: __dirname,
-    shell: true,
     stdio: 'inherit'
   });
 
@@ -172,7 +188,8 @@ async function main() {
 
   if (serverExitedEarly) {
     console.log(`\n\n${red}${bold}⚠️ El sistema se detuvo al encender (código: ${serverExitCode}).${reset}`);
-    console.log(`${yellow}Revisa el archivo data${path.sep}launcher.log o abre Instalar.bat para reparar el sistema.${reset}\n`);
+    console.log(`${yellow}Los detalles se muestran arriba en pantalla o en data${path.sep}launcher.log si abriste Crastur en segundo plano.${reset}`);
+    console.log(`${yellow}También puedes abrir Instalar.bat para reparar el sistema.${reset}\n`);
     process.exit(serverExitCode || 1);
   }
 
@@ -196,5 +213,5 @@ async function main() {
 main().catch(err => {
   console.error(`\n${red}[Lanzador] Error al iniciar: ${err.message}${reset}`);
   console.log(`${yellow}Abriendo el reparador visual (Instalar.bat)...${reset}`);
-  spawn('node', ['installer/server.js'], { cwd: __dirname, shell: true, stdio: 'inherit' });
+  spawn(process.execPath, ['installer/server.js'], { cwd: __dirname, stdio: 'inherit' });
 });

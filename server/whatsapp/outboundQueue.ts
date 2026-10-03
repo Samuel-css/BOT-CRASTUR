@@ -33,11 +33,11 @@ export async function processOutboundQueue(): Promise<void> {
   if (isProcessingOutboundQueue) return;
   isProcessingOutboundQueue = true;
 
-  while (outboundQueue.length > 0) {
-    const item = outboundQueue.shift();
-    if (!item || !item.jid || !item.text) continue;
+  try {
+    while (outboundQueue.length > 0) {
+      const item = outboundQueue.shift();
+      if (!item || !item.jid || !item.text) continue;
 
-    try {
       // Validar si el cliente solicitó no ser molestado o si la conversación fue pausada por un asesor
       const session = db.prepare('SELECT no_molestar, bot_pausado FROM chat_sessions WHERE jid = ?').get(item.jid);
       if (session && (session.no_molestar === 1 || session.bot_pausado === 1)) {
@@ -45,7 +45,15 @@ export async function processOutboundQueue(): Promise<void> {
         continue;
       }
 
-      if (connectionStatus === 'connected' && sock) {
+      // [INTEGRIDAD] Si no hay conexión, el mensaje NO se descarta: vuelve al frente de la cola
+      // para reintentarse cuando el socket se restablezca. Antes se perdían recordatorios y
+      // avisos de apartado silenciosamente durante cortes de conexión.
+      if (connectionStatus !== 'connected' || !sock) {
+        outboundQueue.unshift(item);
+        break;
+      }
+
+      try {
         // [ANTI-BANEO] Simular presencia de escritura previa al envío
         try {
           await sock.sendPresenceUpdate('composing', item.jid);
@@ -59,15 +67,22 @@ export async function processOutboundQueue(): Promise<void> {
         try {
           await sock.sendPresenceUpdate('paused', item.jid);
         } catch (e: any) {}
+      } catch (sendErr: any) {
+        console.warn(`[WhatsApp Queue] Error enviando recordatorio a ${item.jid}:`, sendErr?.message || sendErr);
       }
-    } catch (sendErr: any) {
-      console.warn(`[WhatsApp Queue] Error enviando recordatorio a ${item.jid}:`, sendErr?.message || sendErr);
-    }
 
-    // [ANTI-BANEO] Retardo aleatorio de 3.5s a 6.5s entre mensajes encolados consecutivos
-    const humanDelay = 3500 + Math.floor(Math.random() * 3000);
-    await new Promise(r => setTimeout(r, humanDelay));
+      // [ANTI-BANEO] Retardo aleatorio de 3.5s a 6.5s entre mensajes encolados consecutivos
+      const humanDelay = 3500 + Math.floor(Math.random() * 3000);
+      await new Promise(r => setTimeout(r, humanDelay));
+    }
+  } finally {
+    // [INTEGRIDAD] Garantiza que el flag SIEMPRE se libere, incluso si un error inesperado
+    // ocurre fuera del try por ítem. Antes la cola podía quedar bloqueada para siempre.
+    isProcessingOutboundQueue = false;
   }
 
-  isProcessingOutboundQueue = false;
+  // Si quedaron mensajes pendientes (por falta de conexión), reprogramar el intento.
+  if (outboundQueue.length > 0 && connectionStatus !== 'connected') {
+    setTimeout(() => { processOutboundQueue(); }, 15000);
+  }
 }

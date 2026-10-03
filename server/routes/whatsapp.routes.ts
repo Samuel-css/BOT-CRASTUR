@@ -66,10 +66,10 @@ router.post('/start', startHandler);
 router.post('/whatsapp/start', startHandler);
 
 /**
- * POST /api/logout
+ * POST /api/logout (y alias /api/whatsapp/logout)
  * Desconecta la sesión activa de WhatsApp y opcionalmente limpia el historial de mensajes de la base de datos.
  */
-router.post('/logout', async (req: Request, res: Response) => {
+const logoutHandler = async (req: Request, res: Response) => {
   try {
     const { clearHistory } = req.body || {};
     await logoutWhatsApp();
@@ -83,27 +83,14 @@ router.post('/logout', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+router.post('/logout', logoutHandler);
 // Alias compatible con el panel: /api/whatsapp/logout
-router.post('/whatsapp/logout', async (req: Request, res: Response) => {
-  try {
-    const { clearHistory } = req.body || {};
-    await logoutWhatsApp();
-    if (clearHistory) {
-      db.prepare('DELETE FROM chat_messages').run();
-      db.prepare('DELETE FROM chat_sessions').run();
-      broadcast('live_chat_message', { action: 'all_deleted' });
-      console.log('[WhatsApp] Sesión cerrada y chats eliminados de la base de datos.');
-    }
-    res.json({ success: true, message: 'Sesión de WhatsApp cerrada exitosamente', cleared: !!clearHistory });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+router.post('/whatsapp/logout', logoutHandler);
 
 /**
  * POST /api/reset
- * Purga las credenciales almacenadas en `data/baileys_auth` y reinicia el socket en limpio.
+ * Purga las credenciales almacenadas en `data/auth_info_baileys` y reinicia el socket en limpio.
  */
 router.post('/reset', async (req: Request, res: Response) => {
   try {
@@ -128,20 +115,24 @@ router.post('/whatsapp/reset', async (req: Request, res: Response) => {
  * Live Inbox: Retorna la lista de las 60 conversaciones más recientes con su último mensaje y estado de apartado.
  */
 router.get('/inbox', (req: Request, res: Response) => {
-  const sessions = db.prepare(`
-    SELECT s.*, 
-      (SELECT contenido FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_mensaje_texto,
-      (SELECT remitente FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_remitente,
-      (SELECT COUNT(*) FROM reservations WHERE jid = s.jid AND estado = 'activo') as tiene_apartado_activo,
-      (SELECT producto_nombre FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_producto,
-      (SELECT precio_usd FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_monto,
-      (SELECT expira_en FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_expira_en,
-      (SELECT telefono FROM reservations WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as telefono_contacto
-    FROM chat_sessions s
-    ORDER BY s.ultimo_mensaje_at DESC
-    LIMIT 60
-  `).all();
-  res.json(sessions);
+  try {
+    const sessions = db.prepare(`
+      SELECT s.*, 
+        (SELECT contenido FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_mensaje_texto,
+        (SELECT remitente FROM chat_messages WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as ultimo_remitente,
+        (SELECT COUNT(*) FROM reservations WHERE jid = s.jid AND estado = 'activo') as tiene_apartado_activo,
+        (SELECT producto_nombre FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_producto,
+        (SELECT precio_usd FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_monto,
+        (SELECT expira_en FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_expira_en,
+        (SELECT telefono FROM reservations WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as telefono_contacto
+      FROM chat_sessions s
+      ORDER BY s.ultimo_mensaje_at DESC
+      LIMIT 60
+    `).all();
+    res.json(sessions);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /**
@@ -149,20 +140,24 @@ router.get('/inbox', (req: Request, res: Response) => {
  * Live Inbox: Obtiene la conversación completa y metadatos de sesión y apartados para un cliente específico.
  */
 router.get('/inbox/:jid', (req: Request, res: Response) => {
-  const { jid } = req.params;
-  const messages = db.prepare('SELECT * FROM chat_messages WHERE jid = ? ORDER BY id ASC').all(jid);
-  const session = db.prepare(`
-    SELECT s.*,
-      (SELECT COUNT(*) FROM reservations WHERE jid = s.jid AND estado = 'activo') as tiene_apartado_activo,
-      (SELECT producto_nombre FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_producto,
-      (SELECT precio_usd FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_monto,
-      (SELECT expira_en FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_expira_en,
-      (SELECT cedula FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_cedula,
-      (SELECT telefono FROM reservations WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as telefono_contacto
-    FROM chat_sessions s
-    WHERE s.jid = ?
-  `).get(jid);
-  res.json({ session, messages });
+  try {
+    const { jid } = req.params;
+    const messages = db.prepare('SELECT * FROM chat_messages WHERE jid = ? ORDER BY id ASC').all(jid);
+    const session = db.prepare(`
+      SELECT s.*,
+        (SELECT COUNT(*) FROM reservations WHERE jid = s.jid AND estado = 'activo') as tiene_apartado_activo,
+        (SELECT producto_nombre FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_producto,
+        (SELECT precio_usd FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_monto,
+        (SELECT expira_en FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_expira_en,
+        (SELECT cedula FROM reservations WHERE jid = s.jid AND estado = 'activo' ORDER BY id DESC LIMIT 1) as apartado_cedula,
+        (SELECT telefono FROM reservations WHERE jid = s.jid ORDER BY id DESC LIMIT 1) as telefono_contacto
+      FROM chat_sessions s
+      WHERE s.jid = ?
+    `).get(jid);
+    res.json({ session, messages });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 /**

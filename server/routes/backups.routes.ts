@@ -24,7 +24,9 @@ import {
   persistDB,
   restoreDatabaseFromBuffer,
   exportCatalogoAsesores,
-  importCatalogoAsesores
+  importCatalogoAsesores,
+  performShutdownBackup,
+  dbPath
 } from '../database';
 import { clearCatalogCache } from '../bot/services/catalogPdfService';
 import { invalidateProductCache } from '../bot/services/searchService';
@@ -136,7 +138,7 @@ router.post('/catalog/import', (req: Request, res: Response) => {
 router.get('/database/backup', (req: Request, res: Response) => {
   try {
     persistDB();
-    const dbFilePath = path.join(__dirname, '..', '..', 'data', 'crastur.db');
+    const dbFilePath = dbPath;
     if (!fs.existsSync(dbFilePath)) {
       return res.status(404).json({ error: 'Archivo de base de datos no encontrado.' });
     }
@@ -212,6 +214,8 @@ router.post('/system/shutdown', (req: Request, res: Response) => {
   try {
     persistDB();
     console.log('[Sistema] Base de datos guardada correctamente.');
+    // [INTEGRIDAD] Salvaguarda de cierre: deja el respaldo del día al corriente antes de apagar.
+    performShutdownBackup();
   } catch (e: any) {
     console.error('[Sistema] Error persistiendo base de datos al apagar:', e.message);
   }

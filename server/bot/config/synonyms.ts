@@ -76,7 +76,6 @@ export const SYNONYMS: Record<string, string> = {
   // 🎽 Accesorios para Moto
   'puño': 'puños',
   'puños': 'puños',
-  'gomas': 'puños',
   'malla': 'malla',
   'mallas': 'malla',
   'pulpo': 'malla',

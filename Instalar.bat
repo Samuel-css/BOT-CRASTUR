@@ -10,7 +10,7 @@ echo ==============================================================
 echo.
 
 where node >nul 2>nul
-if %errorlevel% equ 0 goto start_installer
+if %errorlevel% equ 0 goto check_node_version
 
 if exist "C:\Program Files\nodejs\node.exe" goto add_path_64
 if exist "C:\Program Files (x86)\nodejs\node.exe" goto add_path_32
@@ -31,7 +31,28 @@ goto check_again
 
 :check_again
 where node >nul 2>nul
-if %errorlevel% equ 0 goto start_installer
+if %errorlevel% equ 0 goto check_node_version
+
+:check_node_version
+rem Crastur requiere Node.js 18 o superior
+for /f "tokens=1 delims=." %%v in ('node -p "process.versions.node"') do set "NODE_MAJOR=%%v"
+if %NODE_MAJOR% lss 18 goto error_old_node
+goto start_installer
+
+:error_old_node
+color 0C
+echo.
+echo ==============================================================
+echo  [ERROR] Tu version de Node.js es demasiado antigua.
+echo ==============================================================
+echo.
+echo  Crastur necesita Node.js 18 o superior.
+echo  Descarga la version LTS mas reciente en: https://nodejs.org
+echo.
+echo  Despues de instalarla, vuelve a hacer doble clic en Instalar.bat
+echo.
+pause
+exit /b 1
 
 :error_no_node
 color 0C

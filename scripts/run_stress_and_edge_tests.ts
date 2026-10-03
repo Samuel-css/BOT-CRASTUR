@@ -458,7 +458,8 @@ async function runAllTests() {
     assert(res2Str && (res2Str.includes('tienda') || res2Str.includes('Liberalba')) && (res2Str.includes('lamentamos') || res2Str.includes('ASESOR')), 'De-escala insulto venezolano con profesionalismo');
 
     const res3 = processIncomingMessage(jid, 'mal servicio pésima atención', 'Cliente Enojado');
-    assert(res3 && res3.includes('disculpa') || res3.includes('encargado') || res3.includes('asesor'), 'Ofrece disculpa y atención con encargado');
+    const res3Str = typeof res3 === 'object' && res3 !== null ? (res3.text || '') : String(res3 || '');
+    assert(res3Str && (res3Str.includes('disculpa') || res3Str.includes('encargado') || res3Str.includes('asesor')), 'Ofrece disculpa y atención con encargado');
   }
 
   // PERFIL 18: Menú Numérico 1 a 6 y Catálogos
@@ -903,21 +904,27 @@ async function runAllTests() {
 
     // 1. Opt-out "no me escriban más"
     const resOpt1 = processIncomingMessage(jidSec, 'no me escriban mas por favor', 'Cliente Desuscrito');
-    assert(resOpt1 && resOpt1.includes('pausado') && resOpt1.includes('disculpa'), 'Opt-Out: reconoce "no me escriban mas" y silencia con amabilidad');
+    assert(resOpt1 && resOpt1.includes('disculpa') && (resOpt1.includes('autom') || resOpt1.includes('No Molestar')), 'Opt-Out: reconoce "no me escriban mas" y da confirmación amable');
 
     const sessionSec = db.db.prepare('SELECT no_molestar, bot_pausado FROM chat_sessions WHERE jid = ?').get(jidSec);
-    assert(sessionSec && sessionSec.no_molestar === 1 && sessionSec.bot_pausado === 1, 'Opt-Out: marca no_molestar = 1 y bot_pausado = 1 en la base de datos');
+    assert(sessionSec && sessionSec.no_molestar === 1, 'Opt-Out: marca no_molestar = 1 (detiene los proactivos)');
+    // [COHERENCIA] El bot NO queda pausado: el propio mensaje promete atender si el cliente vuelve a escribir.
+    assert(sessionSec && (sessionSec.bot_pausado === 0 || sessionSec.bot_pausado === null), 'Opt-Out: NO pausa el bot para permitir que el cliente vuelva a consultar');
 
-    // Comprobar que el bot ya no responde a un chat en pausa/no molestar
-    const resSilencio = processIncomingMessage(jidSec, 'hola', 'Cliente Desuscrito');
-    assert(resSilencio === null, 'Opt-Out: silencia estrictamente el bot sin enviar mensajes adicionales');
+    // Comprobar que no se envían mensajes PROACTIVOS (seguimiento marcado como enviado)
+    const proactivo = db.db.prepare('SELECT seguimiento_enviado FROM chat_sessions WHERE jid = ?').get(jidSec);
+    assert(proactivo && proactivo.seguimiento_enviado === 1, 'Opt-Out: bloquea futuros mensajes proactivos de seguimiento');
+
+    // El cliente puede volver a escribir y SÍ recibe respuesta útil (no queda atrapado)
+    const resReanuda = processIncomingMessage(jidSec, 'hola', 'Cliente Desuscrito');
+    assert(resReanuda !== null && String(resReanuda).length > 5, 'Opt-Out: si el cliente vuelve a escribir, el bot responde con normalidad');
 
     // Desbloquear sesión para seguir pruebas
     db.db.prepare('UPDATE chat_sessions SET no_molestar = 0, bot_pausado = 0 WHERE jid = ?').run(jidSec);
 
     // 2. Opt-out "ya compré en otro lado"
     const resOpt2 = processIncomingMessage(jidSec, 'ya compre en otro lado gracias', 'Cliente Desuscrito');
-    assert(resOpt2 && resOpt2.includes('pausado'), 'Opt-Out: reconoce "ya compre en otro lado"');
+    assert(resOpt2 && (resOpt2.includes('autom') || resOpt2.includes('No Molestar') || resOpt2.includes('disculpa')), 'Opt-Out: reconoce "ya compre en otro lado"');
 
     // Desbloquear para inyecciones
     db.db.prepare('UPDATE chat_sessions SET no_molestar = 0, bot_pausado = 0 WHERE jid = ?').run(jidSec);

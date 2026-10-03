@@ -165,6 +165,13 @@ export function applySchemaAndMigrations(): void {
   // mantener el esquema actual coherente.
   try { db.exec('DROP TABLE IF EXISTS suppliers;'); } catch {}
 
+  // [NORMALIZACIÓN DE ESTADOS HISTÓRICOS] Versiones anteriores del panel guardaban los
+  // apartados retirados como 'retirado' o 'concretado', estados que ya no son válidos.
+  // Se normalizan a 'entregado' para que el historial y las acciones del panel sean coherentes.
+  try {
+    db.exec("UPDATE reservations SET estado = 'entregado' WHERE estado IN ('retirado', 'concretado');");
+  } catch {}
+
   // Sincronizar telefono_contacto desde reservations previas si estuviera vacío
   try {
     db.exec(`

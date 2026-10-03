@@ -20,6 +20,9 @@ If Not fso.FolderExists(dataDir) Then
 End If
 
 logFile = dataDir & "\launcher.log"
-WshShell.Run "cmd /c Crastur.bat >> """ & logFile & """ 2>&1", 0, False
+batFile = fso.GetParentFolderName(WScript.ScriptFullName) & "\Crastur.bat"
+' [ROBUSTEZ] Se citan AMBAS rutas (el .bat y el log) y se usa ruta absoluta, para que
+' funcione aunque la carpeta del proyecto o el usuario contengan espacios.
+WshShell.Run "cmd /c """"" & batFile & """" & " >> """ & logFile & """ 2>&1""", 0, False
 Set WshShell = Nothing
 Set fso = Nothing

@@ -29,6 +29,7 @@ export const dbPath = path.join(dataDir, 'crastur.db');
 export let rawDb: any = null;
 export let SQLInstance: any = null;
 let saveScheduled = false;
+let pendingSaveTimer: any = null;
 let isReady = false;
 let readyResolvers: Array<() => void> = [];
 
@@ -95,6 +96,8 @@ export function persistDB(): void {
 if (typeof process !== 'undefined') {
   const handleExit = () => {
     try {
+      // [INTEGRIDAD] Forzar primero cualquier guardado pendiente del debounce y luego persistir.
+      if (saveScheduled && pendingSaveTimer) { clearTimeout(pendingSaveTimer); pendingSaveTimer = null; saveScheduled = false; }
       persistDB();
     } catch (e: any) {}
   };
@@ -112,14 +115,29 @@ if (typeof process !== 'undefined') {
 /**
  * Encola una solicitud de persistencia en disco con debounce (100ms)
  * para agrupar múltiples transacciones consecutivas y minimizar el desgaste de I/O.
+ * [INTEGRIDAD] Si hay un guardado pendiente, `flushScheduledSave()` lo fuerza de inmediato
+ * antes de que el proceso termine, evitando perder escrituras recientes.
  */
 export function scheduleSave(): void {
   if (saveScheduled) return;
   saveScheduled = true;
-  setTimeout(() => {
+  pendingSaveTimer = setTimeout(() => {
     saveScheduled = false;
+    pendingSaveTimer = null;
     persistDB();
   }, 100);
+}
+
+/** Fuerza de inmediato cualquier guardado pendiente del debounce (uso en cierres y scripts). */
+export function flushScheduledSave(): void {
+  if (!saveScheduled) return;
+  try {
+    if (pendingSaveTimer) { clearTimeout(pendingSaveTimer); pendingSaveTimer = null; }
+    saveScheduled = false;
+    persistDB();
+  } catch (e: any) {
+    console.error('[DB] Error al forzar guardado pendiente:', e?.message || e);
+  }
 }
 
 /**

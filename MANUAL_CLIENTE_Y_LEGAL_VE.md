@@ -179,11 +179,12 @@ El panel incluye la sección **Live Inbox**, donde el personal de ventas puede s
 
 1. **Pausar Bot en un Chat Específico (Human Takeover):**  
    Si deseas atender tú mismo a un cliente sin que el bot envíe respuestas automáticas, abre el chat y presiona **"Pausar Bot (Atender Yo)"**. El bot guardará silencio en esa conversación hasta que presiones **"Reanudar Bot"**.
-2. **Banco de Atajos Comerciales Profesionales (8 Plantillas Oficiales):**  
+2. **Banco de Atajos Comerciales Profesionales (9 Plantillas Oficiales):**  
    Dispones de botones rápidos con respuestas redactadas y verificadas de Crastur:
    - **👋 Saludo Asesor**
    - **📍 Ubicación & Puntos de Referencia** (Edif. Liberalba, San Agustín Norte)
    - **💳 Métodos de Pago & Tasa BCV**
+   - **🪙 Binance Pay (USDT)**
    - **💛 Financiamiento Cashea**
    - **🛵 Delivery en Caracas & Tarifas**
    - **⏱️ Cómo Apartar por 24 Horas**
@@ -191,9 +192,17 @@ El panel incluye la sección **Live Inbox**, donde el personal de ventas puede s
    - **🛡️ Garantía & Política de Cambios**
 3. **Gestión de Asesores de Ventas:**  
    En la sección de Asesores puedes registrar los miembros del equipo de ventas. El sistema normaliza automáticamente números de teléfono con o sin código internacional (`+58`, `0412...`, etc.) generando enlaces directos de WhatsApp `wa.me/58...` sin errores de marcado.
-4. **Limpieza Segura del Inbox:**  
+4. **Gestión de Apartados en el Panel:**  
+   En la sección **Apartados (24h)** puedes ver la cuenta regresiva de cada reserva. Al entregar un
+   repuesto en mostrador, pulsa **"Marcar Retirado"** y el botón archivará el apartado como `entregado`.
+   También puedes **cancelar** un apartado para devolver su stock al inventario de inmediato.
+5. **Limpieza Segura del Inbox:**  
    - Borrado individual de chats con confirmación de seguridad.
    - Vaciado general de la bandeja sin tocar productos ni configuraciones.
+6. **No Molestar (Opt-Out) desde el chat:**  
+   Si un cliente escribe *"no me escriban más"*, el sistema deja de enviarle mensajes automáticos
+   (seguimientos y recordatorios), pero **no bloquea al cliente**: si vuelve a escribir, el bot lo
+   atiende con normalidad.
 
 ---
 
@@ -215,16 +224,34 @@ También disponibles por terminal:
 - **`npm run typecheck:server` / `build:server`**: Verificación de tipos y compilación del backend.
 
 ### B. Suite de Pruebas de Estrés y Validación Extrema (`npm test`)
-El sistema cuenta con una batería de **202 pruebas automatizadas** que validan:
+El sistema cuenta con una batería de **204 pruebas automatizadas** que validan:
 - **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en pocos milisegundos (> 1.000 req/s).
 - **35 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
 - **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (ráfaga de flood masivo, sin silenciar conversaciones humanas normales).
 - **Auto-Limpieza Post-Pruebas:** la suite completa se ejecuta sobre una **base de datos temporal aislada** (`CRASTUR_DATA_DIR`). Al terminar, esa carpeta temporal se elimina, garantizando que el catálogo, los chats y los respaldos reales de producción **nunca se modifiquen** (verificado: quedan intactos, 0 cambios).
 
 ### C. Copias de Seguridad y Protección contra Apagones
+- **Respaldo al Apagar:** cada vez que se apaga Crastur con el botón **"Apagar"** del panel, el sistema guarda automáticamente un respaldo completo de la jornada (ventas, apartados, catálogo y configuración). Tus datos quedan a salvo sin hacer nada extra.
+- **Respaldo Diario + 7 Días:** se conserva una copia con la fecha del día y las **últimas 7 jornadas** en `data/backups/`.
 - **Descarga en 1 Clic:** En **Configuración ➔ 5. Copia de Seguridad**, haz clic en **"Descargar Copia de Seguridad"** para obtener tu archivo `.db`.
-- **Restauración Segura:** Puedes restaurar un respaldo `.db` en cualquier momento; el sistema genera una copia de seguridad preventiva antes de aplicar los datos.
-- **Escritura Atómica:** El motor SQLite escribe en archivos temporales antes de consolidar el archivo maestro, protegiendo los datos contra pérdidas ante cortes imprevistos de energía eléctrica.
+- **Restauración Segura:** Puedes restaurar un respaldo `.db` en cualquier momento; el sistema genera una copia de seguridad preventiva antes de aplicar los datos. Para mayor tranquilidad, **cierra Crastur antes de restaurar** desde el Panel de Instalación: el propio panel te lo recuerda con calma y te guía.
+- **Recuperación Automática:** si la base de datos se dañara por un corte de energía, al encender el sistema la detecta y **se restaura sola** desde el respaldo más reciente.
+- **Escritura Atómica:** el motor SQLite escribe en archivos temporales antes de consolidar el archivo maestro (tanto la base activa como los respaldos), protegiendo los datos ante cortes imprevistos.
+
+### D. Garantías de Integridad de Datos del Sistema
+Crastur incluye protecciones automáticas para que tu inventario y tus apartados nunca queden inconsistentes:
+
+1. **Apartados transaccionales:** crear un apartado descuenta el stock y registra el ticket como una
+   sola operación. Si algo falla a mitad de camino, se revierte todo y **no se pierde inventario**.
+2. **Sin borrados automáticos de productos:** el sistema **nunca** elimina repuestos del catálogo al
+   arrancar. La limpieza de datos de prueba es una acción manual y explícita.
+3. **Bloqueo de borrado con apartado activo:** no se puede eliminar un producto que tenga una reserva
+   vigente; el sistema lo impide y te avisa.
+4. **Vencimientos concurrentes seguros:** aunque varios procesos revisen los apartados al mismo tiempo,
+   una reserva vencida **solo repone su stock una vez**.
+5. **Cola de salida persistente:** si WhatsApp se desconecta, los recordatorios y avisos **se reencolan**
+   en lugar de perderse.
+6. **WebSocket saludable:** el panel cierra automáticamente las conexiones caídas mediante *heartbeat*.
 
 ---
 

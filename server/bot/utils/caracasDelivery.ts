@@ -34,7 +34,7 @@ export const DEFAULT_ZONES: DeliveryZone[] = [
   {
     id: 'chacao',
     keywords: ['chacao', 'altamira', 'palos grandes', 'bello campo', 'el rosal', 'campo alegre', 'castellana', 'chuao', 'country club'],
-    nombre: 'Municipio Chacao (Altamira / El Rosal / Los Palos Grandes / Las Mercedes)',
+    nombre: 'Municipio Chacao (Altamira / El Rosal / Los Palos Grandes / Chuao)',
     tarifa: '$3 a $4 USD'
   },
   {

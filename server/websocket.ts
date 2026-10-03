@@ -16,29 +16,48 @@ import type { WhatsAppStatusPayload } from './types/whatsapp';
 
 /** Instancia singleton activa del servidor WebSocket */
 let wssInstance: WebSocketServer | null = null;
+/** Intervalo de heartbeat para detectar conexiones muertas */
+let heartbeatInterval: any = null;
+/** Función de limpieza de suscripciones del estado de WhatsApp */
+let unsubscribeStatus: (() => void) | null = null;
+/** Función de limpieza de suscripciones de mensajes en vivo */
+let unsubscribeLive: (() => void) | null = null;
 
 /**
  * Inicializa el servidor WebSocket montándolo sobre el servidor HTTP de Express.
  * Conecta los listeners del servicio de WhatsApp con el canal de difusión WebSocket.
+ * Es idempotente: reinvocarlo cierra la instancia previa y limpia sus suscripciones.
  * 
  * @param server - Servidor HTTP nativo de Node.js donde se monta la ruta `/ws`
  * @returns Instancia configurada de WebSocketServer
  */
 export function initWebSocket(server: Server): WebSocketServer {
+  // [IDEMPOTENCIA] Si ya existía una instancia, se desmonta para no duplicar listeners ni broadcasts.
+  if (wssInstance) {
+    try { if (unsubscribeStatus) unsubscribeStatus(); } catch (_) {}
+    try { if (unsubscribeLive) unsubscribeLive(); } catch (_) {}
+    try { if (heartbeatInterval) clearInterval(heartbeatInterval); } catch (_) {}
+    try { wssInstance.close(); } catch (_) {}
+    wssInstance = null;
+  }
+
   wssInstance = new WebSocketServer({ server, path: '/ws' });
 
   // Retransmitir cambios de estado del socket WhatsApp (QR, conexión, desconexión)
-  subscribeStatusChange((statusData: WhatsAppStatusPayload) => {
+  unsubscribeStatus = subscribeStatusChange((statusData: WhatsAppStatusPayload) => {
     broadcast('whatsapp_status', statusData);
   });
 
   // Retransmitir mensajes entrantes y salientes en tiempo real para el Live Inbox
-  subscribeLiveMessages((liveMsg: any) => {
+  unsubscribeLive = subscribeLiveMessages((liveMsg: any) => {
     broadcast('live_chat_message', liveMsg);
   });
 
   // Enviar estado inicial inmediato al cliente web que acaba de abrir la interfaz
   wssInstance.on('connection', (ws: WebSocket) => {
+    (ws as any).isAlive = true;
+    ws.on('pong', () => { (ws as any).isAlive = true; });
+    ws.on('error', () => { try { ws.terminate(); } catch (_) {} });
     try {
       ws.send(JSON.stringify({
         type: 'whatsapp_status',
@@ -50,6 +69,20 @@ export function initWebSocket(server: Server): WebSocketServer {
       }));
     } catch (_) {}
   });
+
+  // [INTEGRIDAD] Heartbeat: termina conexiones muertas para evitar fugas de clientes en `wss.clients`.
+  heartbeatInterval = setInterval(() => {
+    if (!wssInstance) return;
+    wssInstance.clients.forEach((client: WebSocket) => {
+      if ((client as any).isAlive === false) {
+        try { client.terminate(); } catch (_) {}
+        return;
+      }
+      (client as any).isAlive = false;
+      try { client.ping(); } catch (_) {}
+    });
+  }, 30000);
+  if (heartbeatInterval.unref) heartbeatInterval.unref();
 
   return wssInstance;
 }

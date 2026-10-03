@@ -74,17 +74,20 @@ export function runFlowCommands(jid: string, text: string, norm: string, pushNam
     norm.includes('no me contactes');
 
   if (isOptOut) {
+    // [ANTI-BANEO / COHERENCIA] Se marca 'no_molestar = 1' para detener TODOS los mensajes
+    // proactivos (seguimientos y recordatorios), pero NO se pausa el bot. Así el cliente que
+    // escriba de nuevo (como promete el mensaje de confirmación) SÍ recibe respuesta.
+    // Antes se ponía bot_pausado=1 y el cliente quedaba silenciado para siempre.
     db.prepare(`
       UPDATE chat_sessions
       SET no_molestar = 1,
-          bot_pausado = 1,
           seguimiento_enviado = 1,
           step = 'start',
           apartado_metadata = NULL
       WHERE jid = ?
     `).run(jid);
     recordMetric('desuscripcion_no_molestar', text, jid);
-    return `Entendido, *${pushName}*. Hemos registrado tu preferencia de *No Molestar* 👍 y el asistente quedará *pausado* para no enviarte más mensajes automáticos. Te ofrecemos una *disculpa* si te resultamos molestos. Si en el futuro necesitas consultar repuestos o insumos, solo escríbenos y con gusto te atenderemos. ¡Feliz día!`;
+    return `Entendido, *${pushName}*. Hemos registrado tu preferencia de *No Molestar* 👍 y no te enviaremos más mensajes automáticos ni recordatorios. Te ofrecemos una *disculpa* si te resultamos molestos. Si en el futuro necesitas consultar repuestos o insumos, solo escríbenos y con gusto te atenderemos. ¡Feliz día!`;
   }
 
   // [SECCIÓN 4c] Detección de Hostilidad, Quejas, Insultos o Acusaciones
@@ -122,6 +125,18 @@ export function runFlowCommands(jid: string, text: string, norm: string, pushNam
     norm.includes('mal servicio') ||
     norm.includes('incompetentes') ||
     norm.includes('estafaron') ||
+    // [EMPATÍA] Cliente que se siente ignorado o mal atendido: merece disculpa y respuesta con
+    // nombre y respaldo físico, no un fallback de "no logré ubicar el producto".
+    norm.includes('no me han respondido') ||
+    norm.includes('no me responden') ||
+    norm.includes('no me contestan') ||
+    norm.includes('nadie me responde') ||
+    norm.includes('no atienden') ||
+    norm.includes('no sirve esto') ||
+    norm.includes('pesima atencion') ||
+    norm.includes('mala atencion') ||
+    norm.includes('mal atendido') ||
+    norm.includes('no me han atendido') ||
     (hasCono && hasAggressiveContext) ||
     norm.includes('cono de tu madre') ||
     norm.includes('coño de tu madre') ||
@@ -147,7 +162,6 @@ export function runFlowCommands(jid: string, text: string, norm: string, pushNam
     norm.includes('no entiendo nada') ||
     norm.includes('no se usar esto') ||
     norm.includes('no se como se usa') ||
-    norm.includes('no se usar esto') ||
     norm.includes('no se usarlo') ||
     norm.includes('no entiendo como funciona') ||
     norm.includes('me cuesta esto') ||

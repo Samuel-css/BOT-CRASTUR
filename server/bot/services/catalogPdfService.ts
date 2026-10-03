@@ -15,7 +15,7 @@ import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { db, getSettings, getEffectiveRate } from '../../database';
 import { formatBs, formatRate } from '../utils/formatters';
-import { canonicalCategoryOf, getProductsByCanonicalCategory } from '../config/categoryGroups';
+import { getProductsByCanonicalCategory } from '../config/categoryGroups';
 
 /** Directorio en disco para almacenamiento persistente de catálogos PDF cacheados.
  *  [AISLAMIENTO] Respeta CRASTUR_DATA_DIR para que las pruebas no escriban en data/. */
@@ -127,7 +127,7 @@ function getProductsForCategory(categoryKey) {
   return all
     .filter(p => {
       const cat = String(p.categoria || '');
-      return cat === categoryKey || cat.startsWith(`${categoryKey} - `) || cat.startsWith(`${categoryKey}%`);
+      return cat === categoryKey || cat.startsWith(`${categoryKey} - `) || cat.startsWith(`${categoryKey} (`);
     })
     .sort((a, b) => String(a.modelo || '').localeCompare(String(b.modelo || ''), 'es'));
 }
@@ -561,7 +561,7 @@ function drawSpaciousProductRow(doc, prod, x, y, width, height, rate, settings) 
   doc.fillColor('#64748B')
      .font('Helvetica')
      .fontSize(6.8)
-     .text('Efectivo • Binance • Zelle', priceBoxX + 10, priceBoxY + 40, { lineBreak: false });
+     .text('Efectivo $ • Binance Pay (USDT) • Pago Móvil BCV', priceBoxX + 10, priceBoxY + 40, { lineBreak: false });
 
   // Separador interior suave
   doc.rect(priceBoxX + 10, priceBoxY + 50, priceBoxW - 20, 0.6)
@@ -594,12 +594,12 @@ function drawSpaciousProductRow(doc, prod, x, y, width, height, rate, settings) 
     doc.fillColor('#78350F')
        .font('Helvetica-Bold')
        .fontSize(7.5)
-       .text(`Inicial: $${inicialUsd.toFixed(2)} USD (40%)`, priceBoxX + 12, casheaBoxY + 18, { lineBreak: false });
+       .text(`Inicial: $${inicialUsd.toFixed(2)} USD (${Math.round(inicialPct*100)}%)`, priceBoxX + 12, casheaBoxY + 18, { lineBreak: false });
 
     doc.fillColor('#78350F')
        .font('Helvetica')
        .fontSize(7)
-       .text(`+ 3 cuotas de $${cuotaUsd.toFixed(2)} quincenal`, priceBoxX + 12, casheaBoxY + 30, { lineBreak: false });
+       .text(`+ ${cuotasCashea} cuotas de $${cuotaUsd.toFixed(2)} quincenal`, priceBoxX + 12, casheaBoxY + 30, { lineBreak: false });
   } else {
     doc.roundedRect(priceBoxX + 8, casheaBoxY, priceBoxW - 16, casheaBoxH, 4)
        .fillAndStroke('#F1F5F9', '#CBD5E1');
@@ -664,7 +664,7 @@ function drawFooter(doc, margin, contentWidth, pageHeight, pageNum, totalPages, 
   doc.fillColor('#475569')
      .font('Helvetica')
      .fontSize(6.8)
-     .text('Horario: Lunes a Sábado de 8:00 AM a 8:00 PM • Delivery en Caracas y Envíos Nacionales (MRW / Zoom / Tealca).', infoX, infoY + 11, { lineBreak: false });
+     .text('Horario: Lunes a Sábado de 8:00 AM a 8:00 PM • Delivery en Caracas (moto el mismo día). NO realizamos envíos por agencias nacionales.', infoX, infoY + 11, { lineBreak: false });
 
   doc.fillColor('#64748B')
      .font('Helvetica')

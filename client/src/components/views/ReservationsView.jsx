@@ -121,7 +121,9 @@ export default function ReservationsView({
 
             // Cálculo del período de gracia de 12 horas en estado vencido
             const isVencido = res.estado === 'vencido' || time.isExpired;
-            const isRetirado = res.estado === 'retirado';
+            // [INTEGRIDAD] El backend marca los apartados retirados como 'entregado'.
+            // Se acepta también 'retirado'/'concretado' por compatibilidad con datos históricos.
+            const isRetirado = res.estado === 'entregado' || res.estado === 'retirado' || res.estado === 'concretado';
             const GRACE_PERIOD_MS = 12 * 60 * 60 * 1000;
             const purgeTime = Number(res.expira_en) + GRACE_PERIOD_MS;
             const remainingGraceMs = purgeTime - Date.now();
