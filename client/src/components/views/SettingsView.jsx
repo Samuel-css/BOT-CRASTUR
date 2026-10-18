@@ -19,7 +19,8 @@ import {
   RefreshCw,
   ShoppingBag,
   Bell,
-  Moon
+  Moon,
+  UserCheck
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DEFAULT_DELIVERY_ZONES } from '../../constants/deliveryZones';
@@ -743,7 +744,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                   <Bell size={17} className={subTabMensajes === 'seguimiento' ? 'text-amber-400' : 'text-slate-400'} />
                   <div className="text-left">
                     <div className="leading-tight">3. Recordatorio</div>
-                    <div className="text-[10px] text-slate-500 font-normal">A los 15-30 minutos</div>
+                    <div className="text-[10px] text-slate-500 font-normal">Mínimo 1 hora · 1 por chat</div>
                   </div>
                 </button>
               </div>
@@ -1032,7 +1033,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                         </div>
                         <div>
                           <h3 className="text-sm font-bold text-white">Recordatorio Automático al Cliente</h3>
-                          <p className="text-[11px] text-slate-400">Si un cliente consultó un precio y no volvió a responder</p>
+                          <p className="text-[11px] text-slate-400">Máximo 1 recordatorio por chat · nunca si un vendedor ya atendió · nunca si el cliente se despidió</p>
                         </div>
                       </div>
 
@@ -1042,9 +1043,9 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                         <div className="flex flex-wrap gap-2">
                           {[
                             { min: 0, label: 'Desactivado' },
-                            { min: 15, label: '15 minutos (Recomendado)' },
-                            { min: 30, label: '30 minutos' },
-                            { min: 60, label: '1 hora' }
+                            { min: 60, label: '1 hora (Recomendado)' },
+                            { min: 180, label: '3 horas' },
+                            { min: 360, label: '6 horas' }
                           ].map((t) => {
                             const isCurrent = (t.min === 0 && form.insistencia_activa === '0') ||
                               (form.insistencia_activa === '1' && form.insistencia_minutos === String(t.min));
@@ -1058,7 +1059,7 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                                     toast.info('Recordatorios automáticos desactivados.');
                                   } else {
                                     setForm(prev => ({ ...prev, insistencia_activa: '1', insistencia_minutos: String(t.min) }));
-                                    toast.success(`Recordatorio configurado a los ${t.min} minutos.`);
+                                    toast.success(`Recordatorio configurado: ${t.label.replace(' (Recomendado)', '')} de espera, máximo 1 por chat.`);
                                   }
                                 }}
                                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
@@ -1144,6 +1145,86 @@ export default function SettingsView({ settings, onSaveSettings, onRequestConfir
                           {...field('mensaje_insistencia')}
                           className={textareaCls}
                         />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUBTAB 3b: [HUMAN TAKEOVER] EL BOT SE CALLA CUANDO UN VENDEDOR CONTESTA */}
+                  {subTabMensajes === 'seguimiento' && (
+                    <div className={cardCls}>
+                      <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                          <UserCheck size={20} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-white">Cuando un Vendedor Contesta, el Bot se Calla</h3>
+                          <p className="text-[11px] text-slate-400">El bot deja de responder ESE chat para no interrumpir la conversación humana</p>
+                        </div>
+                      </div>
+
+                      {/* INTERRUPTOR DE PAUSA AUTOMÁTICA */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-bold text-white">Silenciar el bot automáticamente</div>
+                          <p className="text-[11px] text-slate-400">Se activa apenas un vendedor escribe desde el teléfono o desde este panel</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const activo = form.auto_pausa_asesor !== '0';
+                            const nextVal = activo ? '0' : '1';
+                            setForm(prev => ({ ...prev, auto_pausa_asesor: nextVal }));
+                            toast.success(nextVal === '1'
+                              ? 'Pausa automática ACTIVADA: el bot se callará cuando un vendedor responda.'
+                              : 'Pausa automática DESACTIVADA: el bot seguirá respondiendo aunque un vendedor escriba.');
+                          }}
+                          className={`px-5 py-3 rounded-2xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 shadow-md ${
+                            form.auto_pausa_asesor !== '0'
+                              ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
+                              : 'bg-slate-900 border border-slate-700 text-slate-300 hover:border-slate-600 hover:text-white'
+                          }`}
+                        >
+                          {form.auto_pausa_asesor !== '0' ? '✓ Activado' : 'Desactivado'}
+                        </button>
+                      </div>
+
+                      {/* TIEMPO DE REACTIVACIÓN AUTOMÁTICA */}
+                      <div className={`space-y-2 pt-3 border-t border-slate-800/70 transition ${
+                        form.auto_pausa_asesor === '0' ? 'opacity-40 pointer-events-none select-none' : ''
+                      }`}>
+                        <label className={labelCls}>¿Cuándo debe volver a responder el bot?</label>
+                        <p className="text-[10px] text-slate-500">
+                          Solo si el cliente vuelve a escribir y el vendedor no ha respondido en ese tiempo. Si el vendedor sigue hablando, el bot nunca interrumpe.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { min: 60, label: '1 hora' },
+                            { min: 180, label: '3 horas (Recomendado)' },
+                            { min: 360, label: '6 horas' },
+                            { min: 0, label: 'Nunca solo' }
+                          ].map((t) => {
+                            const isCurrent = String(form.reactivar_bot_minutos ?? '180') === String(t.min);
+                            return (
+                              <button
+                                key={t.min}
+                                type="button"
+                                onClick={() => {
+                                  setForm(prev => ({ ...prev, reactivar_bot_minutos: String(t.min) }));
+                                  toast.success(t.min === 0
+                                    ? 'El bot no se reactivará solo: el vendedor decide cuándo reanudarlo.'
+                                    : `El bot retomará el chat si el cliente escribe después de ${t.label.replace(' (Recomendado)', '')} sin respuesta del vendedor.`);
+                                }}
+                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                                  isCurrent
+                                    ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 shadow-md'
+                                    : 'bg-[#070b14] border-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                <span>{isCurrent ? '✓ ' : ''}{t.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   )}

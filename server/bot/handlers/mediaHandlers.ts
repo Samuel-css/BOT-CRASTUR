@@ -15,7 +15,9 @@ export function handleMediaResponse(mediaTypeOrPushName?: string, pushNameOrMedi
   let mediaType = 'multimedia';
   let pushName = 'amigo/a';
 
-  if (mediaTypeOrPushName === 'audio' || mediaTypeOrPushName === 'voice' || mediaTypeOrPushName === 'image' || mediaTypeOrPushName === 'video' || mediaTypeOrPushName === 'sticker') {
+  // [FIX] 'document' debe reconocerse como medio: si no, el nombre del remitente termina
+  // mostrándose como "*document*" en el saludo del mensaje.
+  if (mediaTypeOrPushName === 'audio' || mediaTypeOrPushName === 'voice' || mediaTypeOrPushName === 'image' || mediaTypeOrPushName === 'video' || mediaTypeOrPushName === 'sticker' || mediaTypeOrPushName === 'document') {
     mediaType = mediaTypeOrPushName;
     pushName = pushNameOrMediaType || 'amigo/a';
   } else {

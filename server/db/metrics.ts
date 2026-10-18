@@ -13,10 +13,10 @@ import { canonicalCategoryOf } from '../bot/config/categoryGroups';
 /**
  * Cuenta los productos pertenecientes a la línea "Combos & Kits" (por prefijo),
  * tolerando subcategorías como "Combos & Kits - Promociones".
+ * Recibe las filas ya cargadas para no repetir el escaneo completo de la tabla.
  */
-function countCombos(): number {
-  const all: any[] = db.prepare('SELECT categoria FROM products WHERE activo = 1').all();
-  return all.filter(p => String(p.categoria || '').toLowerCase().includes('combo')).length;
+function countCombos(rows: any[]): number {
+  return rows.filter(p => String(p.categoria || '').toLowerCase().includes('combo')).length;
 }
 
 /**
@@ -78,7 +78,7 @@ export function getMetricsSummary() {
     conteoCategorias[canon || 'Sin clasificar'] += 1;
   }
 
-  const totalCombos = countCombos();
+  const totalCombos = countCombos(allActive);
   const totalProductosActivos = allActive.length;
 
   return {

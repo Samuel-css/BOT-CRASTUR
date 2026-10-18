@@ -17,7 +17,9 @@
 export {
   getStatus,
   subscribeStatusChange,
-  subscribeLiveMessages
+  subscribeLiveMessages,
+  subscribeChatState,
+  notifyChatState
 } from './whatsapp/socketState';
 
 export {
@@ -41,7 +43,9 @@ export {
 import {
   getStatus,
   subscribeStatusChange,
-  subscribeLiveMessages
+  subscribeLiveMessages,
+  subscribeChatState,
+  notifyChatState
 } from './whatsapp/socketState';
 import {
   sendTextMessage,
@@ -70,5 +74,7 @@ export default {
   sendManualMessage,
   enqueueOutboundMessage,
   subscribeStatusChange,
-  subscribeLiveMessages
+  subscribeLiveMessages,
+  subscribeChatState,
+  notifyChatState
 };

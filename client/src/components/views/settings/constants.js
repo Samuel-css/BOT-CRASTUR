@@ -98,7 +98,7 @@ export const FOLLOWUP_PRESETS = [
     titulo: 'Sutil & Amable',
     Icon: Sparkles,
     iconColor: 'text-emerald-400',
-    texto: '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.'
+    texto: '¿Cómo va todo, {nombre}? 👋 Quedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda. Escribe *VENDEDOR* si prefieres una persona.'
   },
   {
     id: 'urgencia',

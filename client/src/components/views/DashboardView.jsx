@@ -80,11 +80,14 @@ export default function DashboardView({
   metrics = {},
   bcvData = {},
   waStatus = {},
+  settings = {},
   onNavigate,
   onOpenProductModal
 }) {
   const effectiveRate = bcvData?.tasa_efectiva || 849.56;
   const isConnected = waStatus?.status === 'connected';
+  // [CONSISTENCIA] El horario mostrado se toma de la configuración real de la tienda.
+  const horarioTexto = settings?.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
 
   // Apartados activos y monto total
   const activeReservations = reservations.filter(r => r.estado === 'activo');
@@ -169,7 +172,7 @@ export default function DashboardView({
 
           <div className="px-3 py-1.5 rounded-xl bg-[#070b14] border border-slate-800 text-xs text-slate-300 font-medium hidden sm:flex items-center gap-1.5">
             <Clock size={13} className="text-orange-400" />
-            <span>Lun-Sáb: 8am - 8pm</span>
+            <span>{horarioTexto}</span>
           </div>
         </div>
       </div>

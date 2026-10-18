@@ -1,6 +1,6 @@
 {
   "name": "crastur",
-  "version": "2.8.0",
+  "version": "3.1.0",
   "description": "Sistema de Ventas y Bot de WhatsApp para Crastur",
   "scripts": {
     "start": "tsx server/server.ts",
@@ -10,6 +10,8 @@
     "dev:client": "npm --prefix client run dev",
     "clean": "tsx scripts/clean_data.ts",
     "reset": "tsx scripts/reset_clean_install.ts",
+    "catalogo-demo": "tsx scripts/cargar_catalogo_demo.ts",
+    "actualizar": "tsx scripts/actualizar.ts",
     "preparar-entrega": "tsx scripts/preparar_entrega.ts",
     "migrar": "tsx scripts/migrar_catalogo_asesores.ts",
     "stop": "node -e \"const http=require('http'); const req=http.request('http://localhost:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",

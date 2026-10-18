@@ -47,7 +47,7 @@ import {
 import { toast } from 'sonner';
 import { formatRate } from '../../utils/formatters';
 
-export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequestConfirm }) {
+export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequestConfirm, settings = {} }) {
   const [sessions, setSessions] = useState([]);
   const [selectedJid, setSelectedJid] = useState(null);
   const [activeSession, setActiveSession] = useState(null);
@@ -59,6 +59,8 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
   const [sendingMessage, setSendingMessage] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+  // [HUMAN TAKEOVER AUTOMÁTICO] Configuración de la pausa/reactivación del bot por asesor
+  const [botSettings, setBotSettings] = useState({ reactivar_bot_minutos: '180', auto_pausa_asesor: '1' });
   const messagesEndRef = useRef(null);
 
   const isConnected = waStatus?.status === 'connected';
@@ -80,7 +82,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       categoria: 'Tienda',
       icono: MapPin,
       color: 'orange',
-      texto: `🏢 *Tienda Física Crastur - Insumos & Repuestos de Moto* 🛞🏍️\n📍 *Dirección:* Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas.\n📌 *Puntos de Referencia:* Frente al Centro Financiero Latino, a 2 cuadras de la estación de Metro Parque Central y muy cerca de la Av. Bolívar.\n🕒 *Horario:* Lunes a Sábado de 8:00 AM a 8:00 PM (horario corrido).\n🗺️ *Google Maps:* https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`
+      texto: `🏢 *Tienda Física Crastur - Insumos & Repuestos de Moto* 🛞🏍️\n📍 *Dirección:* Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas.\n📌 *Puntos de Referencia:* Frente al Centro Financiero Latino, a 2 cuadras de la estación de Metro Parque Central y muy cerca de la Av. Bolívar.\n🕒 *Horario:* ${settings?.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM'}.\n🗺️ *Google Maps:* https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`
     },
     {
       id: 'pagos',
@@ -88,7 +90,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       categoria: 'Pagos',
       icono: DollarSign,
       color: 'emerald',
-      texto: `💳 *Formas de Pago Autorizadas en Crastur:*\n💵 *Precio Promoción en Divisas:* Pagando en *Efectivo ($)* o por *Binance Pay (USDT)* 🪙🔥\n✅ *Pago Móvil y Transferencia Bancaria* (a tasa oficial BCV del día, sin recargos)\n✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n💛 *Cashea en Tienda Física* (Disponible a partir de $25 USD)\n🇻🇪 *Tasa oficial BCV hoy:* Bs. ${formatRate(effectiveRate)} / USD`
+      texto: `💳 *Formas de Pago Autorizadas en Crastur:*\n💵 *Precio Promoción en Divisas:* Pagando en *Efectivo ($)* o por *Binance Pay (USDT)* 🪙🔥\n✅ *Pago Móvil y Transferencia Bancaria* (a tasa oficial BCV del día, sin recargos)\n✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n💳 *Punto de Venta* (tarjeta de débito en mostrador)\n💛 *Cashea en Tienda Física* (Disponible a partir de $25 USD)\n🇻🇪 *Tasa oficial BCV hoy:* Bs. ${formatRate(effectiveRate)} / USD`
     },
     {
       id: 'binance',
@@ -226,6 +228,19 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
 
   useEffect(() => {
     loadInbox();
+
+    // [HUMAN TAKEOVER AUTOMÁTICO] Leer configuración de reactivación para explicarla en pantalla
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data) {
+          setBotSettings({
+            reactivar_bot_minutos: data.reactivar_bot_minutos ?? '180',
+            auto_pausa_asesor: data.auto_pausa_asesor ?? '1'
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -249,6 +264,12 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     let ws;
+    // [RENDIMIENTO] Evita recargar toda la lista de chats en cada mensaje recibido.
+    let inboxReloadTimer = null;
+    const scheduleInboxReload = () => {
+      if (inboxReloadTimer) clearTimeout(inboxReloadTimer);
+      inboxReloadTimer = setTimeout(() => { inboxReloadTimer = null; loadInbox(); }, 900);
+    };
 
     try {
       ws = new WebSocket(wsUrl);
@@ -273,7 +294,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
               setActiveSession(null);
               return;
             }
-            loadInbox();
+            scheduleInboxReload();
 
             if (data && data.jid === currentJid) {
               setMessages((prev) => appendDeduplicatedMessage(prev, {
@@ -286,7 +307,18 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
             }
           } else if (type === 'chat_pause_changed') {
             if (data && data.jid === currentJid) {
-              setActiveSession((prev) => prev ? { ...prev, bot_pausado: data.pausado ? 1 : 0 } : null);
+              setActiveSession((prev) => prev ? {
+                ...prev,
+                bot_pausado: data.pausado ? 1 : 0,
+                bot_pausado_por: data.pausado ? (data.por || prev.bot_pausado_por) : null
+              } : null);
+
+              // [HUMAN TAKEOVER AUTOMÁTICO] Avisos claros de lo que acaba de ocurrir
+              if (data.auto && data.pausado && data.origen === 'telefono') {
+                toast.warning('Un asesor respondió en este chat: el bot se pausó automáticamente.');
+              } else if (data.auto && !data.pausado) {
+                toast.success('El bot retomó este chat automáticamente.');
+              }
             }
             loadInbox();
           }
@@ -299,6 +331,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     }
 
     return () => {
+      if (inboxReloadTimer) clearTimeout(inboxReloadTimer);
       if (ws) ws.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -316,9 +349,15 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       });
       const data = await res.json();
       if (data.success) {
-        setActiveSession((prev) => ({ ...prev, bot_pausado: nextState ? 1 : 0 }));
+        setActiveSession((prev) => ({
+          ...prev,
+          bot_pausado: nextState ? 1 : 0,
+          bot_pausado_por: nextState ? (data.por || 'manual') : null
+        }));
         setSessions((prev) =>
-          prev.map((s) => (s.jid === selectedJid ? { ...s, bot_pausado: nextState ? 1 : 0 } : s))
+          prev.map((s) => (s.jid === selectedJid
+            ? { ...s, bot_pausado: nextState ? 1 : 0, bot_pausado_por: nextState ? (data.por || 'manual') : null }
+            : s))
         );
         if (nextState) {
           toast.warning('Bot PAUSADO en este chat. Ahora puedes atender manualmente sin interferencia.');
@@ -504,6 +543,20 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
     return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
   });
 
+  // [HUMAN TAKEOVER AUTOMÁTICO] ¿El bot está pausado porque un asesor tomó el chat?
+  const pausadoPorAsesor = !!(activeSession?.bot_pausado && activeSession?.bot_pausado_por === 'asesor');
+
+  // Texto humano del tiempo de reactivación automática configurado
+  const reactivacionTexto = (() => {
+    const min = parseInt(botSettings.reactivar_bot_minutos || '180', 10);
+    if (!min || min <= 0) return 'sin reactivación automática';
+    if (min >= 60) {
+      const horas = Math.round((min / 60) * 10) / 10;
+      return horas === 1 ? '1 hora' : `${horas} horas`;
+    }
+    return `${min} minutos`;
+  })();
+
   return (
     <div className="h-[calc(100vh-6.5rem)] max-w-7xl mx-auto flex flex-col space-y-3 animate-fade-in-up">
       {/* ALERTA CRÍTICA: WHATSAPP DESCONECTADO (Con botón de acción directa) */}
@@ -635,10 +688,16 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                       </div>
                       {isPaused ? (
                         <span
-                          title="Bot pausado por asesor (Atención manual)"
-                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 border-2 border-[#070b14] flex items-center justify-center text-[8px] text-slate-950 font-black"
+                          title={
+                            session.bot_pausado_por === 'asesor'
+                              ? 'Un asesor está atendiendo (bot pausado automáticamente)'
+                              : 'Bot pausado manualmente por el asesor'
+                          }
+                          className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-[#070b14] flex items-center justify-center text-[8px] text-slate-950 font-black ${
+                            session.bot_pausado_por === 'asesor' ? 'bg-emerald-500' : 'bg-amber-500'
+                          }`}
                         >
-                          P
+                          {session.bot_pausado_por === 'asesor' ? 'A' : 'P'}
                         </span>
                       ) : (
                         <span
@@ -701,11 +760,17 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                           {phone}
                         </span>
                         {isPaused ? (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold">
-                            Manual
-                          </span>
+                          session.bot_pausado_por === 'asesor' ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-semibold whitespace-nowrap">
+                              Asesor
+                            </span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold whitespace-nowrap">
+                              Manual
+                            </span>
+                          )
                         ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium whitespace-nowrap">
                             Bot Activo
                           </span>
                         )}
@@ -744,10 +809,16 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                       {activeSession?.push_name || 'Cliente de WhatsApp'}
                     </h4>
                     {activeSession?.bot_pausado ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 whitespace-nowrap flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                        <span className="hidden xl:inline">Modo Manual (Bot Pausado)</span>
-                        <span className="xl:hidden">Manual</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap flex items-center gap-1.5 ${
+                        pausadoPorAsesor
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${pausadoPorAsesor ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                        <span className="hidden xl:inline">
+                          {pausadoPorAsesor ? 'Asesor Atendiendo (Bot en Pausa)' : 'Modo Manual (Bot Pausado)'}
+                        </span>
+                        <span className="xl:hidden">{pausadoPorAsesor ? 'Asesor' : 'Manual'}</span>
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1.5">
@@ -813,14 +884,15 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                   }`}
                   title={
                     activeSession?.bot_pausado
-                      ? 'Reanudar bot para que vuelva a responder automáticamente'
+                      ? 'Reactivar el bot para que vuelva a responder automáticamente en este chat'
                       : 'Pausar bot para atender tú manualmente sin interrupciones'
                   }
                 >
                   {activeSession?.bot_pausado ? (
                     <>
                       <PlayCircle size={15} />
-                      <span>Reanudar Bot</span>
+                      <span className="hidden xl:inline">{pausadoPorAsesor ? 'Reactivar Bot' : 'Reanudar Bot'}</span>
+                      <span className="xl:hidden">Reactivar</span>
                     </>
                   ) : (
                     <>
@@ -867,9 +939,26 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
 
             {/* Banner de Estado del Bot */}
             {activeSession?.bot_pausado ? (
-              <div className="bg-amber-950/40 border-b border-amber-500/25 px-4 py-2 text-[11px] text-amber-300 flex items-center justify-between">
-                <span>
-                  ✋ <strong>El bot está silenciado para este cliente:</strong> Puedes escribir y despachar libremente. El bot no intervendrá hasta que hagas clic en "Reanudar Bot".
+              <div className={`border-b px-4 py-2 text-[11px] flex items-center justify-between gap-3 ${
+                pausadoPorAsesor
+                  ? 'bg-emerald-950/40 border-emerald-500/25 text-emerald-200'
+                  : 'bg-amber-950/40 border-amber-500/25 text-amber-300'
+              }`}>
+                <span className="leading-relaxed">
+                  {pausadoPorAsesor ? (
+                    <>
+                      ✋ <strong>Un asesor está atendiendo este chat:</strong> el bot quedó en silencio
+                      {parseInt(botSettings.reactivar_bot_minutos || '180', 10) > 0
+                        ? <> y se reactivará solo si el cliente vuelve a escribir después de {reactivacionTexto} sin respuesta del asesor.</>
+                        : <> y no se reactivará automáticamente.</>}
+                      {' '}También puedes reactivarlo ahora con el botón <strong>“Reactivar Bot”</strong>.
+                    </>
+                  ) : (
+                    <>
+                      ✋ <strong>El bot está silenciado para este cliente:</strong> puedes escribir y despachar
+                      libremente. El bot no intervendrá hasta que hagas clic en <strong>“Reanudar Bot”</strong>.
+                    </>
+                  )}
                 </span>
               </div>
             ) : null}
@@ -891,6 +980,18 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                 messages.map((msg, index) => {
                   const isFromClient = msg.remitente === 'cliente';
                   const isFromAdvisor = msg.remitente === 'asesor';
+                  const isSystem = msg.remitente === 'sistema';
+
+                  // [HUMAN TAKEOVER AUTOMÁTICO] Avisos del sistema en el centro del chat
+                  if (isSystem) {
+                    return (
+                      <div key={msg.id || index} className="flex justify-center">
+                        <div className="max-w-[92%] text-center text-[11px] text-slate-400 bg-slate-900/70 border border-slate-800 rounded-2xl px-3.5 py-1.5 leading-relaxed">
+                          {msg.contenido}
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div

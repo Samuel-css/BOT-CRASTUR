@@ -62,7 +62,15 @@ export async function handleCatalogPdfDelivery(
   session?: any,
   jid?: string
 ): Promise<any> {
-  const result = await getCategoryCatalogPdf(categoryInput);
+  // [RESILIENCIA] Si la generación del PDF lanza (IO/PDFKit), no se debe rechazar la promesa
+  // sin responder al cliente. Se captura y se ofrece la salida de contingencia.
+  let result: any = null;
+  try {
+    result = await getCategoryCatalogPdf(categoryInput);
+  } catch (err: any) {
+    console.error('[Catálogo PDF] Error generando el catálogo:', err?.message || err);
+    result = { success: false };
+  }
 
   if (!result || !result.success) {
     let msg = `📄 *Catálogo Crastur* 🛞🏍️\n\n`;

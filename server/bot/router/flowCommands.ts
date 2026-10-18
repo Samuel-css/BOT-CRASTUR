@@ -20,7 +20,7 @@ export function runFlowCommands(jid: string, text: string, norm: string, pushNam
   // [ATENCIÓN PERSONA MAYOR / TRATO FORMAL] Saludos con tratamiento de respeto
   // (ej: "buenos días señor", "disculpe señora") reciben atención paciente.
   const esTratoFormal =
-    (norm.includes('senor') || norm.includes('señor') || norm.includes('senora') || norm.includes('señora') || norm.includes('disculpe') || norm.includes('caballero')) &&
+    (norm.includes('senor') || norm.includes('senora') || norm.includes('caballero')) &&
     (norm.includes('buenos dias') || norm.includes('buenas tardes') || norm.includes('buenas noches') || norm.includes('hola') || norm.includes('saludos') || norm.includes('disculpe'));
 
   if (esTratoFormal) {
@@ -54,8 +54,14 @@ export function runFlowCommands(jid: string, text: string, norm: string, pushNam
     norm === 'baja' ||
     norm === 'desuscribir' ||
     norm === 'opt out' ||
-    norm === 'stop' ||
-    norm.includes('no me escrib') ||
+    // [FIX] 'stop' a secas se quitó: también es un repuesto (luz de stop) y silenciaba
+    // al cliente por error. Se exigen frases inequívocas de desuscripción.
+    norm.includes('stop mensajes') ||
+    norm.includes('basta de mensajes') ||
+    norm.includes('no mas mensajes') ||
+    norm.includes('no me escribas') ||
+    norm.includes('no me escriba') ||
+    norm.includes('no me escriban') ||
     norm.includes('no me mandes mensajes') ||
     norm.includes('no me manden mensajes') ||
     norm.includes('no me envies mensajes') ||

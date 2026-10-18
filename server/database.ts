@@ -207,6 +207,8 @@ import {
   isBotPaused,
   isBotGloballyPaused,
   setBotGlobalPause,
+  registerAdvisorActivity,
+  shouldReactivateBotForClient,
   persistImmediateSync
 } from './db/settings';
 import { recordMetric, getMetricsSummary } from './db/metrics';
@@ -243,6 +245,8 @@ export default {
   isBotPaused,
   isBotGloballyPaused,
   setBotGlobalPause,
+  registerAdvisorActivity,
+  shouldReactivateBotForClient,
   getMetricsSummary,
   exportCatalog,
   importCatalog,

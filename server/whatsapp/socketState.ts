@@ -21,6 +21,8 @@ export let currentUser: any = null;
 export let statusChangeCallbacks: Array<(status: WhatsAppStatusPayload) => void> = [];
 /** Suscriptores de mensajes en vivo (Live Inbox). */
 export let liveMessageCallbacks: Array<(msg: any) => void> = [];
+/** Suscriptores de cambios de estado del bot por chat (pausado/reanudado por asesor). */
+export let chatStateCallbacks: Array<(payload: any) => void> = [];
 
 // ─── Seteadores (evitan "live bindings" frágiles entre módulos) ─────────────
 export function setSock(value: any): void { sock = value; }
@@ -49,6 +51,26 @@ export function subscribeLiveMessages(cb: (msg: any) => void): () => void {
   return () => {
     liveMessageCallbacks = liveMessageCallbacks.filter(c => c !== cb);
   };
+}
+
+/**
+ * Suscribe un callback a los cambios de estado del bot por chat (pausas/reanudaciones).
+ * @returns Función para cancelar la suscripción.
+ */
+export function subscribeChatState(cb: (payload: any) => void): () => void {
+  chatStateCallbacks.push(cb);
+  return () => {
+    chatStateCallbacks = chatStateCallbacks.filter(c => c !== cb);
+  };
+}
+
+/**
+ * Emite un cambio de estado del bot en un chat (p. ej. pausado automáticamente por un asesor).
+ */
+export function notifyChatState(payload: any): void {
+  chatStateCallbacks.forEach(cb => {
+    try { cb(payload); } catch (e) { console.error('Error in chat state callback:', e); }
+  });
 }
 
 /**

@@ -19,11 +19,20 @@ import {
   markReservation22hReminderSent
 } from '../../database';
 import { isWithinBusinessHours } from '../services/businessRules';
+import { normalizeText } from '../utils/textUtils';
 
 /**
  * Evalúa las sesiones de chat inactivas que consultaron un repuesto sin concretar apartado
  * y despacha un recordatorio educado de asistencia comercial.
- * 
+ *
+ * [RECORDATORIOS CON RESPETO]
+ * Reglas estrictas para no resultar cansón (aprobadas por el negocio):
+ *  1. MÁXIMO 1 recordatorio por conversación (contador `recordatorio_total`).
+ *  2. Mínimo 1 hora de silencio del cliente (aunque la configuración pida menos).
+ *  3. NUNCA si un asesor humano ya respondió después del último mensaje del cliente.
+ *  4. NUNCA si la última palabra del cliente fue una cortesía/cierre ("gracias", "ok", "no"...).
+ *  5. NUNCA si el bot quedó en silencio por no entender (3 fallos seguidos).
+ *
  * @param sendWhatsAppMessageCallback - Función delegada para encolar el mensaje en el servicio de WhatsApp
  */
 async function checkPendingFollowUps(
@@ -40,10 +49,34 @@ async function checkPendingFollowUps(
     return;
   }
 
-  const minutos = parseInt(settings.insistencia_minutos || '15', 10);
+  // [ANTI-BANEO / VENTANA 24H] WhatsApp solo permite iniciar conversación dentro de las 24h
+  // siguientes al último mensaje del cliente. Un seguimiento posterior viola la política y
+  // arriesga bloqueo, así que se limita la ventana inferior (hace 60 min) y la superior (24h).
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  // [ANTI-BANEO / CUOTA DIARIA] Tope de mensajes proactivos por día para no enviar ráfagas
+  // a muchos clientes el mismo día (patrón que Meta penaliza).
+  const cuotaDiaria = (() => {
+    const cfg = parseInt(String(settings.proactivos_max_dia ?? '30'), 10);
+    return Number.isFinite(cfg) && cfg >= 0 ? cfg : 30;
+  })();
+  const inicioDia = new Date();
+  inicioDia.setHours(0, 0, 0, 0);
+  const enviadosHoy = db.prepare(
+    "SELECT COUNT(*) as c FROM bot_metrics WHERE evento = 'seguimiento_enviado' AND timestamp >= ?"
+  ).get(inicioDia.getTime())?.c || 0;
+  if (enviadosHoy >= cuotaDiaria) {
+    console.log(`[Seguimiento] Cuota diaria de proactivos alcanzada (${enviadosHoy}/${cuotaDiaria}). Se posponen hasta mañana.`);
+    return;
+  }
+
+  // [MÍNIMO 1 HORA] Aunque en configuración quede un valor menor, el recordatorio espera al menos 60 minutos.
+  const minutosConfigurados = parseInt(settings.insistencia_minutos || '60', 10);
+  const minutos = Math.max(60, isNaN(minutosConfigurados) ? 60 : minutosConfigurados);
   const delayMs = minutos * 60 * 1000;
   const now = Date.now();
   const threshold = now - delayMs;
+  const threshold24h = now - DAY_MS;
 
   const pendingSessions = db.prepare(`
     SELECT * FROM chat_sessions
@@ -52,8 +85,11 @@ async function checkPendingFollowUps(
       AND seguimiento_enviado = 0
       AND bot_pausado = 0
       AND no_molestar = 0
+      AND COALESCE(recordatorio_total, 0) < 1
+      AND COALESCE(fallos_consecutivos, 0) < 3
       AND ultimo_mensaje_at <= ?
-  `).all(threshold);
+      AND ultimo_mensaje_at >= ?
+  `).all(threshold, threshold24h);
 
   for (const session of pendingSessions) {
     // No interrumpir si el usuario se encuentra en medio de un flujo de apartado
@@ -77,12 +113,45 @@ async function checkPendingFollowUps(
       continue;
     }
 
+    // [NUNCA SI UN ASESOR ATENDIÓ] Si un asesor respondió después del último mensaje del
+    // cliente, el recordatorio automático sobra: la conversación está en manos humanas.
+    const ultimoCliente = db.prepare(`
+      SELECT contenido, timestamp FROM chat_messages
+      WHERE jid = ? AND remitente = 'cliente'
+      ORDER BY timestamp DESC, id DESC LIMIT 1
+    `).get(session.jid);
+
+    if (ultimoCliente && session.asesor_ultimo_at && Number(session.asesor_ultimo_at) >= Number(ultimoCliente.timestamp)) {
+      console.log(`[Seguimiento] Recordatorio a ${session.jid} omitido: un asesor ya respondió esa consulta.`);
+      db.prepare('UPDATE chat_sessions SET seguimiento_enviado = 1 WHERE jid = ?').run(session.jid);
+      continue;
+    }
+
+    // [NO SER CANSÓN] Si la última palabra del cliente fue un cierre o cortesía, no se recuerda nada.
+    // Se usan coincidencias exactas/cortas para no confundir una duda real ("no sé cuál me sirve")
+    // con un cierre ("no, gracias").
+    const normUltimo = normalizeText(ultimoCliente?.contenido || '');
+    const cierresExactos = new Set([
+      'gracias', 'muchas gracias', 'mil gracias', 'ok', 'okey', 'ok gracias', 'listo', 'listo gracias',
+      'dale', 'dale gracias', 'perfecto', 'perfecto gracias', 'buenas', 'ya', 'no', 'nada', 'nada gracias',
+      'chao', 'adios', 'nos vemos', 'hasta luego', 'excelente', 'de acuerdo', 'conforme', 'todo bien', 'todo fino'
+    ]);
+    const esCierreOCortesia =
+      cierresExactos.has(normUltimo) ||
+      /^(gracias|ok|listo|dale|perfecto|chao|adios|hasta luego|nos vemos|ya lo|ya la|ya compre|ya tengo|todo bien|todo fino)\b/.test(normUltimo);
+
+    if (esCierreOCortesia) {
+      console.log(`[Seguimiento] Recordatorio a ${session.jid} omitido: el cliente cerró la conversación ("${normUltimo.slice(0, 40)}").`);
+      db.prepare('UPDATE chat_sessions SET seguimiento_enviado = 1 WHERE jid = ?').run(session.jid);
+      continue;
+    }
+
     const pushName = (session.push_name && session.push_name.trim()) ? session.push_name.trim() : 'amigo/a';
     const prodName = (session.ultimo_producto_nombre && session.ultimo_producto_nombre.trim()) ? session.ultimo_producto_nombre.trim() : 'el repuesto consultado';
 
     let followUpText = settings.mensaje_insistencia || '';
     if (!followUpText) {
-      followUpText = `¡Hola, *${pushName}*! 👋 Quería saber si pudiste revisar la información del *${prodName}*. Te recuerdo que contamos con garantía, entrega inmediata en tienda y financiamiento con Cashea 💛. Si tienes cualquier duda o deseas que un asesor te asista directamente, escribe *VENDEDOR* y con gusto te atendemos.`;
+      followUpText = `¿Cómo va todo, *${pushName}*? 👋 Quedó pendiente el *${prodName}*. Si aún lo necesitas, con gusto te lo dejo listo en tienda. Cualquier cosa, escribe *VENDEDOR*.`;
     } else {
       // Reemplazo dinámico de variables de plantilla ({nombre}, {producto})
       followUpText = followUpText
@@ -90,7 +159,7 @@ async function checkPendingFollowUps(
         .replace(/\{producto\}/gi, prodName);
 
       if (followUpText.includes('{')) {
-        followUpText = `¡Hola, *${pushName}*! 👋 Quería saber si pudiste revisar la información del *${prodName}*. Te recuerdo que contamos con garantía, entrega inmediata en tienda y financiamiento con Cashea 💛. Si tienes cualquier duda, escribe *VENDEDOR*.`;
+        followUpText = `¿Cómo va todo, *${pushName}*? 👋 Quedó pendiente el *${prodName}*. Si aún lo necesitas, escribe *VENDEDOR*.`;
       }
     }
 
@@ -100,7 +169,8 @@ async function checkPendingFollowUps(
 
       db.prepare(`
         UPDATE chat_sessions
-        SET seguimiento_enviado = 1
+        SET seguimiento_enviado = 1,
+            recordatorio_total = COALESCE(recordatorio_total, 0) + 1
         WHERE jid = ?
       `).run(session.jid);
 

@@ -216,6 +216,42 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 - Si la base de datos se dañara por un corte de energía, el sistema **se recupera solo** al encender,
   usando el respaldo más reciente.
 
+### 9. ✋ El bot se calla cuando el vendedor contesta (Human Takeover Automático)
+- **Con la pausa automática activada (viene activada por defecto):** apenas un vendedor responde en un
+  chat —desde el teléfono o desde el panel— el bot **se queda en silencio en ESA conversación** y no
+  vuelve a intervenir. Nada de respuestas raras mientras el humano atiende.
+- **Reactivación con respeto:** si el cliente vuelve a escribir después de **3 horas** sin respuesta del
+  vendedor, el bot retoma el chat. Es configurable en **Ajustes → Asistente Virtual → Recordatorio**
+  (1 hora / 3 horas / 6 horas / nunca).
+- **Pausa manual:** el vendedor también puede silenciar el bot con el botón **"Pausar Bot (Atender Yo)"**
+  del Live Inbox. Esa pausa **solo la quita el humano** (botón "Reanudar Bot").
+- **Todo se ve en el panel:** insignia verde **A** (Asesor atendiendo) o ámbar **P** (Manual) sobre el
+  avatar del chat, banner de estado y avisos del sistema dentro de la conversación.
+- **Mientras el bot está procesando una respuesta y el vendedor contesta antes de enviarla, la respuesta
+  se descarta**: nunca llega tarde a interrumpir a la persona.
+
+### 10. ✂️ Mensajes cortos y sin insistencia (la gente no lee párrafos)
+- **Fallbacks breves:** si el bot no entiende un mensaje, pide **una sola cosa** ("dime el nombre de la
+  pieza") con ejemplos en una línea. La segunda vez ofrece pasar con una persona del mostrador.
+- **No insiste:** al tercer mensaje seguido sin entender, el bot **se queda callado** y deja un aviso en
+  el Live Inbox para que un asesor humano tome la conversación.
+- **Saludo una sola vez:** si el cliente ya vio el menú y vuelve a saludar, recibe un saludo corto en
+  lugar del menú completo (pasadas 6 horas, sí ve el menú otra vez).
+- **Sin mensajes a destiempo:** las consultas que llegan mientras la PC está apagada **solo se responden
+  si aún están frescas (menos de 10 minutos)** y nunca se responde con prefijos tipo "Buenos días" horas
+  después. Si un asesor ya contestó ese mensaje, el bot no se mete.
+- **Anti-duplicado:** si la respuesta es idéntica a la que acaba de enviar (menos de 90 segundos), se
+  omite el envío repetido.
+
+### 11. 🔌 Conexión estable: ni reconexiones ni QR a cada rato
+- Una vez que vinculas WhatsApp **una sola vez**, el sistema se reconecta **solo e ilimitadamente** si
+  hay cortes de internet, reinicios o caídas momentáneas (espera progresiva de 5 segundos a 1 minuto).
+- El sistema **solo pide un nuevo QR** cuando de verdad no hay ninguna sesión vinculada (por ejemplo,
+  si desvinculaste el teléfono), y te avisa en el panel con el botón **"Nuevo QR Limpio"**.
+- **Ritmo humano anti-baneo:** el bot marca los mensajes como leídos, muestra "escribiendo…" con un
+  tiempo proporcional al largo del texto, deja pausas aleatorias entre mensajes encolados y nunca envía
+  en ráfaga. Todo esto sin frenar la atención (máximo 4.2 segundos por respuesta).
+
 ---
 
 ## 🛠️ Herramientas de Mantenimiento y Pruebas
@@ -223,9 +259,14 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 El sistema incluye comandos dedicados para mantenimiento, diagnóstico y verificación:
 
 ```bash
-# 🧪 Ejecutar suite de estrés y validación extrema (204 pruebas del bot)
+# 🧪 Ejecutar suite de estrés y validación extrema (265 pruebas del bot)
 # Corre sobre una base de datos temporal: NO toca el catálogo real ni los respaldos.
 npm test
+
+# 🧰 Cargar un catálogo de demostración realista para probar el bot (insumos, repuestos,
+# accesorios y lubricantes). Es idempotente y se puede quitar con -- --limpiar.
+npm run catalogo-demo
+npm run catalogo-demo -- --limpiar
 
 # 🖥️ Ejecutar pruebas E2E de la interfaz web (Chrome headless)
 # Requiere tener Chrome/Chromium instalado; si no lo encuentra, avisa y no falla en falso.
@@ -285,7 +326,7 @@ crastur/
 │   ├── preparar_entrega.ts     # Limpieza total para copiar a otra PC / entregar
 │   ├── clean_data.ts           # Limpieza operacional a cero
 │   ├── migrar_catalogo_asesores.ts # Respaldo/restauración de catálogo y asesores
-│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 204 pruebas del bot
+│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 242 pruebas del bot
 │   ├── run_stress_and_edge_tests_isolated.js # Runner que ejecuta las pruebas en BD temporal
 │   └── run_ui_e2e_tests.ts      # Pruebas E2E de la interfaz web (Chrome headless)
 │
@@ -349,7 +390,7 @@ Todo se almacena de forma **100% local y soberana** en tu propia computadora den
 El bot deja de responder mientras esté apagada. Al volver a encender, **Crastur se recupera solo**:
 
 - Los **apartados** se recalculan con la hora real: los que cumplieron 24 horas pasan a *vencido* y su stock vuelve al inventario; los que cumplieron 36 horas se depuran.
-- Los **seguimientos** y avisos que iban a enviarse mientras estaba apagada pueden no enviarse; conviene revisar el **Live Inbox** al encender.
+- Los mensajes que llegaron mientras la PC estaba apagada **quedan visibles en el Live Inbox**. El bot **solo responde automáticamente los que aún están frescos (menos de 10 minutos)**; los más viejos los atiende una persona (nada de respuestas raras horas después).
 - La **tasa BCV** se vuelve a sincronizar automáticamente al encender.
 
 > Recomendación: deja la PC encendida durante el horario de tienda para no perder clientes.
@@ -365,6 +406,18 @@ Sí. Mientras el bot pide tu nombre, cédula o teléfono, puedes preguntar preci
 horario sin perder el avance. Si quieres salir por completo, escribe **`CANCELAR`** y el bot vuelve
 al inicio. También puedes escribir **`MENU`** o **`hola`** para recibir ayuda y recordarte cómo continuar.
 
+### 9. Un vendedor contestó un chat y el bot se quedó callado, ¿está roto?
+No: es el **Human Takeover Automático** (ver capacidad №9). El bot detectó que una persona está
+atendiendo esa conversación y se silenció para no interrumpir. En el Live Inbox verás la insignia
+verde **A** sobre el avatar. El bot se reactiva solo si el cliente vuelve a escribir después de
+**3 horas** sin respuesta del vendedor (configurable), o cuando pulses **"Reactivar Bot"**.
+
+### 10. ¿El bot insiste con recordatorios o escribe de madrugada?
+No. Los recordatorios respetan reglas estrictas: **máximo 1 por conversación**, **mínimo 1 hora** de
+espera, **solo dentro del horario de tienda**, **nunca si un vendedor ya respondió**, y **nunca si el
+cliente se despidió** ("gracias", "ok", "ya compré"). Puedes cambiar el tiempo o desactivarlos en
+**Ajustes → Asistente Virtual → Recordatorio**.
+
 ---
 
 ## 🧯 Solución de Problemas Rápidos
@@ -375,7 +428,7 @@ al inicio. También puedes escribir **`MENU`** o **`hola`** para recibir ayuda y
 | **El bot no responde** | La PC está apagada, el bot está pausado globalmente, o WhatsApp no está vinculado | Enciende la PC, revisa **Conexión WhatsApp** (debe estar verde) y que la pausa global esté desactivada |
 | **El QR no aparece** | La sesión de WhatsApp se desvinculó | En **Conexión WhatsApp**, pulsa **"Nuevo QR Limpio"** y escanea de nuevo |
 | **Los precios en Bs. se ven viejos** | La PC estuvo apagada y aún no sincronizó el BCV | Espera un minuto (se sincroniza solo) o revisa el widget de tasa en la barra superior |
-| **No responde a un cliente específico** | Se activó "Pausar Bot (Atender Yo)" en ese chat | En el **Live Inbox**, abre el chat y pulsa **"Reanudar Bot"** |
+| **No responde a un cliente específico** | El bot está pausado en ese chat: **A** = un vendedor está atendiendo (automático); **P** = "Pausar Bot (Atender Yo)" | En el **Live Inbox**, abre el chat y pulsa **"Reactivar Bot"** / **"Reanudar Bot"** |
 | **Faltan productos en el menú del bot** | La categoría del producto usa una subcategoría no reconocida | Verifica la categoría en **Catálogo**; las 4 líneas canónicas son: Insumos Cauchera, Repuestos Moto, Accesorios Moto, Otros Productos |
 | **No puedo eliminar un producto** | Ese repuesto tiene un apartado activo | Ve a **Apartados**, entrega o cancela el apartado, y vuelve a intentar |
 | **"Marcar Retirado" no cambia el apartado** | (Corregido) El panel enviaba un estado no válido | Actualiza el panel con `npm run build`; el estado oficial es `entregado` |

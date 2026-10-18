@@ -23,7 +23,8 @@ import {
   resetWhatsApp,
   sendManualMessage,
   resumeWhatsAppReconnection,
-  isWhatsAppReconnectionPaused
+  isWhatsAppReconnectionPaused,
+  notifyChatState
 } from '../whatsappService';
 import { broadcast } from '../websocket';
 
@@ -163,14 +164,24 @@ router.get('/inbox/:jid', (req: Request, res: Response) => {
 /**
  * POST /api/chat/pause
  * [ANTI-BANEO META 2025] Human Takeover: Pausa o reanuda las respuestas automáticas del bot en un chat individual.
+ * [HUMAN TAKEOVER AUTOMÁTICO] Reanudar limpia la marca de pausa (por asesor o manual).
  */
 router.post('/chat/pause', (req: Request, res: Response) => {
   const { jid, pausado } = req.body;
   if (!jid) return res.status(400).json({ error: 'JID es requerido' });
 
   toggleBotPause(jid, !!pausado);
-  broadcast('chat_pause_changed', { jid, pausado: !!pausado });
-  res.json({ success: true, jid, pausado: !!pausado });
+
+  let botPausadoPor = null;
+  let botPausadoAt = null;
+  try {
+    const session = db.prepare('SELECT bot_pausado_por, bot_pausado_at FROM chat_sessions WHERE jid = ?').get(jid);
+    botPausadoPor = session?.bot_pausado_por || null;
+    botPausadoAt = session?.bot_pausado_at || null;
+  } catch {}
+
+  notifyChatState({ jid, pausado: !!pausado, por: botPausadoPor, at: botPausadoAt, auto: false });
+  res.json({ success: true, jid, pausado: !!pausado, por: botPausadoPor });
 });
 
 /**

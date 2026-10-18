@@ -126,8 +126,8 @@ export interface ChatMessage {
   id: number;
   /** WhatsApp JID del chat al que pertenece */
   jid: string;
-  /** Actor que originó el mensaje */
-  remitente: 'cliente' | 'bot' | 'asesor';
+  /** Actor que originó el mensaje. 'sistema' se usa para avisos automáticos del bot. */
+  remitente: 'cliente' | 'bot' | 'asesor' | 'sistema';
   /** Texto legible del mensaje */
   contenido: string;
   /** Tipo de adjunto si incluye multimedia ('image', 'audio', 'document', etc.) */
@@ -144,7 +144,7 @@ export interface ChatMessage {
  */
 export interface MasterSnapshot {
   /** Versión del esquema de respaldo maestro */
-  version: '3.0';
+  version: '3.1';
   /** Fecha y hora ISO del momento de generación */
   exportado_en: string;
   /** Conteo total de productos exportados */

@@ -28,6 +28,9 @@ const ALLOWED_SETTING_KEYS = new Set([
   'cashea_info',
   'insistencia_activa',
   'insistencia_minutos',
+  // [HUMAN TAKEOVER AUTOMÁTICO] Pausa del bot cuando un vendedor responde y reactivación automática
+  'auto_pausa_asesor',
+  'reactivar_bot_minutos',
   'horario_atencion',
   'politica_envios',
   'metodos_pago',
@@ -36,9 +39,42 @@ const ALLOWED_SETTING_KEYS = new Set([
   'fuera_horario_activo',
   'mensaje_fuera_horario',
   'bot_pausado_global',
+  'proactivos_max_dia',
   'delivery_zonas_json',
   'zonas_delivery_custom'
 ]);
+
+/** Límite de longitud para valores de texto (evita payloads gigantes en la BD). */
+const MAX_VALUE_LENGTH = 20000;
+
+/** Claves numéricas con su rango permitido [min, max]. */
+const NUMERIC_KEYS: Record<string, [number, number]> = {
+  cashea_inicial_pct: [0, 100],
+  cashea_cuotas: [1, 12],
+  insistencia_minutos: [0, 10080],
+  reactivar_bot_minutos: [0, 10080],
+  proactivos_max_dia: [0, 1000]
+};
+
+/**
+ * Valida y normaliza un valor de configuración.
+ * @returns El valor como texto listo para guardar, o null si debe rechazarse.
+ */
+function normalizeSettingValue(key: string, value: any): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'object') return null;
+
+  if (NUMERIC_KEYS[key]) {
+    const [min, max] = NUMERIC_KEYS[key];
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < min || n > max) return null;
+    return String(Math.trunc(n));
+  }
+
+  const text = String(value);
+  if (text.length > MAX_VALUE_LENGTH) return text.slice(0, MAX_VALUE_LENGTH);
+  return text;
+}
 
 /**
  * GET /api/settings
@@ -58,8 +94,12 @@ router.post('/', (req: Request, res: Response) => {
     for (const [key, val] of Object.entries(newSettings)) {
       // [SEGURIDAD] Solo se persisten claves permitidas
       if (!ALLOWED_SETTING_KEYS.has(key)) continue;
-      if (val === undefined || val === null) continue;
-      updateSetting(key, val);
+      const safeValue = normalizeSettingValue(key, val);
+      if (safeValue === null) {
+        console.warn(`[Settings] Valor rechazado para "${key}": ${JSON.stringify(val)}`);
+        continue;
+      }
+      updateSetting(key, safeValue);
     }
   }
   res.json({ success: true, settings: getSettings() });

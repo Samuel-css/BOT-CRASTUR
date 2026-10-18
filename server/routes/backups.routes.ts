@@ -158,7 +158,7 @@ router.get('/database/backup', (req: Request, res: Response) => {
  * Recibe un archivo binario SQLite vía stream crudo o multipart, verifica su firma e integridad y sustituye la base de datos activa.
  * Soporta binario crudo (raw) y subidas multipart/form-data con el campo 'backupFile'.
  */
-const restoreRaw = raw({ type: ['application/octet-stream', 'application/x-sqlite3', 'multipart/form-data', '*/*'], limit: '60mb' });
+const restoreRaw = raw({ type: ['application/octet-stream', 'application/x-sqlite3', 'multipart/form-data'], limit: '60mb' });
 
 router.post('/database/restore', restoreRaw, (req: Request, res: Response) => {
   try {
@@ -197,8 +197,6 @@ function extractMultipartFile(buf: Buffer): Buffer {
   const idx = buf.indexOf(marker);
   if (idx === -1) return Buffer.alloc(0);
   let end = buf.length;
-  const boundaryMarker = Buffer.from('------WebKitFormBoundary');
-  const boundaryGen = Buffer.from('--');
   // Recortar hasta el último boundary si existe
   const lastBoundary = buf.lastIndexOf(Buffer.from('\r\n--'));
   if (lastBoundary > idx) end = lastBoundary;

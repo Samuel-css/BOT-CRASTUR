@@ -16,6 +16,7 @@ import { formatRate, formatBs } from '../utils/formatters';
 import { detectCaracasZone } from '../utils/caracasDelivery';
 import { searchProductsFuzzy } from '../services/searchService';
 import { getProductsByCanonicalCategory } from '../config/categoryGroups';
+import { stockLabel } from '../utils/stock';
 
 /**
  * Responde a consultas generales sobre los métodos de pago aceptados en la tienda.
@@ -100,6 +101,7 @@ function handleDeliveryResponse(
   text: string
 ): string {
   const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
+  const horario = settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
 
   let matchedProduct: any = null;
   const searchResults = searchProductsFuzzy(text);
@@ -129,7 +131,7 @@ function handleDeliveryResponse(
     msg += `• Catia, El Valle, Chacao, Baruta, Petare: *$3 a $5 USD*\n\n`;
   }
 
-  msg += `🏢 *Retiro gratis en tienda:* ${direccion} (Lun-Sáb 8am-8pm).\n`;
+  msg += `🏢 *Retiro gratis en tienda:* ${direccion} (${horario}).\n`;
   msg += `💳 *Pago:* Efectivo ($ con descuento), Pago Móvil (tasa BCV) o Cashea en tienda.\n\n`;
   msg += `👉 Indícanos tu *zona o dirección exacta* para coordinar el despacho, o escribe *VENDEDOR*.`;
   return msg;
@@ -198,6 +200,7 @@ function handleImmediatePickupResponse(settings: Record<string, string>): string
 function handleReferencePointsResponse(settings: Record<string, string>): string {
   const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
   const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+  const horario = settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
   let msg = `📍 *Cómo Llegar a Crastur - Puntos de Referencia* 🛞🏢\n\n`;
   msg += `Nuestra tienda física está ubicada en el centro de Caracas, con acceso rápido y cómodo:\n\n`;
   msg += `🏠 *Dirección:* ${direccion}\n\n`;
@@ -209,7 +212,7 @@ function handleReferencePointsResponse(settings: Record<string, string>): string
   msg += `  - *Metro Nuevo Circo* (a 4 cuadras).\n\n`;
   msg += `🗺️ *Toca aquí para abrir la ubicación en Google Maps (Ruta GPS):*\n`;
   msg += `${mapsUrl}\n\n`;
-  msg += `🕒 *Horario Corrido:* Lunes a Sábado de *8:00 AM a 8:00 PM*.\n`;
+  msg += `🕒 *Horario Corrido:* ${horario}.\n`;
   msg += `🛵 *¿Prefieres no salir?* Escribe *DELIVERY* y te lo enviamos en moto directo a tu casa o taller en Caracas.\n\n`;
   msg += `👉 Escribe el repuesto que buscas para confirmarte existencia antes de venir.`;
   return msg;
@@ -317,14 +320,33 @@ function handleBinancePaymentResponse(tasa: number, settings: Record<string, str
  * @returns Mensaje de aclaratoria de medios no aceptados
  */
 function handleNonAcceptedPaymentsResponse(tasa: number, settings: Record<string, string>): string {
+  // [COHERENCIA CON EL PANEL] La lista de métodos aceptados se lee de la configuración
+  // real de la tienda. Antes el texto decía "no aceptamos punto de venta" aunque el
+  // panel lo tuviera activado, y el cliente recibía respuestas contradictorias.
+  const metodos = String(settings?.metodos_pago || '').toLowerCase();
+  const aceptaEfectivo = metodos.includes('efectivo');
+  const aceptaBinance = metodos.includes('binance');
+  const aceptaPagoMovil = metodos.includes('pago movil') || metodos.includes('pago móvil');
+  const aceptaTransferencia = metodos.includes('transferencia') || metodos.includes('banesco') || metodos.includes('mercantil');
+  const aceptaPunto = metodos.includes('punto');
+  const aceptaCashea = metodos.includes('cashea');
+
   let msg = `💳 *Formas de Pago Autorizadas en Crastur* 🛞🏍️\n\n`;
   msg += `En Crastur aceptamos cómodamente:\n`;
-  msg += `💵 *Precio Promoción en Divisas:* Pagando en **Efectivo ($)** o por **Binance Pay (USDT)** 🪙🔥\n`;
-  msg += `✅ *Pago Móvil* (a tasa oficial BCV del día, sin recargos)\n`;
-  msg += `✅ *Transferencia Bancaria Nacional* (a tasa oficial BCV)\n`;
-  msg += `✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n`;
-  msg += `💛 *Cashea en Tienda Física* (Inicial + 3 cuotas quincenales sin interés)\n\n`;
-  msg += `⚠️ *Nota aclaratoria:* Actualmente no aceptamos Zelle, Banesco Panamá ni tarjetas por punto de venta. Te recomendamos pagar cómodamente con *Binance USDT*, *Pago Móvil* o *Efectivo en divisas* con precio promoción.\n\n`;
+
+  if (aceptaEfectivo || aceptaBinance) {
+    const medios = [aceptaEfectivo ? '*Efectivo ($)*' : '', aceptaBinance ? '*Binance Pay (USDT)*' : ''].filter(Boolean).join(' o ');
+    msg += `💵 *Precio Promoción en Divisas:* Pagando en ${medios} 🪙🔥\n`;
+  }
+  if (aceptaPagoMovil) msg += `✅ *Pago Móvil* (a tasa oficial BCV del día, sin recargos)\n`;
+  if (aceptaTransferencia) msg += `✅ *Transferencia Bancaria Nacional* (a tasa oficial BCV)\n`;
+  if (aceptaEfectivo) msg += `✅ *Efectivo en Bolívares* (a tasa oficial BCV)\n`;
+  if (aceptaPunto) msg += `💳 *Punto de Venta* (tarjeta de débito en el mostrador de la tienda física)\n`;
+  if (aceptaCashea) msg += `💛 *Cashea en Tienda Física* (Inicial + 3 cuotas quincenales sin interés)\n`;
+
+  msg += `\n⚠️ *Nota aclaratoria:* Actualmente no aceptamos Zelle, Zinli, PayPal, Wally, AirTM ni otras billeteras digitales`;
+  if (!aceptaPunto) msg += `, ni tarjetas por punto de venta`;
+  msg += `. Te recomendamos pagar cómodamente con *Binance Pay (USDT)*, *Pago Móvil* o *Efectivo en divisas* con Precio Promoción.\n\n`;
   msg += `👉 Escribe el producto que deseas cotizar o escribe *VENDEDOR* si deseas comunicarte con un asesor.`;
   return msg;
 }
@@ -407,11 +429,12 @@ function handleAvailabilityResponse(): string {
 function handleLocationResponse(settings: Record<string, string>): string {
   const direccion = settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas, Venezuela';
   const mapsUrl = settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
+  const horario = settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
 
   let msg = `📍 *Ubicación de Tienda Física - Crastur* 🛞🏍️🏢\n\n`;
   msg += `🏠 *Dirección:* ${direccion}\n\n`;
   msg += `🗺️ *Enlace directo en Google Maps:*\n${mapsUrl}\n\n`;
-  msg += `🕒 *Horario de Atención:* Lunes a Sábado de *8:00 AM a 8:00 PM* (corrido).\n`;
+  msg += `🕒 *Horario de Atención:* ${horario}.\n`;
   msg += `🛵 *Delivery:* Disponible a toda Caracas con motorizado de confianza.\n\n`;
   msg += `¡Te esperamos con la mejor atención en insumos de cauchera y repuestos de moto! 🛞🏍️✨`;
   return msg;
@@ -467,7 +490,7 @@ function handleElderlyOrConfusedResponse(pushName: string, settings: Record<stri
   msg += `Soy el asistente virtual de la tienda física de *Crastur* en Caracas. No se preocupe si no está familiarizado/a con esto, aquí estamos para servirle:\n\n`;
   msg += `🏢 *Somos tienda física establecida:* Estamos ubicados en ${direccion} (muy cerca del Centro Financiero Latino y Parque Central).\n`;
   msg += `🗺️ *Ubicación en mapa:* ${mapsUrl}\n`;
-  msg += `🕒 *Horario:* Lunes a Sábado de 8:00 AM a 8:00 PM corrido.\n\n`;
+  msg += `🕒 *Horario:* ${settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM'}.\n\n`;
   msg += `📌 *¿Cómo le podemos ayudar?*\n`;
   msg += `• Solo dígame qué repuesto o pieza necesita con sus propias palabras (o la marca/modelo de la moto).\n`;
   msg += `• También puede enviarnos una *foto de la pieza* que necesita para que el equipo la identifique.\n`;
@@ -491,7 +514,7 @@ function handleHostilityOrComplaintResponse(pushName: string, settings: Record<s
   msg += `🏢 *Somos una empresa comercial legal y tienda física abierta al público:*\n`;
   msg += `📍 ${direccion}\n`;
   msg += `🗺️ *Ver ubicación en Google Maps:*\n${mapsUrl}\n`;
-  msg += `🕒 Trabajamos de Lunes a Sábado de 8:00 AM a 8:00 PM con factura legal y garantía.\n\n`;
+  msg += `🕒 Trabajamos ${settings.horario_atencion || 'de Lunes a Sábado de 8:00 AM a 8:00 PM'} con factura legal y garantía.\n\n`;
   msg += `🤝 Queremos ayudarle a resolver cualquier situación o duda de la mejor manera. Por favor escriba la palabra *ASESOR* para que nuestro personal encargado le atienda de forma prioritaria y personalizada.`;
   return msg;
 }
@@ -576,7 +599,7 @@ function handleCategoryBrowseResponse(
       const n1 = precioUsd * inicialPctCat;
       msg += `   💛 Cashea: Inicial *$${n1.toFixed(2)} USD* + ${cuotasCat} cuotas\n`;
     }
-    msg += `   📦 Stock: ${p.stock > 0 ? '✅ Disponible en tienda' : '⚠️ Consultar'}\n\n`;
+    msg += `   📦 Stock: ${stockLabel(p, 'Disponible en tienda')}\n\n`;
   });
 
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -587,6 +610,35 @@ function handleCategoryBrowseResponse(
   msg += `👉 Escribe *DELIVERY* para cotizar envío en moto en Caracas 🛵.\n`;
   msg += `👉 Escribe *VENDEDOR* para hablar con nuestro mostrador.`;
 
+  return msg;
+}
+
+/**
+ * Responde cuando el cliente pregunta el precio sin decir qué repuesto busca.
+ * Evita caer en el fallback genérico y le guía con ejemplos concretos.
+ *
+ * @param settings - Configuración general de la tienda
+ * @returns Mensaje pidiendo el repuesto a cotizar
+ */
+function handlePriceInquiryResponse(settings: Record<string, string>): string {
+  let msg = `💵 *¡Con gusto te cotizamos!* 🛞🏍️\n\n`;
+  msg += `Dime *qué repuesto o insumo* necesitas y te doy el precio en *dólares* y en *bolívares* al instante.\n\n`;
+  msg += `📌 *Ejemplos:* *"bujía NGK"*, *"aceite 20w50"*, *"pastillas de freno Bera"*, *"kit de arrastre SBR"* o *"parches"*.\n\n`;
+  msg += `👉 Escríbeme el nombre del repuesto o el modelo de tu moto y lo busco de una vez.`;
+  return msg;
+}
+
+/**
+ * Responde consultas de compra por volumen / para negocios (caucheras, llanteras, talleres).
+ *
+ * @param settings - Configuración general de la tienda
+ * @returns Mensaje orientando a cotizar según cantidades
+ */
+function handleWholesaleResponse(settings: Record<string, string>): string {
+  let msg = `📦 *Compras para Negocios y por Cantidad - Crastur* 🛞🏍️\n\n`;
+  msg += `¡Con gusto atendemos a *caucheras, llanteras, talleres y comercios*! 🧑‍🔧\n\n`;
+  msg += `📝 Cuéntanos *qué insumo o repuesto* necesitas y *cuántas unidades*, y cotizamos según la cantidad.\n\n`;
+  msg += `👉 Escribe la lista con cantidades (ej: *"50 parches"*, *"20 válvulas TR414"*) o escribe *VENDEDOR* para que un asesor te prepare la cotización.`;
   return msg;
 }
 
@@ -613,6 +665,8 @@ export {
   handleHowToBuyResponse,
   handleElderlyOrConfusedResponse,
   handleHostilityOrComplaintResponse,
+  handlePriceInquiryResponse,
+  handleWholesaleResponse,
   handleCategoryBrowseResponse
 };
 
@@ -639,5 +693,7 @@ export default {
   handleHowToBuyResponse,
   handleElderlyOrConfusedResponse,
   handleHostilityOrComplaintResponse,
+  handlePriceInquiryResponse,
+  handleWholesaleResponse,
   handleCategoryBrowseResponse
 };

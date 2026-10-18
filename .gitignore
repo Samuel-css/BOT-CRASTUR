@@ -19,6 +19,9 @@ data/*.db-journal
 data/backups/*.db
 data/backups/*.json
 data/catalogs/*.pdf
+# Cola de mensajes pendientes: contiene teléfonos y textos de clientes
+data/outbound_queue.json
+data/outbound_queue.json.tmp
 !data/catalogs/.gitkeep
 
 # Mantener carpetas de datos

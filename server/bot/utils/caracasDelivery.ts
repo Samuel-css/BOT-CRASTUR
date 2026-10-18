@@ -92,7 +92,20 @@ export function getDeliveryZones(settings?: Record<string, string> | null): Deli
     try {
       const parsed = JSON.parse(settings.delivery_zonas_json);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        // [COMPATIBILIDAD PANEL <-> BOT] El panel guarda { zona, tarifa, palabras } mientras
+        // el bot trabaja con { nombre, tarifa, keywords }. Sin este mapeo, toda zona
+        // personalizada quedaba con keywords undefined y NUNCA coincidía.
+        const mapped: DeliveryZone[] = parsed.map((z: any, i: number) => ({
+          id: String(z?.id ?? z?.zona ?? `zona_${i}`),
+          keywords: z?.keywords ?? z?.palabras ?? z?.palabras_clave ?? [],
+          nombre: String(z?.nombre ?? z?.zona ?? `Zona ${i + 1}`),
+          tarifa: String(z?.tarifa ?? '')
+        })).filter((z: DeliveryZone) => {
+          const k = z.keywords;
+          return Array.isArray(k) ? k.length > 0 : String(k || '').trim().length > 0;
+        });
+
+        if (mapped.length > 0) return mapped;
       }
     } catch (e) {}
   }

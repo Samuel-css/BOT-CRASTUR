@@ -14,6 +14,8 @@
 
 import { formatBs } from '../utils/formatters';
 import { searchProductsFuzzy } from '../services/searchService';
+import { resolveCasheaPlan } from '../utils/cashea';
+import { db } from '../../database';
 import type { BotResponse } from '../../types/bot';
 
 /**
@@ -35,26 +37,35 @@ export function handleCasheaSmart(
   session?: any
 ): BotResponse {
   let nivel: number | null = null;
-  let inicialPct = 0.40;
 
   if (norm.includes('nivel 1') || norm.includes('nv 1') || norm.includes('primer nivel')) {
     nivel = 1;
-    inicialPct = 0.40;
   } else if (norm.includes('nivel 2') || norm.includes('nv 2') || norm.includes('segundo nivel')) {
     nivel = 2;
-    inicialPct = 0.30;
   } else if (norm.includes('nivel 3') || norm.includes('nv 3') || norm.includes('nivel 4') || norm.includes('nivel 5') || norm.includes('tercer nivel')) {
     nivel = 3;
-    inicialPct = 0.20;
+  }
+
+  // Plan resuelto de forma centralizada (nivel explícito > nivel de sesión > config del panel)
+  const plan = resolveCasheaPlan(settings, session, nivel);
+  const inicialPct = plan.inicialPct;
+  const cuotas = plan.cuotas;
+  const nivelNum = plan.nivel;
+
+  // [MEMORIA DEL CLIENTE] Si el cliente indicó su nivel, se guarda en su sesión para no
+  // volver a preguntarlo y para que las fichas de producto usen el mismo cálculo.
+  if (nivel && session && session.jid) {
+    try {
+      db.prepare('UPDATE chat_sessions SET nivel_cashea = ? WHERE jid = ?').run(nivel, session.jid);
+      session.nivel_cashea = nivel;
+    } catch {}
   }
 
   // Identificar si la consulta incluye un repuesto específico del inventario
   const products = searchProductsFuzzy(text);
   if (products.length > 0) {
     const prod = products[0];
-    const precioUsd = parseFloat(String(prod.precio_usd));
-    const cuotas = parseInt(settings.cashea_cuotas || '3', 10);
-    const nivelNum = nivel || 1;
+    const precioUsd = parseFloat(String(prod.precio_usd)) || 0;
     const inicialUsd = precioUsd * inicialPct;
     const cuotaUsd = (precioUsd - inicialUsd) / cuotas;
 

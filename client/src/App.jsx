@@ -212,6 +212,9 @@ export default function App() {
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     let ws;
     let wsReconnectDelay = 2000;
+    // [RENDIMIENTO] Agrupa las recargas disparadas por mensajes en vivo para no recargar
+    // todo el catálogo/métricas en cada mensaje (con mucho tráfico el panel se saturaba).
+    let liveReloadTimer = null;
 
     function connectWS() {
       try {
@@ -238,9 +241,13 @@ export default function App() {
             } else if (type === 'products_updated') {
               loadProducts();
             } else if (type === 'live_chat_message') {
-              loadMetrics();
-              loadReservations();
-              loadProducts();
+              if (liveReloadTimer) clearTimeout(liveReloadTimer);
+              liveReloadTimer = setTimeout(() => {
+                liveReloadTimer = null;
+                loadMetrics();
+                loadReservations();
+                loadProducts();
+              }, 1200);
             }
           } catch (err) {
             console.error('[WS] Error procesando evento:', err);
@@ -282,6 +289,7 @@ export default function App() {
 
     return () => {
       clearInterval(interval);
+      if (liveReloadTimer) clearTimeout(liveReloadTimer);
       if (ws) ws.close();
     };
   }, []);
@@ -803,6 +811,7 @@ export default function App() {
                 metrics={metrics}
                 bcvData={bcvData}
                 waStatus={waStatus}
+                settings={settings}
                 onNavigate={setActiveTab}
                 onOpenProductModal={() => setProductModal({ isOpen: true, editing: null })}
               />
@@ -813,6 +822,7 @@ export default function App() {
                 waStatus={waStatus}
                 onNavigate={setActiveTab}
                 bcvRate={currentRate}
+                settings={settings}
                 onRequestConfirm={(opts) => setConfirmModal({
                   isOpen: true,
                   title: opts.title,

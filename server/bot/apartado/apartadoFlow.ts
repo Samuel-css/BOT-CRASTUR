@@ -12,15 +12,33 @@
  */
 
 import { db, createReservation, recordMetric } from '../../database';
-import { searchProductsFuzzy, searchMultipleProducts } from '../services/searchService';
+import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../services/searchService';
 import { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } from '../utils/formatters';
 import { normalizeText } from '../utils/textUtils';
 import { detectCaracasZone } from '../utils/caracasDelivery';
 
 /**
+ * [SALIDA DE EMERGENCIA] Comandos universales que SIEMPRE deben poder escapar del flujo de
+ * apartado (menú, saludo, catálogo, catálogo PDF, hablar con asesor o elegir opción del menú).
+ * Devuelve true si el mensaje debe reenviarse al enrutador normal en lugar de tratarse como
+ * el dato personal que el bot está pidiendo (nombre/cédula/teléfono).
+ *
+ * @param norm - Texto normalizado en minúsculas y sin acentos
+ */
+export function isApartadoEscapeCommand(norm: string): boolean {
+  return (
+    norm === 'menu' || norm === 'inicio' || norm === 'ayuda' ||
+    norm === 'hola' || norm.startsWith('hola ') || norm === 'ola' ||
+    /^\s*[1-6]\s*$/.test(norm) ||
+    norm.includes('catalogo') || norm.includes('catalogos') ||
+    norm.includes('vendedor') || norm.includes('asesor') || norm.includes('humano')
+  );
+}
+
+/**
  * Evalúa si el mensaje entrante constituye una interrupción (pregunta de negocio, adición de otro producto
  * o comando de cancelación) en lugar del dato personal solicitado en el paso actual.
- * 
+ *
  * @param text - Texto crudo enviado por el usuario
  * @param norm - Texto normalizado en minúsculas y sin acentos
  * @returns Objeto descriptor del tipo de interrupción ('cancel', 'product_addition', 'general_question') o null si es un dato válido.
@@ -47,18 +65,10 @@ function detectInterruption(text: string, norm: string): { type: string } | null
     return { type: 'cancel' };
   }
 
-  // [SALIDA DE EMERGENCIA] Comandos universales que SIEMPRE deben poder escapar del flujo de
-  // apartado (menú, saludo, catálogo, catálogo PDF, hablar con asesor). Sin esto, un cliente
-  // que inicia un apartado y luego escribe "hola" o "1" queda atrapado hasta cancelar o completar.
-  // Se clasifican como 'general_question' para que el router les dé una salida útil.
-  if (
-    norm === 'menu' || norm === 'inicio' || norm === 'ayuda' ||
-    norm === 'hola' || norm.startsWith('hola ') || norm === 'ola' ||
-    norm === '1' || norm === '2' || norm === '3' || norm === '4' || norm === '5' || norm === '6' ||
-    norm.includes('catalogo') || norm.includes('catalogos') ||
-    norm.includes('vendedor') || norm.includes('asesor') || norm.includes('humano') ||
-    norm.includes('no me interesa') || norm.includes('dejame')
-  ) {
+  // [SALIDA DE EMERGENCIA] Comandos universales (menú, saludo, catálogo, asesor, opciones 1-6).
+  // En la práctica el router los intercepta antes de llegar aquí (ver isApartadoEscapeCommand),
+  // pero se conserva la clasificación para que cualquier llamador directo reciba una salida útil.
+  if (isApartadoEscapeCommand(norm) || norm.includes('no me interesa') || norm.includes('dejame')) {
     return { type: 'general_question' };
   }
 
@@ -72,6 +82,9 @@ function detectInterruption(text: string, norm: string): { type: string } | null
     norm.includes('incluye') ||
     norm.includes('ponle') ||
     norm.includes('suma') ||
+    norm.includes('quiero') ||
+    norm.includes('necesito') ||
+    norm.startsWith('dame ') ||
     norm.startsWith('y la ') ||
     norm.startsWith('y el ') ||
     norm.startsWith('y las ') ||
@@ -107,17 +120,7 @@ function detectInterruption(text: string, norm: string): { type: string } | null
     norm.includes('vendedor') ||
     norm.includes('asesor');
 
-  // Vocabulario representativo del inventario automotriz de Crastur
-  const productWords = [
-    'bujia', 'aceite', 'pastilla', 'banda', 'freno', 'cadena', 'arrastre',
-    'tripa', 'caucho', 'parche', 'pega', 'valvula', 'mecha', 'plomo',
-    'pulpo', 'filtro', 'bateria', 'refrigerante', 'limpiador', 'aditivo',
-    'corona', 'pinon', 'spray', 'manubrio', 'puno', 'luz', 'led'
-  ];
-
-  const mentionsProduct = productWords.some(w => norm.includes(w));
-
-  if (wantsToAddProduct && mentionsProduct) {
+  if (wantsToAddProduct && mentionsProductIn(norm)) {
     return { type: 'product_addition' };
   }
 
@@ -127,17 +130,39 @@ function detectInterruption(text: string, norm: string): { type: string } | null
   const isLikelyPersonalData = wordCount <= 3 && !text.includes('?') && !text.includes('¿') &&
     !norm.includes('cuanto') && !norm.includes('donde') && !norm.includes('tienen') &&
     !norm.includes('hay') && !norm.includes('vale') && !norm.includes('precio') &&
-    !norm.includes('cuesta') && !norm.includes('delivery') && !norm.includes('vendedor');
+    !norm.includes('cuesta') && !norm.includes('delivery') && !norm.includes('vendedor') &&
+    !wantsToAddProduct;
 
   if (isLikelyPersonalData) {
     return null;
   }
 
-  if (isQuestion || mentionsProduct) {
+  if (isQuestion || mentionsProductIn(norm)) {
     return { type: 'general_question' };
   }
 
   return null;
+}
+
+/**
+ * Vocabulario representativo del inventario automotriz de Crastur. Se usa para distinguir
+ * un pedido de repuesto de un nombre propio durante el flujo de apartado.
+ */
+const APARTADO_PRODUCT_WORDS = [
+  'bujia', 'aceite', 'pastilla', 'balata', 'banda', 'freno', 'disco', 'zapata',
+  'cadena', 'arrastre', 'pinon', 'corona', 'catalina', 'sprocket',
+  'tripa', 'camara', 'caucho', 'llanta', 'neumatico', 'parche', 'pega', 'valvula',
+  'mecha', 'tarugo', 'plomo', 'gusanillo', 'aguja', 'terraja',
+  'pulpo', 'malla', 'retrovisor', 'espejo', 'puno', 'guante', 'casco', 'coraza',
+  'candado', 'filtro', 'bateria', 'bobina', 'cdi', 'estator', 'regulador',
+  'refrigerante', 'limpiador', 'aditivo', 'bombillo', 'faro', 'plumilla',
+  'amortiguador', 'horquilla', 'guaya', 'croche', 'clutch', 'embrague',
+  'spray', 'manubrio', 'luz', 'led', 'pito', 'bocina', 'direccional', 'stop'
+];
+
+/** True si el texto normalizado menciona un repuesto/insumo conocido del catálogo. */
+function mentionsProductIn(norm: string): boolean {
+  return APARTADO_PRODUCT_WORDS.some(w => norm.includes(w));
 }
 
 /**
@@ -199,12 +224,13 @@ function handleInterruptionResponse(
           existingItems.push({
             id: np.id,
             nombre: `${np.marca} - ${np.modelo}`,
-            precio_usd: parseFloat(np.precio_usd) || 0
+            precio_usd: parseFloat(np.precio_usd) || 0,
+            cantidad: np.cantidad || 1
           });
         }
       }
 
-      const totalUsd = existingItems.reduce((sum, it) => sum + (parseFloat(it.precio_usd) || 0), 0);
+      const totalUsd = existingItems.reduce((sum, it) => sum + (parseFloat(it.precio_usd) || 0) * (parseInt(it.cantidad, 10) || 1), 0);
       const comboNombre = existingItems.length > 1
         ? `Combo: ${existingItems.map(it => it.nombre).join(' + ')}`
         : existingItems[0].nombre;
@@ -315,7 +341,7 @@ function initiateApartadoFlow(
       return `⚠️ Los siguientes productos del combo se encuentran actualmente *agotados* en tienda: ${nombresAgotados}.\n\n👉 Escribe *VENDEDOR* para consultar fechas de llegada o armar un combo alternativo con nuestro asesor.`;
     }
 
-    const totalUsd = multiProducts.reduce((sum, p) => sum + (parseFloat(p.precio_usd) || 0), 0);
+    const totalUsd = multiProducts.reduce((sum, p) => sum + (parseFloat(p.precio_usd) || 0) * (p.cantidad || 1), 0);
     const comboNombre = `Combo: ${multiProducts.map(p => `${p.marca} ${p.modelo}`).join(' + ')}`;
     const metadata = {
       is_combo: true,
@@ -325,7 +351,8 @@ function initiateApartadoFlow(
       items: multiProducts.map(p => ({
         id: p.id,
         nombre: `${p.marca} ${p.modelo}`,
-        precio_usd: p.precio_usd
+        precio_usd: p.precio_usd,
+        cantidad: p.cantidad || 1
       }))
     };
 
@@ -340,7 +367,8 @@ function initiateApartadoFlow(
 
     let msg = `🛒 *Apartado de Combo por 24 Horas:* *${comboNombre}* ⏱️\n\n`;
     multiProducts.forEach((p, idx) => {
-      msg += `${idx + 1}️⃣ *${p.marca} - ${p.modelo}:* *$${parseFloat(p.precio_usd).toFixed(2)} USD* (Bs. ${formatBs(p.precio_usd * tasa)})\n`;
+      const cant = p.cantidad || 1;
+      msg += `${idx + 1}️⃣ *${p.marca} - ${p.modelo}${cant > 1 ? ` (x${cant})` : ''}:* *$${(parseFloat(p.precio_usd) * cant).toFixed(2)} USD* (Bs. ${formatBs(p.precio_usd * cant * tasa)})\n`;
     });
     msg += `\n💵 *Total Combo:* *$${totalUsd.toFixed(2)} USD* (Bs. ${formatBs(totalUsd * tasa)})\n`;
     msg += `Te reservamos todos los productos por 24 horas continuas sin costo para retirar en tienda física.\n\n`;
@@ -370,16 +398,20 @@ function initiateApartadoFlow(
     }
 
     const prodPrecioUsd = parseFloat(matchedProduct.precio_usd) || 0;
+    // [CANTIDAD] "apartar 4 aceites" reserva 4 unidades de verdad.
+    const cantSingle = Math.max(1, extractLeadingQuantity(norm));
+    const totalSingleUsd = prodPrecioUsd * cantSingle;
 
     const metadata = {
       is_combo: false,
       producto_id: matchedProduct.id,
       producto_nombre: prodNombre,
-      precio_usd: prodPrecioUsd,
+      precio_usd: totalSingleUsd,
       items: [{
         id: matchedProduct.id,
         nombre: prodNombre,
-        precio_usd: prodPrecioUsd
+        precio_usd: prodPrecioUsd,
+        cantidad: cantSingle
       }]
     };
 
@@ -392,8 +424,8 @@ function initiateApartadoFlow(
       WHERE jid = ?
     `).run(matchedProduct.id, prodNombre, JSON.stringify(metadata), jid);
 
-    let msg = `🛞🏍️ *Apartado por 24 Horas:* *${prodNombre}* ⏱️\n\n`;
-    msg += `💵 *Precio Contado:* *$${prodPrecioUsd.toFixed(2)} USD* (Bs. ${formatBs(prodPrecioUsd * tasa)})\n\n`;
+    let msg = `🛞🏍️ *Apartado por 24 Horas:* *${prodNombre}*${cantSingle > 1 ? ` (x${cantSingle})` : ''} ⏱️\n\n`;
+    msg += `💵 *Precio Contado:* *$${totalSingleUsd.toFixed(2)} USD* (Bs. ${formatBs(totalSingleUsd * tasa)})\n\n`;
     msg += `Te reservamos esta pieza sin costo adicional por 24 horas continuas para retirarla en tienda física o pedirla por delivery en Caracas.\n\n`;
     msg += `Para generar tu comprobante oficial en caja, por favor indícanos tu *Nombre y Apellido*:\n_(Escribe *cancelar* si deseas salir)_`;
     return msg;
@@ -422,7 +454,7 @@ function initiateApartadoFlow(
 
   if ((isComboAlready || wantsBoth || wantsEverything) && Array.isArray(comboItems) && comboItems.length >= 2) {
     const selectedItems = (wantsBoth && !wantsEverything) ? comboItems.slice(0, 2) : comboItems;
-    const comboTotalUsd = selectedItems.reduce((sum, p) => sum + (parseFloat(p.precio_usd) || 0), 0);
+    const comboTotalUsd = selectedItems.reduce((sum, p) => sum + (parseFloat(p.precio_usd) || 0) * (parseInt(p.cantidad, 10) || 1), 0);
     const comboTitle = `Combo: ${selectedItems.map(p => `${p.marca} ${p.modelo}`).join(' + ')}`;
     const metadata = {
       is_combo: true,
@@ -432,7 +464,8 @@ function initiateApartadoFlow(
       items: selectedItems.map(p => ({
         id: p.id,
         nombre: `${p.marca} ${p.modelo}`,
-        precio_usd: p.precio_usd
+        precio_usd: p.precio_usd,
+        cantidad: parseInt(p.cantidad, 10) || 1
       }))
     };
 
@@ -546,10 +579,18 @@ function handleApartadoNombre(
   const isValidChars = /^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s\.\']+$/.test(cleanNombre);
   const words = cleanNombre.split(/\s+/).filter(w => w.length >= 2);
 
-  // Palabras no válidas como nombre propio (jerga, motos o términos de catálogo)
+  // Palabras no válidas como nombre propio (jerga, motos, verbos de pedido o términos de catálogo)
   const invalidNameTokens = [
     'chamo', 'pana', 'mano', 'bro', 'amigo', 'cliente', 'moto', 'sbr', 'bera', 'empire',
-    'horse', 'owen', 'mecanico', 'comprador', 'tienda', 'repuesto', 'repuestos'
+    'horse', 'owen', 'mecanico', 'comprador', 'tienda', 'repuesto', 'repuestos',
+    // Verbos/expresiones de pedido que nunca son un nombre
+    'quiero', 'quiere', 'necesito', 'necesita', 'agrega', 'agregar', 'dame', 'deme',
+    'busco', 'buscar', 'llevo', 'aparta', 'apartar', 'reserva', 'reservar', 'comprar',
+    // Términos de catálogo que tampoco son nombres
+    'bujia', 'aceite', 'pastilla', 'balata', 'freno', 'disco', 'zapata', 'cadena',
+    'arrastre', 'pinon', 'corona', 'tripa', 'camara', 'caucho', 'llanta', 'parche',
+    'pega', 'valvula', 'mecha', 'plomo', 'filtro', 'bateria', 'casco', 'guante',
+    'retrovisor', 'espejo', 'led', 'bombillo', 'refrigerante'
   ];
   const containsInvalidToken = invalidNameTokens.some(tok => normClean.split(' ').includes(tok));
   const startsWithArticle = normClean.startsWith('el ') || normClean.startsWith('la ');

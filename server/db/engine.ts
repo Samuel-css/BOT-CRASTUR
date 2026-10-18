@@ -113,8 +113,12 @@ if (typeof process !== 'undefined') {
 }
 
 /**
- * Encola una solicitud de persistencia en disco con debounce (100ms)
+ * Encola una solicitud de persistencia en disco con un pequeño agrupado (750 ms)
  * para agrupar múltiples transacciones consecutivas y minimizar el desgaste de I/O.
+ * [RENDIMIENTO] `persistDB()` serializa TODA la base SQLite; con el crecimiento del
+ * historial de chats, guardar cada mensaje individualmente reescribiría el archivo
+ * completo varias veces por segundo. Las operaciones críticas (apartados, stock,
+ * importaciones y configuración) llaman a `persistDB()` de forma inmediata.
  * [INTEGRIDAD] Si hay un guardado pendiente, `flushScheduledSave()` lo fuerza de inmediato
  * antes de que el proceso termine, evitando perder escrituras recientes.
  */
@@ -125,7 +129,7 @@ export function scheduleSave(): void {
     saveScheduled = false;
     pendingSaveTimer = null;
     persistDB();
-  }, 100);
+  }, 750);
 }
 
 /** Fuerza de inmediato cualquier guardado pendiente del debounce (uso en cierres y scripts). */

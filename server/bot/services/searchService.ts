@@ -34,6 +34,43 @@ function invalidateProductCache(): void {
   productCacheAt = 0;
 }
 
+/**
+ * [PRECISIÓN] Comprueba si un token aparece en un texto.
+ * Para tokens de 3+ letras se permite subcadena (ej. "past" en "pastillas").
+ * Para tokens de 1-2 letras se exige PALABRA COMPLETA: así "hi" no coincide con
+ * "hierro", "si" no coincide con "silicona" ni "pa" con "parche".
+ */
+function containsToken(haystack: string, token: string): boolean {
+  if (!haystack || !token) return false;
+  if (token.length >= 3) return haystack.includes(token);
+  return haystack.split(/\s+/).includes(token);
+}
+
+/**
+ * [PLURALES Y Ñ] Devuelve una forma singular aproximada del token.
+ * No pretende ser lingüísticamente perfecto: solo resolver plurales comerciales
+ * habituales ('filtros' -> 'filtro', 'zapatas' -> 'zapata', 'piñones' -> 'piñon').
+ */
+function singularizeToken(token: string): string {
+  if (!token || token.length <= 3) return token;
+  if (token.endsWith('ces') && token.length > 4) return token.slice(0, -3) + 'z'; // luces -> luz
+  if (token.endsWith('es') && token.length > 4) return token.slice(0, -2);
+  if (token.endsWith('s') && token.length > 3) return token.slice(0, -1);
+  return token;
+}
+
+/**
+ * [DICCIONARIO] Traduce un token del cliente usando sinónimos y, si no hay coincidencia,
+ * su forma singular. El diccionario ya está normalizado (sin tildes ni ñ), por lo que
+ * 'piñones' -> 'pinones' -> 'pinon' y 'puño' -> 'puno' -> 'punos'.
+ */
+function mapToken(token: string): string {
+  if (SYNONYMS[token]) return SYNONYMS[token];
+  const singular = singularizeToken(token);
+  if (SYNONYMS[singular]) return SYNONYMS[singular];
+  return token;
+}
+
 /** Retorna el catálogo activo desde caché (o lo recarga si expiró). */
 function getActiveProducts(): any[] {
   const now = Date.now();
@@ -57,8 +94,8 @@ function searchProductsFuzzy(query: string): any[] {
 
   if (rawTokens.length === 0) return [];
 
-  // 1. Reemplazo de sinónimos conocidos
-  let tokens = rawTokens.map(t => SYNONYMS[t] || t);
+  // 1. Reemplazo de sinónimos conocidos (incluye forma singular para plurales)
+  let tokens = rawTokens.map(t => mapToken(t));
 
   // 2. Filtrado de stop-words, reteniendo términos automotrices breves de 2 caracteres
   const meaningful = tokens.filter(t => !STOP_WORDS.has(t) && t.length >= 2);
@@ -68,11 +105,16 @@ function searchProductsFuzzy(query: string): any[] {
   const detectedProductTypes: string[] = [];
   for (const t of meaningful) {
     if (PRODUCT_TYPES.has(t)) {
-      detectedProductTypes.push(t);
+      if (!detectedProductTypes.includes(t)) detectedProductTypes.push(t);
     } else {
+      const singular = singularizeToken(t);
+      if (PRODUCT_TYPES.has(singular)) {
+        if (!detectedProductTypes.includes(singular)) detectedProductTypes.push(singular);
+        continue;
+      }
       for (const pt of PRODUCT_TYPES) {
         if (isFuzzyMatch(t, pt)) {
-          detectedProductTypes.push(pt);
+          if (!detectedProductTypes.includes(pt)) detectedProductTypes.push(pt);
           break;
         }
       }
@@ -109,8 +151,8 @@ function searchProductsFuzzy(query: string): any[] {
     // REGLA 2: Coincidencia con tokens específicos
     if (detectedProductTypes.length === 0 && specificTokens.length > 0) {
       const matchesSpecific = specificTokens.some(st => {
-        return normModelo.includes(st) ||
-               normMarca.includes(st) ||
+        return containsToken(normModelo, st) ||
+               containsToken(normMarca, st) ||
                descWords.some(dw => dw === st || (st.length >= 4 && dw.startsWith(st))) ||
                modelWords.some(mw => isFuzzyMatch(st, mw)) ||
                brandWords.some(bw => isFuzzyMatch(st, bw));
@@ -125,10 +167,10 @@ function searchProductsFuzzy(query: string): any[] {
       if (token.length < 2) continue;
 
       // Ponderaciones de coincidencia exacta
-      if (normModelo.includes(token)) score += 12;
-      else if (normMarca.includes(token)) score += 8;
+      if (containsToken(normModelo, token)) score += 12;
+      else if (containsToken(normMarca, token)) score += 8;
       else if (descWords.some(dw => dw === token || (token.length >= 4 && dw.startsWith(token)))) score += 5;
-      else if (normCat.includes(token)) score += 6;
+      else if (containsToken(normCat, token)) score += 6;
       else {
         // Ponderaciones de coincidencia difusa (Levenshtein)
         for (const mw of modelWords) {
@@ -189,9 +231,9 @@ function searchByProductType(typeToken: string, extraTokens: string[] = []): any
 
     let score = 0;
 
-    if (normCat.includes(clean)) score += 10;
-    else if (normModelo.includes(clean)) score += 8;
-    else if (normDesc.includes(clean)) score += 4;
+    if (containsToken(normCat, clean)) score += 10;
+    else if (containsToken(normModelo, clean)) score += 8;
+    else if (containsToken(normDesc, clean)) score += 4;
     else {
       const catWords = normCat.split(' ');
       for (const cw of catWords) {
@@ -203,9 +245,9 @@ function searchByProductType(typeToken: string, extraTokens: string[] = []): any
 
     for (const extra of extraTokens) {
       if (extra.length < 2) continue;
-      if (normModelo.includes(extra)) score += 12;
-      else if (normMarca.includes(extra)) score += 10;
-      else if (normDesc.includes(extra)) score += 4;
+      if (containsToken(normModelo, extra)) score += 12;
+      else if (containsToken(normMarca, extra)) score += 10;
+      else if (containsToken(normDesc, extra)) score += 4;
       else {
         for (const mw of normModelo.split(' ')) {
           if (mw.length >= 2 && isFuzzyMatch(extra, mw)) { score += 7; break; }
@@ -267,13 +309,21 @@ function searchMultipleProducts(query: string): any[] {
     const cleanPart = normalizeText(part);
     const partTokens = cleanPart
       .split(/\s+/)
-      .map(t => SYNONYMS[t] || t)
+      .map(t => mapToken(t))
       .filter(t => t.length >= 2 && !STOP_WORDS.has(t));
 
-    const typeToken = partTokens.find(t => PRODUCT_TYPES.has(t));
+    let typeToken: string | undefined;
+    for (const tk of partTokens) {
+      if (PRODUCT_TYPES.has(tk)) { typeToken = tk; break; }
+      const singular = singularizeToken(tk);
+      if (PRODUCT_TYPES.has(singular)) { typeToken = singular; break; }
+    }
 
     if (typeToken) {
-      const extraTokens = partTokens.filter(t => t !== typeToken && !QUALIFIERS.has(t));
+      const extraTokens = partTokens.filter(t => {
+        const canonical = PRODUCT_TYPES.has(t) ? t : singularizeToken(t);
+        return canonical !== typeToken && !QUALIFIERS.has(t);
+      });
       const fallback = searchByProductType(typeToken, extraTokens);
       if (fallback && !foundMap.has(fallback.id)) {
         const qty = extractLeadingQuantity(part);
@@ -287,10 +337,65 @@ function searchMultipleProducts(query: string): any[] {
 }
 
 /**
- * Extrae la cantidad indicada al inicio de un fragmento de consulta.
- * Soporta dígitos ("4 aceites", "2 bujías") y números escritos ("cuatro aceites").
+ * Palabras que indican que el número siguiente es una MEDIDA y no una cantidad.
+ * Ej.: "aro 18", "rin 17", "medida 18", "pulgadas 14".
+ */
+const MEASURE_WORDS = new Set([
+  'aro', 'aros', 'rin', 'rines', 'medida', 'medidas', 'pulgada', 'pulgadas',
+  'mm', 'cm', 'modelo', 'talla', 'numero', 'num', 'r'
+]);
+
+/** Verbos o expresiones que sí introducen una cantidad real. */
+const QUANTITY_CUES = new Set([
+  'quiero', 'quisiera', 'necesito', 'necesitaria', 'ocupo', 'dame', 'deme', 'dime',
+  'mandame', 'enviame', 'llevo', 'llevar', 'apartame', 'reservame', 'agrega',
+  'sumame', 'cuantas', 'cuantos', 'cuanta', 'cantidad', 'compro', 'busco',
+  'tienen', 'tienes', 'vende', 'vendes'
+]);
+
+/** Unidades que confirman que el número es una cantidad. */
+const UNIT_WORDS = new Set([
+  'unidad', 'unidades', 'pieza', 'piezas', 'pote', 'potes', 'par', 'pares',
+  'caja', 'cajas', 'juego', 'juegos'
+]);
+
+/**
+ * Determina si el número en `tokens[index]` forma parte de una medida, talla o
+ * viscosidad (18, 17, 14, 275-18, 170/70, 110/90-16, 20w50, r14, ...).
+ * `normalizeText()` convierte guiones y barras en espacios, por eso también se
+ * revisan los tokens vecinos.
+ */
+function looksLikeMeasurement(tokens: string[], index: number): boolean {
+  const token = tokens[index] || '';
+  const prev = tokens[index - 1] || '';
+  const next = tokens[index + 1] || '';
+
+  // Viscosidad compacta: 20w50, 10w40, 15w40
+  if (/\d+w\d+/.test(token)) return true;
+  // Radio compacto: r14, r17, r18
+  if (/^r\d+$/.test(token)) return true;
+  // Palabra de medida antes o después: aro 18, rin 17, 18 pulgadas
+  if (MEASURE_WORDS.has(prev) || MEASURE_WORDS.has(next)) return true;
+  // Viscosidad separada: "20 w 50"
+  if (next === 'w') return true;
+  // Medida compuesta separada por normalizeText: 275 18, 170 70, 110 90 16
+  if (/^\d{2,3}$/.test(prev) && /^\d{1,2}$/.test(token)) return true;
+
+  return false;
+}
+
+/**
+ * Extrae la cantidad indicada por el cliente.
+ * Soporta dígitos ("4 aceites", "2 bujías"), "x4"/"4x" y números escritos
+ * ("cuatro aceites"), pero NUNCA confunde una medida con una cantidad.
  *
- * @param part - Fragmento normalizado (ej. "4 aceites")
+ * Reglas para aceptar un número como cantidad:
+ *  1. Está al inicio del fragmento ("4 aceites").
+ *  2. Lo precede un verbo de cantidad ("quiero 4", "dame 2").
+ *  3. Lo sigue una unidad ("2 unidades", "3 piezas").
+ * En cualquier otro caso se asume 1 unidad (ej. "tripas 18" = 1 tripa aro 18).
+ *
+ * @param part - Fragmento normalizado (ej. "quiero 4 aceites")
  * @returns Cantidad entre 1 y 99 (1 si no se indica)
  */
 function extractLeadingQuantity(part: string): number {
@@ -298,17 +403,41 @@ function extractLeadingQuantity(part: string): number {
     un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6,
     siete: 7, ocho: 8, nueve: 9, diez: 10, doce: 12
   };
-  // Se busca un número en cualquier parte del fragmento ("dame 5 parches", "quiero 4").
-  const m = part.match(/\b(\d{1,2})\b/);
-  if (m) {
-    const n = parseInt(m[1], 10);
-    return n >= 1 && n <= 99 ? n : 1;
+
+  // Cantidad explícita con "x": "x4 bujías", "4x parches".
+  const explicit = part.match(/\bx\s*(\d{1,2})\b|\b(\d{1,2})\s*x\b/);
+  if (explicit) {
+    const n = parseInt(explicit[1] || explicit[2], 10);
+    if (n >= 1 && n <= 99) return n;
   }
-  // Números escritos en palabras ("cuatro aceites", "tres parches")
-  const tokens = part.trim().split(/\s+/);
-  for (const tk of tokens) {
-    if (wordNums[tk]) return wordNums[tk];
+
+  const tokens = part.trim().split(/\s+/).filter(Boolean);
+
+  // Números con dígitos: solo se aceptan con contexto de cantidad.
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!/^\d{1,2}$/.test(token)) continue;
+    if (looksLikeMeasurement(tokens, i)) continue;
+
+    const n = parseInt(token, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 99) continue;
+
+    const prev = tokens[i - 1] || '';
+    const next = tokens[i + 1] || '';
+    const beforeIsFiller = tokens
+      .slice(0, i)
+      .every(t => STOP_WORDS.has(t) || QUANTITY_CUES.has(t));
+
+    if (beforeIsFiller || QUANTITY_CUES.has(prev) || UNIT_WORDS.has(next)) {
+      return n;
+    }
   }
+
+  // Números escritos en palabras ("cuatro aceites", "tres parches").
+  for (const token of tokens) {
+    if (wordNums[token]) return wordNums[token];
+  }
+
   return 1;
 }
 

@@ -1,27 +1,42 @@
 /**
  * @file synonyms.ts
  * @description Diccionario de equivalencias léxicas, términos automotrices venezolanos y errores fonéticos habituales.
- * 
+ *
  * [MERCADO VENEZUELA]
  * Mapea modelos de motos comunes (Bera SBR, Empire Horse, Keeway Owen, Suzuki GN/HJ),
  * modismos monetarios ('verdes', 'lechugas') y variaciones ortográficas de repuestos.
+ *
+ * [NORMALIZACIÓN OBLIGATORIA DE CLAVES]
+ * El buscador normaliza el mensaje del cliente con `normalizeText()` (minúsculas, sin
+ * tildes y sin diéresis). Por eso `piñón` se convierte en `pinon` y `puño` en `puno`.
+ * Si el diccionario guardara las claves con `ñ`, las búsquedas NUNCA coincidirían.
+ * Este módulo normaliza automáticamente TODAS las claves y valores al cargarse, de modo
+ * que se puedan escribir de forma legible (`piñón`, `puño`) sin romper la detección.
  */
 
-export const SYNONYMS: Record<string, string> = {
+import { normalizeText } from '../utils/textUtils';
+
+/** Diccionario legible (se normaliza al final del archivo). */
+const RAW_SYNONYMS: Record<string, string> = {
   // 🛞 Insumos para Caucheras
   'parche': 'parches',
   'parches': 'parches',
   'parxe': 'parches',
   'parxes': 'parches',
   'parchar': 'parches',
+  'parcheado': 'parches',
   'rema': 'parches',
   'remafrio': 'parches',
   'parche frio': 'parches',
+  'parche caliente': 'parches',
   'pega': 'pega',
   'pegamento': 'pega',
   'cemento': 'pega',
+  'pegante': 'pega',
   'valvula': 'valvulas',
+  'valvulas': 'valvulas',
   'gusanillo': 'valvula',
+  'gusanillos': 'valvula',
   'tarugo': 'tarugos',
   'tarugos': 'tarugos',
   'mecha': 'tarugos',
@@ -29,22 +44,52 @@ export const SYNONYMS: Record<string, string> = {
   'plomo': 'plomos',
   'plomos': 'plomos',
   'balanceo': 'plomos',
+  'balanceador': 'plomos',
   'contrapeso': 'plomos',
   'contrapesos': 'plomos',
   'tripa': 'tripa',
   'tripas': 'tripa',
   'camara': 'tripa',
   'camaras': 'tripa',
+  'neumatico': 'caucho',
+  'neumaticos': 'caucho',
+  'sellomatic': 'sellomatic',
+  'aguja': 'aguja',
+  'agujas': 'aguja',
+  'terraja': 'terraja',
+  'terrajas': 'terraja',
+  'rodillo': 'rodillo',
+  'rodillos': 'rodillo',
+  'asentador': 'rodillo',
+  'manometro': 'manometro',
+  'manometros': 'manometro',
+  'calibrador': 'manometro',
+  'calibradores': 'manometro',
+  'talon': 'sellador',
+  'sellador': 'sellador',
+  'selladores': 'sellador',
+  'pasta': 'pasta',
+  'pastas': 'pasta',
+  'tr412': 'tr412',
+  'tr413': 'tr413',
+  'tr414': 'tr414',
+  'nitrogeno': 'nitrogeno',
+  'inflado': 'inflado',
 
   // 🏍️ Repuestos para Moto
   'arrastre': 'arrastre',
+  'arrastres': 'arrastre',
   'cadena': 'cadena',
   'cadenas': 'cadena',
   'piñon': 'piñon',
   'piñones': 'piñon',
+  'pinon': 'piñon',
+  'pinones': 'piñon',
   'corona': 'corona',
   'coronas': 'corona',
   'catalina': 'corona',
+  'catalinas': 'corona',
+  'sprocket': 'piñon',
   'pastilla': 'pastillas',
   'pastillas': 'pastillas',
   'pastiya': 'pastillas',
@@ -53,8 +98,12 @@ export const SYNONYMS: Record<string, string> = {
   'balatas': 'pastillas',
   'banda': 'bandas',
   'bandas': 'bandas',
+  'zapata': 'zapata',
+  'zapatas': 'zapata',
   'freno': 'freno',
   'frenos': 'freno',
+  'disco': 'disco',
+  'discos': 'disco',
   'bujia': 'bujia',
   'bujias': 'bujia',
   'bujya': 'bujia',
@@ -72,10 +121,111 @@ export const SYNONYMS: Record<string, string> = {
   'guayas': 'guaya',
   'bateria': 'bateria',
   'baterias': 'bateria',
+  'acumulador': 'bateria',
+  'filtro': 'filtro',
+  'filtros': 'filtro',
+  'bobina': 'bobina',
+  'bobinas': 'bobina',
+  'cdi': 'cdi',
+  'estator': 'estator',
+  'magneto': 'estator',
+  'regulador': 'regulador',
+  'rectificador': 'regulador',
+  'reguladores': 'regulador',
+  'relay': 'relay',
+  'rele': 'relay',
+  'switch': 'switch',
+  'pito': 'bocina',
+  'pitos': 'bocina',
+  'bocina': 'bocina',
+  'bocinas': 'bocina',
+  'direccional': 'direccional',
+  'direccionales': 'direccional',
+  'stop': 'stop',
+  'maneta': 'maneta',
+  'manetas': 'maneta',
+  'manubrio': 'manubrio',
+  'manubrios': 'manubrio',
+  'horquilla': 'horquilla',
+  'horquillas': 'horquilla',
+  'amortiguador': 'amortiguador',
+  'amortiguadores': 'amortiguador',
+  'suspension': 'suspension',
+  'suspensiones': 'suspension',
+  'tensor': 'tensor',
+  'tensores': 'tensor',
+  'reten': 'reten',
+  'retenes': 'reten',
+  'rodamiento': 'rodamiento',
+  'rodamientos': 'rodamiento',
+  'ruleman': 'rodamiento',
+  'rulemanes': 'rodamiento',
+  'chaveta': 'chaveta',
+  'chavetas': 'chaveta',
+  'piston': 'piston',
+  'pistones': 'piston',
+  'anillos': 'anillos',
+  'segmentos': 'anillos',
+  'culata': 'culata',
+  'culatas': 'culata',
+  'empaque': 'empaque',
+  'empaques': 'empaque',
+  'junta': 'empaque',
+  'juntas': 'empaque',
+  'manguera': 'manguera',
+  'mangueras': 'manguera',
+  'radiador': 'radiador',
+  'radiadores': 'radiador',
+  'termostato': 'termostato',
+  'termostatos': 'termostato',
+  'tornillo': 'tornillos',
+  'tornillos': 'tornillos',
+  'tuerca': 'tuercas',
+  'tuercas': 'tuercas',
+  'arandela': 'arandelas',
+  'arandelas': 'arandelas',
+  'abrazadera': 'abrazadera',
+  'abrazaderas': 'abrazadera',
+  'remache': 'remache',
+  'remaches': 'remache',
+  'cable': 'cable',
+  'cables': 'cable',
+  'sensor': 'sensor',
+  'sensores': 'sensor',
+  'bomba': 'bomba',
+  'bombas': 'bomba',
+  'carburador': 'carburador',
+  'carburadores': 'carburador',
+  'cilindro': 'cilindro',
+  'cilindros': 'cilindro',
+  'biela': 'biela',
+  'bielas': 'biela',
+  'eje': 'eje',
+  'ejes': 'eje',
+  'grifo': 'grifo',
+  'grifos': 'grifo',
+  'cinta': 'cinta',
+  'cintas': 'cinta',
+  'empaquetadura': 'empaque',
+  'empaquetaduras': 'empaque',
+  'manija': 'maneta',
+  'manijas': 'maneta',
+  'velocimetro': 'velocimetro',
+  'tacometro': 'tacometro',
+  'inflador': 'inflador',
+  'infladora': 'inflador',
+  'compresor': 'compresor',
+  'engrasadora': 'engrasadora',
+  'aceitera': 'aceite',
+  'refaccion': 'repuestos',
+  'refacciones': 'repuestos',
+  'autoparte': 'repuestos',
+  'autopartes': 'repuestos',
 
   // 🎽 Accesorios para Moto
   'puño': 'puños',
   'puños': 'puños',
+  'punos': 'puños',
   'malla': 'malla',
   'mallas': 'malla',
   'pulpo': 'malla',
@@ -87,6 +237,13 @@ export const SYNONYMS: Record<string, string> = {
   'candado': 'candado',
   'candados': 'candado',
   'spray': 'lubricante',
+  'portacasco': 'malla',
+  'guante': 'guantes',
+  'guantes': 'guantes',
+  'impermeable': 'impermeable',
+  'parabrisas': 'parabrisas',
+  'soporte': 'soporte',
+  'soportes': 'soporte',
 
   // 📦 Otros Productos (Mantenimiento general)
   'refrigerante': 'refrigerante',
@@ -109,6 +266,7 @@ export const SYNONYMS: Record<string, string> = {
   'luces': 'led',
   'luz': 'led',
   'silicon': 'silicon',
+  'silicona': 'silicon',
   'fusible': 'fusibles',
   'fusibles': 'fusibles',
   'repuesto': 'repuestos',
@@ -120,15 +278,18 @@ export const SYNONYMS: Record<string, string> = {
   'divisa': 'dolares',
   'divisas': 'dolares',
   'dolar': 'dolares',
+  'plata': 'dolares',
+  'biyuyo': 'dolares',
+  'burra': 'moto',
+  'fierro': 'moto',
 
   // 🛞 Neumáticos y llantas
   'caucho': 'caucho',
   'cauchos': 'caucho',
   'llanta': 'caucho',
   'llantas': 'caucho',
-  'neumatico': 'caucho',
-  'neumaticos': 'caucho',
-  'sellomatic': 'sellomatic',
+  'goma': 'caucho',
+  'gomas': 'caucho',
 
   // 🏍️ Marcas y modelos automotrices de alta circulación en Venezuela
   'sbr': 'sbr',
@@ -150,6 +311,22 @@ export const SYNONYMS: Record<string, string> = {
   'ngk': 'ngk',
   'motul': 'motul',
   'sky': 'sky',
+  'skygo': 'skygo',
+  'akt': 'akt',
+  'toroto': 'toroto',
+  'avila': 'avila',
+  'yamaha': 'yamaha',
+  'honda': 'honda',
+  'pulsar': 'pulsar',
+  'boxer': 'boxer',
+  'discover': 'discover',
+  'crypton': 'crypton',
+  'rouser': 'rouser',
+  'castrol': 'castrol',
+  'shell': 'shell',
+  'venoco': 'venoco',
+  'bosch': 'bosch',
+  'valvoline': 'valvoline',
 
   // 🏍️ Términos de la página web (cascos y marcas)
   'casco': 'casco',
@@ -172,5 +349,32 @@ export const SYNONYMS: Record<string, string> = {
   'inca': 'inca',
   'ultralub': 'ultralub'
 };
+
+/**
+ * Construye el diccionario final normalizando claves y valores.
+ * Si dos claves colapsan en la misma forma normalizada, se conserva la primera
+ * y se avisa por consola para detectar colisiones al mantener el diccionario.
+ */
+function buildNormalizedDictionary(raw: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const seen = new Map<string, string>();
+
+  for (const [key, value] of Object.entries(raw)) {
+    const normalizedKey = normalizeText(key);
+    const normalizedValue = normalizeText(value);
+    if (!normalizedKey || !normalizedValue) continue;
+
+    if (seen.has(normalizedKey) && seen.get(normalizedKey) !== value) {
+      // Colisión benigna (p. ej. 'puño' escrito con y sin tilde): se conserva la primera.
+      continue;
+    }
+    seen.set(normalizedKey, value);
+    out[normalizedKey] = normalizedValue;
+  }
+
+  return out;
+}
+
+export const SYNONYMS: Record<string, string> = buildNormalizedDictionary(RAW_SYNONYMS);
 
 export default SYNONYMS;

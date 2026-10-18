@@ -20,11 +20,12 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 
-import { whenReady, cleanExpiredReservations, purgeOldData } from './database';
+import { whenReady, cleanExpiredReservations, persistDB } from './database';
 import { initBCVService } from './bcvService';
 import { startWhatsApp } from './whatsappService';
 import { initWebSocket } from './websocket';
 import apiRoutes from './routes';
+import { ALLOWED_ORIGINS, isAllowedOrigin } from './config/origins';
 
 const app = express();
 const server = http.createServer(app);
@@ -34,12 +35,7 @@ initWebSocket(server);
 
 // Middlewares estándar de Express para el procesamiento de solicitudes HTTP
 // [SEGURIDAD] CORS restringido a orígenes locales (evita acceso remoto no autorizado)
-const allowedOrigins = [
-  'http://localhost:3333',
-  'http://127.0.0.1:3333',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173'
-];
+const allowedOrigins = ALLOWED_ORIGINS;
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -48,6 +44,18 @@ app.use(cors({
     return callback(null, false);
   }
 }));
+// [ANTI-CSRF] CORS bloquea la lectura de la respuesta, pero NO impide que una página
+// maliciosa dispare un POST/DELETE (p. ej. apagar el sistema o borrar el inbox).
+// Para peticiones que mutan estado, si viene un Origin no autorizado se rechaza con 403.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const method = req.method.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    if (!isAllowedOrigin(req.get('origin'))) {
+      return res.status(403).json({ success: false, error: 'Origen no autorizado' });
+    }
+  }
+  next();
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -92,6 +100,9 @@ process.on('uncaughtException', (err: any) => {
     const errorLogPath = path.join(__dirname, '..', 'data', 'app_error.log');
     fs.appendFileSync(errorLogPath, `[${new Date().toISOString()}] ${err.stack || err.message}\n`);
   } catch (e) {}
+  // [INTEGRIDAD] Antes de continuar tras un error no controlado, se intenta persistir el
+  // estado en memoria para no perder ventas/apartados recientes.
+  try { persistDB(); } catch (e) {}
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -112,12 +123,31 @@ server.on('error', (err: any) => {
   }
 });
 
+/** Espera a la BD con límite de tiempo para no dejar el proceso colgado para siempre. */
+async function waitForDatabase(maxMs = 60000): Promise<boolean> {
+  return Promise.race([
+    whenReady().then(() => true),
+    new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), maxMs);
+      if (timer.unref) timer.unref();
+    })
+  ]);
+}
+
 /**
  * Arranca secuencialmente los subsistemas del backend una vez que la base de datos esté lista.
  */
 async function startServer() {
-  // Esperar a que SQLite WASM compile esquemas y verifique integridad
-  await whenReady();
+  // Esperar a que SQLite WASM compile esquemas y verifique integridad.
+  // [DIAGNÓSTICO] Si la inicialización falla, `whenReady()` nunca se resuelve: antes el
+  // launcher esperaba 120 s sin explicación. Ahora se detecta y se informa con claridad.
+  const dbReady = await waitForDatabase();
+  if (!dbReady) {
+    console.error('\n⚠️  [Arranque] La base de datos no terminó de inicializar en 60 segundos.');
+    console.error('💡 Revisa data/crastur.db y data/app_error.log. Si el archivo está dañado,');
+    console.error('   renómbralo y arranca de nuevo: el sistema restaurará el respaldo más reciente.\n');
+    process.exit(1);
+  }
   // [SEGURIDAD] Escuchar solo en localhost: el panel (chats, cédulas, teléfonos)
   // no queda expuesto a la red local ni a otros equipos.
   server.listen(PORT, '127.0.0.1', () => {

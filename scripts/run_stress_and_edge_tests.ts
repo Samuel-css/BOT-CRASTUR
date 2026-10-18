@@ -4,7 +4,12 @@ import db from '../server/database';
 import { processIncomingMessage } from '../server/bot';
 import { resetSpam } from '../server/bot/utils/antiSpam';
 import { extractVenezuelanPhones } from '../server/bot/utils/formatters';
-import { searchProductsFuzzy, invalidateProductCache } from '../server/bot/services/searchService';
+import { searchProductsFuzzy, invalidateProductCache, extractLeadingQuantity } from '../server/bot/services/searchService';
+import { checkPendingFollowUps } from '../server/bot/followUp/followUpService';
+import { handleMediaResponse } from '../server/bot/handlers/mediaHandlers';
+import { detectCaracasZone, getDeliveryZones } from '../server/bot/utils/caracasDelivery';
+import { resolveCasheaPlan } from '../server/bot/utils/cashea';
+import { enqueueOutboundMessage, getOutboundQueueSize } from '../server/whatsapp/outboundQueue';
 
 const C = {
   reset: '\x1b[0m',
@@ -885,7 +890,7 @@ async function runAllTests() {
   {
     // Verificar snapshot maestro completo
     const snap = db.exportMasterBackup();
-    assert(snap.version === '3.0', 'Versión del Snapshot Maestro es 3.0');
+    assert(snap.version === '3.1', 'Versión del Snapshot Maestro es 3.1');
     assert(Array.isArray(snap.productos) && snap.productos.length > 0, 'Snapshot contiene el catálogo íntegro');
     assert(snap.configuracion && snap.configuracion.direccion_tienda, 'Snapshot contiene los parámetros de configuración oficial');
     assert(snap.total_productos > 0, 'Total de productos mayor a cero en snapshot');
@@ -929,24 +934,33 @@ async function runAllTests() {
     // Desbloquear para inyecciones
     db.db.prepare('UPDATE chat_sessions SET no_molestar = 0, bot_pausado = 0 WHERE jid = ?').run(jidSec);
 
+    // [NO INSISTIR] Cada payload malicioso se evalúa desde estado limpio (contador de fallos en 0
+    // y anti-spam reiniciado) para verificar el manejo del payload y no el silencio preventivo,
+    // que ya tiene sus propias pruebas en el bloque "Mensajes cortos".
+    const probarPayload = (texto) => {
+      resetSpam(jidSec);
+      db.db.prepare('UPDATE chat_sessions SET fallos_consecutivos = 0 WHERE jid = ?').run(jidSec);
+      return processIncomingMessage(jidSec, texto, 'Hacker');
+    };
+
     // 3. Inyecciones SQL clásicas y extremas
     const sql1 = "' OR '1'='1";
-    const resSql1 = processIncomingMessage(jidSec, sql1, 'Hacker');
+    const resSql1 = probarPayload(sql1);
     assert(resSql1 !== null, 'Inyección SQL clásica 1 manejada sin crash');
 
     const sql2 = "'; DROP TABLE products; --";
-    const resSql2 = processIncomingMessage(jidSec, sql2, 'Hacker');
+    const resSql2 = probarPayload(sql2);
     assert(resSql2 !== null, 'Inyección DROP TABLE products neutralizada');
 
     const prodCheck = db.db.prepare('SELECT COUNT(*) as count FROM products').get();
     assert(prodCheck && prodCheck.count > 0, 'Tabla products 100% intacta tras intento de inyección');
 
     const sql3 = "' UNION SELECT * FROM chat_sessions --";
-    const resSql3 = processIncomingMessage(jidSec, sql3, 'Hacker');
+    const resSql3 = probarPayload(sql3);
     assert(resSql3 !== null, 'Inyección UNION SELECT manejada sin fugas');
 
     const sql4 = "admin' --";
-    const resSql4 = processIncomingMessage(jidSec, sql4, 'Hacker');
+    const resSql4 = probarPayload(sql4);
     assert(resSql4 !== null, 'Inyección de comentario SQL neutralizada');
 
     // Reiniciar el anti-spam: los ataques previos acumularon mensajes para este JID.
@@ -954,17 +968,17 @@ async function runAllTests() {
 
     // 4. Caracteres Unicode extremos y Nulos
     const unicodePayload = "Repuesto \u0000 con caracteres nulos y emojis \u202E texto invertido";
-    const resUnicode = processIncomingMessage(jidSec, unicodePayload, 'Tester');
+    const resUnicode = probarPayload(unicodePayload);
     assert(resUnicode !== null, 'Maneja caracteres nulos y RTL sin excepción no capturada');
 
     // 5. Payloads gigantescos (Buffer Overflow Simulation)
     const giantPayload = 'A'.repeat(5000);
-    const resGiant = processIncomingMessage(jidSec, giantPayload, 'Tester');
+    const resGiant = probarPayload(giantPayload);
     assert(resGiant !== null, 'Payload de 5.000 caracteres manejado con truncamiento seguro');
 
     // 6. Emojis puros
     const emojiPayload = '🏍️🛞🛵🛑🔥✨';
-    const resEmoji = processIncomingMessage(jidSec, emojiPayload, 'Tester');
+    const resEmoji = probarPayload(emojiPayload);
     assert(resEmoji !== null, 'Mensaje de solo emojis respondido adecuadamente');
 
     // 7. Anti-Spam (Burst flood)
@@ -992,7 +1006,7 @@ async function runAllTests() {
   {
     // 1. Generar Respaldo Maestro Integral (Catálogo + Vendedores + Config)
     const backupMaestro = db.exportMasterBackup();
-    assert(backupMaestro && backupMaestro.version === '3.0', 'Genera Respaldo Maestro versión 3.0');
+    assert(backupMaestro && backupMaestro.version === '3.1', 'Genera Respaldo Maestro versión 3.1');
     assert(Array.isArray(backupMaestro.productos) && backupMaestro.productos.length > 0, 'Respaldo maestro incluye catálogo completo de productos');
     assert(backupMaestro.configuracion && typeof backupMaestro.configuracion === 'object', 'Respaldo maestro incluye mapa de configuración oficial');
 
@@ -1158,6 +1172,466 @@ async function runAllTests() {
     assert(hDuration < 2000, 'Tiempo de respuesta global dentro de umbrales óptimos (< 2000ms)');
     assert(parseFloat(hReqPerSec) > 100, 'Rendimiento concurrente sostenido superior a 100 req/s');
   }
+
+  // -------------------------------------------------------------
+  // [HUMAN TAKEOVER AUTOMÁTICO] EL BOT SE CALLA CUANDO UN ASESOR RESPONDE
+  // -------------------------------------------------------------
+  console.log('\n-----------------------------------------------------------------');
+  console.log('✋ [PUNTO 1] Human Takeover: el bot se pausa cuando un asesor contesta');
+  console.log('-----------------------------------------------------------------');
+  {
+    const jidAsesor = '584149990301@s.whatsapp.net';
+    const jidManual = '584149990302@s.whatsapp.net';
+    const jidSinAuto = '584149990303@s.whatsapp.net';
+    const resetSesion = (jid) => {
+      db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
+      db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
+      db.updateSetting('auto_pausa_asesor', '1');
+      db.updateSetting('reactivar_bot_minutos', '180');
+    };
+
+    // 1. Sin intervención humana el bot responde normalmente
+    resetSesion(jidAsesor);
+    const respAntes = processIncomingMessage(jidAsesor, 'hola', 'Cliente Takeover');
+    assert(respAntes && typeof respAntes === 'string' && respAntes.length > 10, 'Sin asesor presente, el bot responde con normalidad');
+
+    // 2. El asesor responde → pausa automática y silencio total
+    const pauso = db.registerAdvisorActivity(jidAsesor);
+    const sesionTrasAsesor = db.db.prepare('SELECT bot_pausado, bot_pausado_por, asesor_ultimo_at FROM chat_sessions WHERE jid = ?').get(jidAsesor);
+    assert(pauso === true, 'La intervención del asesor activa la pausa automática del bot');
+    assert(sesionTrasAsesor && parseInt(sesionTrasAsesor.bot_pausado) === 1, 'La sesión queda marcada con bot_pausado = 1');
+    assert(sesionTrasAsesor && sesionTrasAsesor.bot_pausado_por === 'asesor', 'Se registra que la pausa fue originada por un asesor');
+    assert(!!(sesionTrasAsesor && sesionTrasAsesor.asesor_ultimo_at), 'Se registra la hora de la última intervención del asesor');
+
+    const respConAsesor = processIncomingMessage(jidAsesor, 'cuanto cuesta una bujia', 'Cliente Takeover');
+    assert(respConAsesor === null, 'Con asesor activo, el bot NO responde nada (silencio total)');
+
+    // 3. El cliente escribe mucho después (4 h) → el bot retoma la conversación
+    db.db.prepare('UPDATE chat_sessions SET asesor_ultimo_at = ? WHERE jid = ?').run(Date.now() - 4 * 60 * 60 * 1000, jidAsesor);
+    const reactivado = db.shouldReactivateBotForClient(jidAsesor);
+    assert(reactivado === true, 'Tras 4 horas sin respuesta del asesor, el bot se reactiva al escribir el cliente');
+    const respTrasReactivar = processIncomingMessage(jidAsesor, 'hola', 'Cliente Takeover');
+    assert(respTrasReactivar && typeof respTrasReactivar === 'string' && respTrasReactivar.length > 10, 'El bot vuelve a responder tras la reactivación automática');
+
+    // 4. El cliente escribe inmediatamente después del asesor → sigue en silencio
+    resetSesion(jidAsesor);
+    db.registerAdvisorActivity(jidAsesor);
+    const respInmediato = processIncomingMessage(jidAsesor, 'y cuanto sale?', 'Cliente Takeover');
+    assert(respInmediato === null, 'Si el cliente escribe enseguida tras el asesor, el bot sigue en silencio');
+
+    // 5. Pausa manual: nunca se reactiva sola
+    resetSesion(jidManual);
+    db.toggleBotPause(jidManual, true);
+    const sesionManual = db.db.prepare('SELECT bot_pausado, bot_pausado_por FROM chat_sessions WHERE jid = ?').get(jidManual);
+    assert(sesionManual && sesionManual.bot_pausado_por === 'manual', 'La pausa manual se identifica como tal (no confundir con la del asesor)');
+    db.db.prepare('UPDATE chat_sessions SET asesor_ultimo_at = ? WHERE jid = ?').run(Date.now() - 10 * 60 * 60 * 1000, jidManual);
+    const respManual = processIncomingMessage(jidManual, 'hola', 'Cliente Manual');
+    assert(db.shouldReactivateBotForClient(jidManual) === false, 'La pausa manual NO se reactiva automáticamente aunque pasen horas');
+    assert(respManual === null, 'Con pausa manual el bot permanece en silencio hasta que el panel lo reactive');
+
+    // 6. Reactivación manual desde el panel
+    db.toggleBotPause(jidManual, false);
+    const respTrasManual = processIncomingMessage(jidManual, 'hola', 'Cliente Manual');
+    assert(respTrasManual && typeof respTrasManual === 'string' && respTrasManual.length > 10, 'Tras reactivar desde el panel, el bot responde de nuevo');
+
+    // 7. Con la pausa automática desactivada, el asesor NO silencia al bot
+    resetSesion(jidSinAuto);
+    db.updateSetting('auto_pausa_asesor', '0');
+    const pausoSinAuto = db.registerAdvisorActivity(jidSinAuto);
+    const sesionSinAuto = db.db.prepare('SELECT bot_pausado FROM chat_sessions WHERE jid = ?').get(jidSinAuto);
+    assert(pausoSinAuto === false, 'Con la pausa automática apagada, el asesor no pausa al bot');
+    assert(sesionSinAuto && parseInt(sesionSinAuto.bot_pausado) === 0, 'La sesión permanece activa cuando la opción está desactivada');
+
+    // 8. Reactivación "nunca" (0 minutos): el bot no retoma solo
+    resetSesion(jidAsesor);
+    db.updateSetting('reactivar_bot_minutos', '0');
+    db.registerAdvisorActivity(jidAsesor);
+    db.db.prepare('UPDATE chat_sessions SET asesor_ultimo_at = ? WHERE jid = ?').run(Date.now() - 48 * 60 * 60 * 1000, jidAsesor);
+    assert(db.shouldReactivateBotForClient(jidAsesor) === false, 'Con reactivar_bot_minutos = 0 el bot no retoma nunca solo');
+
+    // Restaurar configuración y limpiar sesiones de prueba
+    db.updateSetting('auto_pausa_asesor', '1');
+    db.updateSetting('reactivar_bot_minutos', '180');
+    for (const jid of [jidAsesor, jidManual, jidSinAuto]) {
+      db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
+      db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // [MENSAJES CORTOS] EL FALLBACK ES BREVE Y NO INSISTE
+  // -------------------------------------------------------------
+  console.log('\n-----------------------------------------------------------------');
+  console.log('✂️ [PUNTO 2] Mensajes cortos: fallback breve y sin insistir');
+  console.log('-----------------------------------------------------------------');
+  {
+    const jidFb = '584149990401@s.whatsapp.net';
+    const jidSaludo = '584149990402@s.whatsapp.net';
+    const limpiar = (jid) => {
+      db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
+      db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
+    };
+
+    // 1. Primer mensaje no entendido: aviso corto con UNA sola instrucción
+    limpiar(jidFb);
+    resetSpam(jidFb);
+    const fb1 = processIncomingMessage(jidFb, 'zzzqx qqqww', 'Cliente Corto');
+    assert(typeof fb1 === 'string' && fb1.includes('nombre de la pieza'), 'El primer fallback pide el nombre de la pieza');
+    assert(typeof fb1 === 'string' && fb1.length < 200, `El primer fallback es corto (${typeof fb1 === 'string' ? fb1.length : 0} caracteres < 200)`);
+    assert(typeof fb1 === 'string' && !fb1.includes('No logré ubicar'), 'Ya no aparece el texto largo "No logré ubicar el producto"');
+
+    // 2. Segundo mensaje no entendido: pase directo a una persona
+    const fb2 = processIncomingMessage(jidFb, 'nzqx wqpt', 'Cliente Corto');
+    assert(typeof fb2 === 'string' && fb2.includes('VENDEDOR') && fb2.includes('una persona te atiende'), 'El segundo fallback entrega el chat a una persona (VENDEDOR)');
+    assert(typeof fb2 === 'string' && fb2.length < 280, `El segundo fallback es corto (${typeof fb2 === 'string' ? fb2.length : 0} caracteres < 280)`);
+    assert(typeof fb2 === 'string' && !fb2.includes('━━━'), 'El segundo fallback ya no usa listas largas con separadores');
+
+    // 3. Tercer mensaje: el bot se calla y deja aviso en el panel
+    const fb3 = processIncomingMessage(jidFb, 'xjkv mmm', 'Cliente Corto');
+    assert(fb3 === null, 'Al tercer mensaje seguido sin entender, el bot deja de responder (no insiste)');
+    const aviso = db.db.prepare("SELECT contenido FROM chat_messages WHERE jid = ? AND remitente = 'sistema' ORDER BY id DESC LIMIT 1").get(jidFb);
+    assert(aviso && aviso.contenido.includes('3 mensajes seguidos'), 'Se deja un aviso visible en el panel para que un asesor tome el chat');
+
+    // 4. Una consulta entendible reactiva el flujo normal y limpia el contador
+    resetSpam(jidFb);
+    const producto = processIncomingMessage(jidFb, 'bujia', 'Cliente Corto');
+    const productoTexto = typeof producto === 'object' && producto !== null ? (producto.text || '') : String(producto || '');
+    assert(productoTexto && productoTexto.toLowerCase().includes('buj'), 'Una consulta entendible vuelve a recibir respuesta normal');
+    const sesionTrasExito = db.db.prepare('SELECT fallos_consecutivos FROM chat_sessions WHERE jid = ?').get(jidFb);
+    assert(sesionTrasExito && parseInt(sesionTrasExito.fallos_consecutivos || 0) === 0, 'Tras una respuesta exitosa, el contador de fallos vuelve a cero');
+
+    // 5. Saludo: menú compacto la primera vez, saludo corto al repetir
+    limpiar(jidSaludo);
+    resetSpam(jidSaludo);
+    const saludo1 = processIncomingMessage(jidSaludo, 'hola', 'Cliente Saludo');
+    assert(typeof saludo1 === 'string' && saludo1.includes('1️⃣') && saludo1.includes('6️⃣'), 'El primer saludo muestra el menú completo (1 a 6)');
+    assert(typeof saludo1 === 'string' && saludo1.length < 800, `El menú de bienvenida quedó compacto (${typeof saludo1 === 'string' ? saludo1.length : 0} caracteres)`);
+    const saludo2 = processIncomingMessage(jidSaludo, 'hola de nuevo', 'Cliente Saludo');
+    assert(typeof saludo2 === 'string' && saludo2.includes('Crastur') && saludo2.length < 250, 'Al saludar de nuevo responde corto (sin repetir el menú completo)');
+    assert(typeof saludo2 === 'string' && !saludo2.includes('1️⃣'), 'El segundo saludo NO vuelve a mostrar el menú completo');
+
+    // 5b. Si el cliente vuelve después de 6+ horas, el menú completo aparece de nuevo
+    db.db.prepare('UPDATE chat_sessions SET ultimo_mensaje_at = ? WHERE jid = ?').run(Date.now() - 7 * 60 * 60 * 1000, jidSaludo);
+    const saludo3 = processIncomingMessage(jidSaludo, 'hola', 'Cliente Saludo');
+    assert(typeof saludo3 === 'string' && saludo3.includes('1️⃣'), 'Tras 6+ horas sin hablar, el saludo vuelve a mostrar el menú completo');
+
+    // 6. Cortesías breves
+    const cortesia = processIncomingMessage(jidSaludo, 'gracias', 'Cliente Saludo');
+    assert(typeof cortesia === 'string' && cortesia.includes('orden') && cortesia.length < 200, 'La respuesta de cortesía es breve y cordial');
+
+    // Limpieza del bloque
+    limpiar(jidFb);
+    limpiar(jidSaludo);
+  }
+
+  // -------------------------------------------------------------
+  // [RECORDATORIOS CON RESPETO] 1 POR CHAT, MÍNIMO 1 HORA, NUNCA CON ASESOR
+  // -------------------------------------------------------------
+  console.log('\n-----------------------------------------------------------------');
+  console.log('⏰ [PUNTO 4] Recordatorios con respeto: 1 por chat, mínimo 1 hora');
+  console.log('-----------------------------------------------------------------');
+  {
+    const jidRec = '584149990501@s.whatsapp.net';
+    const settingsOriginales = db.getSettings();
+    const horarioOriginal = settingsOriginales.horario_atencion;
+    const mensajeOriginal = settingsOriginales.mensaje_insistencia;
+
+    // Horario que cubre todo el día para que la prueba no dependa de la hora real
+    db.updateSetting('horario_atencion', 'Todos los días de 12:00 AM a 11:58 PM');
+    db.updateSetting('insistencia_activa', '1');
+    // Valor "agresivo" en configuración: el servicio debe imponer el mínimo de 1 hora
+    db.updateSetting('insistencia_minutos', '15');
+
+    const prepararSesion = (opciones: any = {}) => {
+      db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidRec);
+      db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidRec);
+      const ultimoMensajeAt = opciones.ultimoMensajeAt ?? (Date.now() - 2 * 60 * 60 * 1000);
+      db.db.prepare(`
+        INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea, ultimo_producto_nombre, recordatorio_total, asesor_ultimo_at, fallos_consecutivos)
+        VALUES (?, 'Cliente Recordado', 'start', ?, 0, 0, 1, 'Bujía NGK', 0, ?, 0)
+      `).run(jidRec, ultimoMensajeAt, opciones.asesorUltimoAt ?? null);
+      db.db.prepare(`
+        INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+        VALUES (?, 'cliente', ?, ?)
+      `).run(jidRec, opciones.ultimoTextoCliente ?? 'cuanto cuesta la bujia?', ultimoMensajeAt);
+    };
+
+    const enviados: string[] = [];
+    const callback = (_jid, texto) => { enviados.push(texto); };
+
+    // 1. Caso normal: 2 horas de silencio → 1 recordatorio
+    prepararSesion();
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 1, 'Envía el recordatorio tras más de 1 hora de silencio del cliente');
+    const sesionTras1 = db.db.prepare('SELECT seguimiento_enviado, recordatorio_total FROM chat_sessions WHERE jid = ?').get(jidRec);
+    assert(sesionTras1 && parseInt(sesionTras1.seguimiento_enviado) === 1 && Number(sesionTras1.recordatorio_total) === 1, 'Marca el recordatorio como enviado y lo cuenta (1 total)');
+
+    // 2. Aunque se rearme el flujo con un nuevo producto, jamás un segundo recordatorio
+    prepararSesion();
+    db.db.prepare('UPDATE chat_sessions SET recordatorio_total = 1 WHERE jid = ?').run(jidRec);
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 0, 'Nunca envía un segundo recordatorio en el mismo chat');
+
+    // 3. Mínimo 1 hora impuesto por el sistema (con configuración de 15 minutos)
+    prepararSesion({ ultimoMensajeAt: Date.now() - 30 * 60 * 1000 });
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 0, 'No recuerda antes de 1 hora aunque la configuración pida 15 minutos');
+
+    // 4. Si un asesor respondió después del último mensaje del cliente, no se recuerda nada
+    const tsCliente = Date.now() - 3 * 60 * 60 * 1000;
+    prepararSesion({ ultimoMensajeAt: tsCliente, asesorUltimoAt: tsCliente + 60 * 1000, ultimoTextoCliente: 'me interesa la bujia' });
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 0, 'No recuerda si un asesor ya respondió esa consulta');
+
+    // 5. Si el cliente cerró con una cortesía, no se recuerda nada
+    prepararSesion({ ultimoTextoCliente: 'muchas gracias!' });
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 0, 'No recuerda si el cliente ya agradeció o cerró la conversación');
+
+    // 6. [ANTI-BANEO] Nunca escribir fuera de la ventana de 24h de WhatsApp
+    prepararSesion({ ultimoMensajeAt: Date.now() - 30 * 60 * 60 * 1000, ultimoTextoCliente: 'me interesa la bujia' });
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 0, 'No envía seguimientos fuera de la ventana de 24h de WhatsApp');
+
+    // 7. [ANTI-BANEO] Cuota diaria de proactivos
+    db.updateSetting('proactivos_max_dia', '0');
+    prepararSesion({ ultimoTextoCliente: 'me interesa la bujia' });
+    enviados.length = 0;
+    await checkPendingFollowUps(callback);
+    assert(enviados.length === 0, 'Respeta la cuota diaria de mensajes proactivos (0 = desactivado)');
+    db.updateSetting('proactivos_max_dia', '30');
+
+    // Restaurar configuración y limpiar
+    db.updateSetting('horario_atencion', horarioOriginal);
+    db.updateSetting('mensaje_insistencia', mensajeOriginal);
+    db.updateSetting('insistencia_minutos', '60');
+    db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidRec);
+    db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidRec);
+  }
+
+  // -------------------------------------------------------------
+  // PUNTO 5: REGRESIÓN DE DICCIONARIO, MEDIDAS Y FALSOS POSITIVOS
+  // -------------------------------------------------------------
+  console.log('\n🧠 [PUNTO 5] Regresión: ñ/plurales, medidas y falsos positivos de intención');
+  console.log('-----------------------------------------------------------------');
+
+  const regJids: string[] = [];
+  const regProducts = [
+    { marca: 'Genérico', modelo: 'Piñón Regresión 15 Dientes', categoria: 'Repuestos Moto - Transmisión', precio_usd: 6, stock: 10, descripcion: 'piñon de arrastre para moto' },
+    { marca: 'Genérico', modelo: 'Puños Regresión Universales', categoria: 'Accesorios Moto - Mandos', precio_usd: 5, stock: 10, descripcion: 'puños para manubrio' },
+    { marca: 'Genérico', modelo: 'Filtro Regresión de Aire', categoria: 'Repuestos Moto - Motor', precio_usd: 6, stock: 10, descripcion: 'filtro de aire' },
+    { marca: 'Genérico', modelo: 'Zapata Regresión de Freno', categoria: 'Repuestos Moto - Frenos', precio_usd: 8, stock: 10, descripcion: 'zapata de freno' },
+    { marca: 'Genérico', modelo: 'Amortiguador Regresión Trasero', categoria: 'Repuestos Moto - Suspensión', precio_usd: 22, stock: 10, descripcion: 'amortiguador para moto' },
+    { marca: 'Genérico', modelo: 'Tripa Regresión Aro 18', categoria: 'Repuestos Moto - Tripas y Cauchos', precio_usd: 6, stock: 10, descripcion: 'tripa aro 18' },
+    { marca: 'Genérico', modelo: 'Direccional Regresión LED', categoria: 'Repuestos Moto - Luces', precio_usd: 8, stock: 10, descripcion: 'direccional led para moto' }
+  ];
+  const regIds: number[] = [];
+  for (const p of regProducts) {
+    const res = db.db.prepare(
+      'INSERT INTO products (marca, modelo, categoria, precio_usd, stock, descripcion, activo) VALUES (?, ?, ?, ?, ?, ?, 1)'
+    ).run(p.marca, p.modelo, p.categoria, p.precio_usd, p.stock, p.descripcion);
+    if (res?.lastInsertRowid) regIds.push(res.lastInsertRowid);
+  }
+  invalidateProductCache();
+  resetSpam();
+
+  const ask = (query: string): string => {
+    const jid = `58414100${String(regJids.length).padStart(4, '0')}@s.whatsapp.net`;
+    regJids.push(jid);
+    const r: any = processIncomingMessage(jid, query, 'RegTest');
+    return typeof r === 'string' ? r : (r && (r.text || r.caption)) ? (r.text || r.caption) : '';
+  };
+
+  // 1) La letra ñ ya no rompe el diccionario
+  const rPinones = ask('piñones');
+  assert(/pi[nñ][oó]n/i.test(rPinones), 'El plural con ñ "piñones" se detecta (ya no cae en fallback)');
+  const rPuno = ask('puño');
+  assert(/pu[nñ]os/i.test(rPuno), 'El singular con ñ "puño" se detecta igual que "puños"');
+
+  // 2) Plurales genéricos por singularización
+  const rZapatas = ask('zapatas');
+  assert(/zapata/i.test(rZapatas), 'El plural "zapatas" se resuelve a "zapata"');
+  const rBalatas = ask('balatas');
+  assert(/pastilla|balata/i.test(rBalatas), 'El sinónimo "balatas" apunta a pastillas de freno');
+  const rFiltros = ask('filtros');
+  assert(/filtro/i.test(rFiltros), 'El plural "filtros" se resuelve a "filtro"');
+
+  // 3) Medidas NO se interpretan como cantidad (prueba directa y determinista)
+  assert(extractLeadingQuantity('tripas 18') === 1, '"tripas 18" -> 1 unidad (18 es la medida)');
+  assert(extractLeadingQuantity('aceite 20w50') === 1, '"aceite 20w50" -> 1 unidad (no toma 20)');
+  assert(extractLeadingQuantity('tripa aro 18') === 1, '"aro 18" -> 1 unidad (no toma 18)');
+  assert(extractLeadingQuantity('caucho 170 70 r14') === 1, '"170 70 r14" -> 1 unidad (medida compuesta)');
+
+  // 4) Cantidades reales siguen funcionando
+  assert(extractLeadingQuantity('quiero 4 aceites') === 4, '"quiero 4 aceites" -> 4 unidades');
+  assert(extractLeadingQuantity('2 bujias') === 2, '"2 bujías" -> 2 unidades');
+  assert(extractLeadingQuantity('dame 3 parches') === 3, '"dame 3 parches" -> 3 unidades');
+  assert(extractLeadingQuantity('x4 cauchos') === 4, '"x4 cauchos" -> 4 unidades');
+  const rCantidad = ask('quiero 4 bujias');
+  assert(/4 unidad/i.test(rCantidad), 'La cantidad real "quiero 4 bujías" sí se refleja (4 unidades)');
+
+  // 5) Falsos positivos de ubicación y horario
+  const rQuedan = ask('que pastillas quedan');
+  assert(!/ubicaci[oó]n de tienda/i.test(rQuedan) && /pastilla/i.test(rQuedan), '"qué pastillas quedan" busca pastillas y NO responde ubicación');
+  const rSabado = ask('pastillas sabado');
+  assert(!/horario de atenci[oó]n/i.test(rSabado) && /pastilla/i.test(rSabado), '"pastillas sábado" busca pastillas y NO responde horario');
+  const rDireccional = ask('direccional');
+  assert(!/ubicaci[oó]n de tienda/i.test(rDireccional) && /direccional/i.test(rDireccional), '"direccional" es un repuesto y NO responde ubicación');
+
+  // 6) Amortiguador de moto no se confunde con repuesto de carro
+  const rAmortiguador = ask('amortiguador de moto');
+  assert(!/piezas internas pesadas de motor/i.test(rAmortiguador), '"amortiguador de moto" no se trata como repuesto de carro');
+  assert(/amortiguador/i.test(rAmortiguador), '"amortiguador de moto" encuentra el amortiguador del catálogo');
+
+  // 7) Coherencia de contenido: Punto de Venta configurado y aceptado
+  const puntoResp = processIncomingMessage('584141009999@s.whatsapp.net', 'tienen punto de venta?', 'RegTest') as string;
+  assert(/punto de venta/i.test(String(puntoResp)), 'Si el panel tiene Punto de Venta activo, el bot lo confirma');
+  assert(!/ni tarjetas por punto de venta/i.test(String(puntoResp)), 'El bot ya NO se contradice diciendo que no acepta punto de venta');
+
+  // 8) Horarios dinámicos desde la configuración (no hardcodeados)
+  const horarioConfig = db.getSettings().horario_atencion || '';
+  const ubicResp = String(processIncomingMessage('584141009998@s.whatsapp.net', 'donde estan ubicados?', 'RegTest') as string);
+  if (horarioConfig) {
+    assert(ubicResp.includes(horarioConfig), 'La ubicación muestra el horario configurado en el panel');
+  }
+
+  // 9) Menú del segundo fallback coherente con el menú real (1 = Insumos)
+  const jidMenu = '584141009997@s.whatsapp.net';
+  processIncomingMessage(jidMenu, 'asdkjhasd qweqwe', 'RegTest');
+  const segundoFallback = String(processIncomingMessage(jidMenu, 'zxcvbnm asdfgh', 'RegTest') as string);
+  assert(/1️⃣\s*Insumos/i.test(segundoFallback), 'El segundo fallback lista 1️⃣ Insumos (coherente con el menú real)');
+  assert(!/1️⃣\s*Repuestos/i.test(segundoFallback), 'El segundo fallback ya no invierte Insumos y Repuestos');
+
+  // Limpieza de la regresión
+  for (const jid of regJids) {
+    db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
+    db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
+  }
+  db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run('584141009999@s.whatsapp.net');
+  db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run('584141009999@s.whatsapp.net');
+  db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run('584141009998@s.whatsapp.net');
+  db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run('584141009998@s.whatsapp.net');
+  if (regIds.length > 0) {
+    const ph = regIds.map(() => '?').join(',');
+    db.db.prepare(`DELETE FROM products WHERE id IN (${ph})`).run(...regIds);
+  }
+  invalidateProductCache();
+  resetSpam();
+
+  // -------------------------------------------------------------
+  // PUNTO 6: REGRESIÓN ANTI-BAN, CONTENIDO Y APARTADOS
+  // -------------------------------------------------------------
+  console.log('\n🛡️ [PUNTO 6] Regresión anti-ban, contenido y apartados');
+  console.log('-----------------------------------------------------------------');
+
+  // 6.1 Documento entrante
+  const rDoc = handleMediaResponse('document', 'Ana');
+  assert(rDoc.includes('Ana') && !/\*document\*/i.test(rDoc), 'Un documento entrante saluda con el nombre del cliente (no "*document*")');
+
+  // 6.2 "disculpe" no secuestra la búsqueda de producto
+  const rDisculpe = ask('disculpe, tienen bujias?');
+  assert(/buj[ií]a|NGK/i.test(rDisculpe), '"disculpe, tienen bujías?" busca el producto (no responde como persona mayor)');
+
+  // 6.3 Opt-out falso positivo
+  const jidOpt = '584141010001@s.whatsapp.net';
+  processIncomingMessage(jidOpt, 'no me escribiste el precio', 'Cliente');
+  const sesOpt = db.db.prepare('SELECT no_molestar FROM chat_sessions WHERE jid = ?').get(jidOpt);
+  assert(!sesOpt || parseInt(sesOpt.no_molestar) !== 1, '"no me escribiste el precio" NO activa No Molestar');
+  db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidOpt);
+  db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidOpt);
+
+  // 6.4 Salida de emergencia del apartado (MENU no debe atrapar al cliente)
+  const jidEsc = '584141010002@s.whatsapp.net';
+  processIncomingMessage(jidEsc, 'apartar', 'Cliente');
+  db.db.prepare("UPDATE chat_sessions SET step = 'apartado_pidiendo_nombre' WHERE jid = ?").run(jidEsc);
+  const rEsc = String(processIncomingMessage(jidEsc, 'MENU', 'Cliente'));
+  const stepAfter = db.db.prepare('SELECT step FROM chat_sessions WHERE jid = ?').get(jidEsc);
+  assert(!!stepAfter && stepAfter.step === 'start', 'Escribir MENU durante el apartado reinicia el flujo');
+  assert(!/nombre y apellido/i.test(rEsc), 'Escribir MENU durante el apartado no repite la petición de nombre');
+  db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidEsc);
+  db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidEsc);
+
+  // 6.5 Zonas de delivery del panel (campo "palabras" vs "keywords")
+  const zonasPanel = JSON.stringify([{ zona: 'Zona Prueba', tarifa: '$9 USD', palabras: ['quintanaxyz'] }]);
+  const zonasLeidas = getDeliveryZones({ delivery_zonas_json: zonasPanel });
+  assert(zonasLeidas.length === 1, 'Las zonas de delivery guardadas por el panel se leen correctamente');
+  const zDetectada = detectCaracasZone('vivo en quintanaxyz', { delivery_zonas_json: zonasPanel });
+  assert(!!zDetectada && zDetectada.nombre === 'Zona Prueba' && zDetectada.tarifa === '$9 USD', 'El bot reconoce una zona de delivery creada en el panel');
+
+  // 6.6 Plan Cashea por nivel (ficha y consulta coinciden)
+  assert(resolveCasheaPlan({ cashea_inicial_pct: '40', cashea_cuotas: '3' }, { nivel_cashea: 3 }).inicialPct === 0.20, 'Cashea Nivel 3 usa 20% de inicial');
+  assert(resolveCasheaPlan({ cashea_inicial_pct: '40', cashea_cuotas: '3' }, { nivel_cashea: 2 }).inicialPct === 0.30, 'Cashea Nivel 2 usa 30% de inicial');
+  assert(resolveCasheaPlan({ cashea_inicial_pct: '40', cashea_cuotas: '3' }, { nivel_cashea: 1 }).inicialPct === 0.40, 'Cashea Nivel 1 usa el % del panel');
+
+  // 6.7 Cantidad del apartado descuenta stock real
+  const regProd = db.db.prepare("INSERT INTO products (marca,modelo,categoria,precio_usd,stock,descripcion,activo) VALUES ('Genérico','Cantidad Regresión','Repuestos Moto - Motor',5,10,'x',1)").run();
+  const pidCant = regProd.lastInsertRowid;
+  const resvCant: any = db.createReservation({
+    jid: '584141010003@s.whatsapp.net', nombre: 'Test Cantidad', cedula: 'V-11111111',
+    telefono: '04121111111', producto_id: pidCant, producto_nombre: 'Cantidad Regresión',
+    precio_usd: 20, precio_bs: 0, items: [{ id: pidCant, nombre: 'Cantidad Regresión', precio_usd: 5, cantidad: 4 }]
+  });
+  const stockAfter = db.db.prepare('SELECT stock FROM products WHERE id = ?').get(pidCant)?.stock;
+  assert(Number(stockAfter) === 6, 'Apartar 4 unidades descuenta 4 del stock (no 1)');
+  db.updateReservationStatus(resvCant.id, 'cancelado');
+  const stockRestored = db.db.prepare('SELECT stock FROM products WHERE id = ?').get(pidCant)?.stock;
+  assert(Number(stockRestored) === 10, 'Cancelar el apartado devuelve las 4 unidades al stock');
+  db.db.prepare('DELETE FROM reservations WHERE id = ?').run(resvCant.id);
+  db.db.prepare('DELETE FROM products WHERE id = ?').run(pidCant);
+
+  // 6.8 Producto agotado (stock 0) se muestra como Agotado
+  const pAgotado = db.db.prepare("INSERT INTO products (marca,modelo,categoria,precio_usd,stock,descripcion,activo) VALUES ('Genérico','Agotado Regresión','Repuestos Moto - Motor',5,0,'x',1)").run();
+  invalidateProductCache();
+  const rAgotado = ask('agotado regresion');
+  assert(/agotado/i.test(rAgotado), 'Un producto con stock 0 se muestra como Agotado (no como Consultar)');
+  db.db.prepare('DELETE FROM products WHERE id = ?').run(pAgotado.lastInsertRowid);
+  invalidateProductCache();
+
+  // 6.9 Métodos de pago no soportados (Zinli, PayPal, etc.)
+  const rZinli = ask('aceptan zinli?');
+  assert(/zinli/i.test(rZinli) && /no aceptamos/i.test(rZinli), '"aceptan Zinli?" aclara que NO se acepta y ofrece los métodos reales');
+  const rPaypal = ask('aceptan paypal?');
+  assert(/paypal/i.test(rPaypal) && /no aceptamos/i.test(rPaypal), '"aceptan PayPal?" aclara que NO se acepta');
+
+  // 6.10 Precio sin producto
+  const rPrecioGen = ask('cuanto vale');
+  assert(/repuesto|producto|ejemplo/i.test(rPrecioGen) && !/nombre de la pieza/i.test(rPrecioGen), '"cuanto vale" pide el producto con ejemplos (no fallback seco)');
+
+  // 6.11 Compras al mayor
+  const rMayor = ask('venden al mayor?');
+  assert(/negocio|caucheras|talleres|cantidad/i.test(rMayor), 'Las consultas al mayor derivan a cotización por cantidad');
+
+  // 6.12 Horario de domingo
+  const rDomingo = ask('trabajan los domingos?');
+  assert(/horario de atenci|domingo/i.test(rDomingo), '"trabajan los domingos?" responde el horario');
+
+  // 6.13 "hi" (inglés) no debe confundirse con un repuesto
+  const rHi = ask('hi');
+  assert(!/precio promoci[oó]n en divisas/i.test(rHi), 'La palabra corta "hi" ya no coincide con "hierro" (no muestra producto)');
+  assert(!/bienvenida a \*crastur/i.test(rHi), 'El bot ya no saluda en inglés (responde en español pidiendo el repuesto)');
+
+  // 6.14 La cola de mensajes salientes se respalda en disco
+  enqueueOutboundMessage('584199999999@s.whatsapp.net', 'Mensaje de prueba persistente');
+  const queueFile = path.join(process.env.CRASTUR_DATA_DIR || path.join(process.cwd(), 'data'), 'outbound_queue.json');
+  const colaGuardada = fs.existsSync(queueFile) && fs.readFileSync(queueFile, 'utf8').includes('Mensaje de prueba persistente');
+  assert(colaGuardada, 'La cola de mensajes salientes se guarda en disco (no se pierde al reiniciar)');
+  assert(getOutboundQueueSize() >= 1, 'La cola conserva el mensaje pendiente para enviarlo al reconectar');
+
+  // 6.15 El nivel de Cashea indicado se recuerda en la sesión
+  const jidCas = '584141010004@s.whatsapp.net';
+  processIncomingMessage(jidCas, 'quiero saber el cashea nivel 3', 'Cliente');
+  const sesCas = db.db.prepare('SELECT nivel_cashea FROM chat_sessions WHERE jid = ?').get(jidCas);
+  assert(!!sesCas && Number(sesCas.nivel_cashea) === 3, 'El nivel de Cashea indicado por el cliente se recuerda en su sesión');
+  db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidCas);
+  db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidCas);
+
+  resetSpam();
 
   // -------------------------------------------------------------
   // LIMPIEZA POST-PRUEBAS

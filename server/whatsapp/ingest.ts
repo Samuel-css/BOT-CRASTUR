@@ -5,24 +5,78 @@
  * Adapta la lógica histórica de whatsappService.ts sin cambiar su comportamiento.
  */
 
-import { db, isBotGloballyPaused, isBotPaused } from '../database';
+import { db, getSettings, isBotGloballyPaused, isBotPaused, registerAdvisorActivity, shouldReactivateBotForClient } from '../database';
 import { processIncomingMessage } from '../bot';
 import { isWithinBusinessHours } from '../bot/services/businessRules';
 import {
   sock,
   connectionStatus,
   currentUser,
-  notifyLiveMessage
+  notifyLiveMessage,
+  notifyChatState
 } from './socketState';
 import { extractMessageInfo } from './messageParsing';
-import { sendTextMessage, wasSentByBot, consumeSentMessageId } from './sending';
+import { sendTextMessage, wasSentByBot, consumeSentMessageId, trackSentMessageId } from './sending';
+import { standardizeBotMessage } from '../bot/utils/textUtils';
 
 // ─── Buffers y control de duplicados ────────────────────────────────────────
 const messageDebounceTimers = new Map<string, any>();
 const messageDebounceQueues = new Map<string, any[]>();
 
+// [CONCURRENCIA] Evita que dos cadenas asíncronas envíen la misma respuesta al mismo
+// chat a la vez (debounce en vivo + cola de arranque + catch-up + reactivación).
+const processingJids = new Set<string>();
+
 let overnightCatchupTimer: any = null;
 const overnightCatchupMap = new Map<string, any>();
+
+/**
+ * [LOGOUT/RECONEXIÓN] Limpia todo el estado en memoria de la ingestión (timers, colas y
+ * mensajes de arranque). Se invoca al cerrar sesión o reiniciar WhatsApp para que no queden
+ * timers disparando respuestas con el socket ya cerrado ni consultas de la sesión anterior.
+ */
+export function resetIngestState(): void {
+  for (const timer of messageDebounceTimers.values()) {
+    try { clearTimeout(timer); } catch {}
+  }
+  messageDebounceTimers.clear();
+  messageDebounceQueues.clear();
+  processingJids.clear();
+  overnightCatchupMap.clear();
+  if (overnightCatchupTimer) {
+    try { clearTimeout(overnightCatchupTimer); } catch {}
+    overnightCatchupTimer = null;
+  }
+  pendingStartupMessages.length = 0;
+}
+
+/**
+ * [SIN MENSAJES A DESTIEMPO] Antigüedad máxima (10 minutos) para responder una consulta que
+ * llegó mientras la PC estaba apagada/desconectada. Pasado ese tiempo el mensaje solo queda
+ * registrado en el Live Inbox para que un asesor lo atienda a mano.
+ */
+const CATCHUP_MAX_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * [HUMAN TAKEOVER AUTOMÁTICO] Cancela cualquier respuesta del bot que esté pendiente para un
+ * chat: debounce en curso, cola de arranque y recuperación nocturna. Se invoca cuando un asesor
+ * humano interviene para que el bot NUNCA responda por encima de la persona.
+ */
+function cancelPendingBotResponses(jid: string): void {
+  const timer = messageDebounceTimers.get(jid);
+  if (timer) {
+    clearTimeout(timer);
+    messageDebounceTimers.delete(jid);
+  }
+  messageDebounceQueues.delete(jid);
+  overnightCatchupMap.delete(jid);
+
+  for (let i = pendingStartupMessages.length - 1; i >= 0; i--) {
+    if (pendingStartupMessages[i].jid === jid) {
+      pendingStartupMessages.splice(i, 1);
+    }
+  }
+}
 
 /** Consultas recibidas durante la ventana de estabilización (20s) pendientes de responder. */
 const pendingStartupMessages: Array<{
@@ -47,19 +101,66 @@ async function deliverBotResponse(
   hasMediaOnly: boolean,
   firstMedia: any
 ): Promise<void> {
+  // [CONCURRENCIA] Si ya se está respondiendo a este chat, se omite la segunda cadena para
+  // no enviar la misma respuesta dos veces (carrera entre debounce, cola y catch-up).
+  if (processingJids.has(jid)) {
+    console.log(`[WhatsApp Bot] ⏳ Ya hay una respuesta en curso para ${jid}; se omite el duplicado concurrente.`);
+    return;
+  }
+  processingJids.add(jid);
   try {
     const mediaParam = hasMediaOnly ? { isMedia: true, type: firstMedia?.mediaType } : null;
     const response: any = await processIncomingMessage(jid, combinedText, pushName, mediaParam);
 
+    // [HUMAN TAKEOVER AUTOMÁTICO] Verificación de última milla: si un asesor escribió (o el
+    // panel pausó el chat) mientras el bot procesaba el mensaje, la respuesta se descarta.
+    if (response && (isBotPaused(jid) || isBotGloballyPaused())) {
+      console.log(`[WhatsApp Bot] ⏸️ Respuesta a ${jid} descartada: el chat fue tomado por un asesor humano.`);
+      return;
+    }
+
     if (response) {
       console.log(`[WhatsApp Bot] 🤖 Simulando presencia de escritura para ${jid}...`);
+
+      const textoRespuesta: string = typeof response === 'object' && response !== null
+        ? (response.text || response.caption || '')
+        : (response ? String(response) : '');
+
+      // [ANTI-DUPLICADO] Si la respuesta es idéntica a la última que ya envió el bot hace menos
+      // de 90 segundos, se omite: evita el molesto "doble mensaje seguido" cuando el cliente
+      // repite la misma pregunta en ráfaga.
+      let esDuplicadoReciente = false;
+      try {
+        const ultimoBot = db.prepare(`
+          SELECT contenido, timestamp FROM chat_messages
+          WHERE jid = ? AND remitente = 'bot'
+          ORDER BY id DESC LIMIT 1
+        `).get(jid);
+        // [FIX] En BD se guarda el texto ya estandarizado; comparar contra el crudo no coincidía
+        // y el mecanismo anti-duplicado no frenaba nada.
+        const textoNormalizado = standardizeBotMessage(textoRespuesta);
+        esDuplicadoReciente = !!(
+          ultimoBot &&
+          textoRespuesta &&
+          (ultimoBot.contenido === textoRespuesta || ultimoBot.contenido === textoNormalizado) &&
+          Date.now() - Number(ultimoBot.timestamp) < 90000
+        );
+      } catch {}
+
+      if (esDuplicadoReciente) {
+        console.log(`[WhatsApp Bot] 🔁 Respuesta idéntica reciente para ${jid}: se omite el envío duplicado.`);
+        return;
+      }
+
       try {
         if (sock && connectionStatus === 'connected') {
           await sock.sendPresenceUpdate('composing', jid);
         }
       } catch (pErr: any) { }
 
-      const typingDelay = Math.min(2200, 1200 + Math.floor(Math.random() * 800));
+      // [ANTI-BANEO / RITMO HUMANO] El tiempo de "escribiendo..." crece con el largo del texto
+      // (como una persona real tecleando) pero con tope de 4.2s para no frenar la atención.
+      const typingDelay = Math.min(4200, 900 + textoRespuesta.length * 22) + Math.floor(Math.random() * 400);
       await new Promise(res => setTimeout(res, typingDelay));
 
       console.log(`[WhatsApp Bot] 🤖 Despachando respuesta a ${jid}...`);
@@ -72,15 +173,13 @@ async function deliverBotResponse(
         await sendTextMessage(jid, response);
       }
 
-      const responseText = typeof response === 'object' && response !== null
-        ? (response.text || response.caption || '')
-        : (response ? String(response) : '');
-
       // [MERCADO VENEZUELA] Pin interactivo si la respuesta refiere a la ubicación de la tienda
-      if (responseText && responseText.includes('Liberalba') && responseText.includes('Google Maps')) {
+      if (textoRespuesta && textoRespuesta.includes('Liberalba') && textoRespuesta.includes('Google Maps')) {
         try {
           if (sock && connectionStatus === 'connected') {
-            await sock.sendMessage(jid, {
+            // [ANTI-BANEO] Pequeña pausa para no enviar 3 mensajes seguidos sin respiro.
+            await new Promise(res => setTimeout(res, 700 + Math.floor(Math.random() * 500)));
+            const locMsg = await sock.sendMessage(jid, {
               location: {
                 degreesLatitude: 10.5015,
                 degreesLongitude: -66.9015,
@@ -88,6 +187,7 @@ async function deliverBotResponse(
                 address: 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas'
               }
             });
+            if (locMsg?.key?.id) trackSentMessageId(locMsg.key.id);
             console.log(`[WhatsApp Bot] 📍 Pin de ubicación interactivo enviado a ${jid}`);
           }
         } catch (locErr: any) {
@@ -124,9 +224,10 @@ async function deliverBotResponse(
               + 'URL:https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA\n'
               + 'END:VCARD';
 
-            await sock.sendMessage(jid, {
+            const cardMsg = await sock.sendMessage(jid, {
               contacts: { displayName: 'Crastur - Repuestos e Insumos', contacts: [{ vcard }] }
             });
+            if (cardMsg?.key?.id) trackSentMessageId(cardMsg.key.id);
             console.log(`[WhatsApp Bot] 📇 Tarjeta de contacto oficial enviada a ${jid}`);
           }
         } catch (cardErr: any) {
@@ -146,6 +247,8 @@ async function deliverBotResponse(
     }
   } catch (engineErr: any) {
     console.error('[WhatsApp Bot] ❌ Error procesando o enviando respuesta:', engineErr);
+  } finally {
+    processingJids.delete(jid);
   }
 }
 
@@ -299,6 +402,33 @@ export function registerMessageHandler(): void {
               notifyLiveMessage({ jid, pushName: 'Asesor Humano', remitente: 'asesor', contenido: rawContent, timestamp: msgTime });
             } catch (e) { }
           }
+
+          // [HUMAN TAKEOVER AUTOMÁTICO] Cualquier mensaje escrito por una persona (aunque su
+          // contenido ya estuviera registrado) confirma que el asesor está atendiendo el chat:
+          // el bot se silencia, se cancelan respuestas pendientes y el panel recibe el aviso.
+          const autoPaused = registerAdvisorActivity(jid);
+          cancelPendingBotResponses(jid);
+          if (autoPaused) {
+            console.log(`[WhatsApp Bot] ✋ Asesor respondió en ${jid}: bot pausado automáticamente.`);
+            const aviso = '✋ El bot se pausó automáticamente porque un asesor respondió en esta conversación. Se reactivará si el cliente vuelve a escribir más tarde.';
+            let avisoId = null;
+            try {
+              const r = db.prepare(`
+                INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+                VALUES (?, 'sistema', ?, ?)
+              `).run(jid, aviso, Date.now());
+              avisoId = r?.lastInsertRowid;
+            } catch {}
+            notifyChatState({ jid, pausado: true, por: 'asesor', auto: true, origen: 'telefono' });
+            notifyLiveMessage({
+              id: avisoId,
+              jid,
+              pushName: 'Sistema',
+              remitente: 'sistema',
+              contenido: aviso,
+              timestamp: Date.now()
+            });
+          }
         }
         continue;
       }
@@ -308,8 +438,36 @@ export function registerMessageHandler(): void {
       if (messageTimestamp) {
         const ageSec = Math.floor(Date.now() / 1000) - Number(messageTimestamp);
 
-        // [ANTI-BANEO META 2025] No responder mensajes con antigüedad mayor a 1 día
-        if (ageSec > 24 * 3600) continue;
+        // [ANTI-BANEO META 2025] No responder mensajes con antigüedad mayor a 1 día.
+        // [LIVE INBOX] Aun sin responder, se registran para que un asesor los vea.
+        if (ageSec > 24 * 3600) {
+          try {
+            const oldInfo = extractMessageInfo(msg);
+            if (oldInfo && (oldInfo.text || oldInfo.isMedia)) {
+              const oldTime = Number(messageTimestamp) * 1000;
+              const oldText = oldInfo.text || `[${oldInfo.mediaType || 'Multimedia'}]`;
+              const exists = db.prepare(`
+                SELECT id FROM chat_messages
+                WHERE jid = ? AND contenido = ? AND ABS(timestamp - ?) < 6000
+                LIMIT 1
+              `).get(jid, oldText, oldTime);
+              if (!exists) {
+                db.prepare(`
+                  INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+                  VALUES (?, 'cliente', ?, ?)
+                `).run(jid, oldText, oldTime);
+                const s = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
+                if (!s) {
+                  db.prepare(`
+                    INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea)
+                    VALUES (?, ?, 'start', ?, 0, 0, 1)
+                  `).run(jid, msg.pushName || 'cliente', oldTime);
+                }
+              }
+            }
+          } catch {}
+          continue;
+        }
 
         // Mensaje acumulado mientras el servidor estuvo apagado (> 3 minutos de antigüedad)
         if (ageSec > 180) {
@@ -348,7 +506,7 @@ export function registerMessageHandler(): void {
             }
 
             if (info.text && info.text.trim().length > 1) {
-              overnightCatchupMap.set(jid, { text: info.text.trim(), pushName });
+              overnightCatchupMap.set(jid, { text: info.text.trim(), pushName, msgTime });
             }
 
             if (overnightCatchupTimer) clearTimeout(overnightCatchupTimer);
@@ -358,34 +516,44 @@ export function registerMessageHandler(): void {
               overnightCatchupMap.clear();
 
               if (!isWithinBusinessHours()) {
-                console.log('[WhatsApp] Mensajes nocturnos registrados en Live Inbox. La tienda física está fuera de horario.');
+                console.log('[WhatsApp] Mensajes acumulados registrados en Live Inbox. La tienda física está fuera de horario.');
                 return;
               }
 
-              console.log(`[WhatsApp] ☀️ Atendiendo ${entries.length} consultas acumuladas mientras la PC estuvo apagada...`);
+              const ahora = Date.now();
+              console.log(`[WhatsApp] ☀️ Evaluando ${entries.length} consulta(s) acumulada(s) mientras la PC estuvo apagada...`);
               for (const [targetJid, clientData] of entries) {
-                if (isBotGloballyPaused()) {
-                  console.log(`[WhatsApp] Mensaje nocturno de ${targetJid} omitido: bot pausado globalmente.`);
-                  continue;
-                }
-                if (isBotPaused(targetJid)) {
-                  console.log(`[WhatsApp] Mensaje nocturno de ${targetJid} omitido: chat pausado manualmente.`);
-                  continue;
-                }
-
                 try {
-                  const res: any = await processIncomingMessage(targetJid, clientData.text, clientData.pushName);
-                  if (res) {
-                    const rawReply = typeof res === 'object' && res.text ? res.text : String(res);
-                    const morningReply = `¡Buenos días, *${clientData.pushName}*! 👋 Recibimos tu consulta mientras nuestra tienda física estaba cerrada. Ya estamos abiertos hoy de 8:00 AM a 8:00 PM con entrega inmediata en San Agustín Norte:\n\n${rawReply}`;
-                    await sendTextMessage(targetJid, morningReply);
-                    await new Promise(r => setTimeout(r, 2000));
+                  // [SIN MENSAJES A DESTIEMPO] Un mensaje viejo ya no se responde solo: llegó
+                  // mientras la PC estaba apagada y el cliente (o un asesor) ya siguió adelante.
+                  // Solo se atiende si sigue fresco; si no, queda registrado en el Live Inbox.
+                  if (ahora - clientData.msgTime > CATCHUP_MAX_AGE_MS) {
+                    console.log(`[WhatsApp] Mensaje acumulado de ${targetJid} quedó viejo (${Math.round((ahora - clientData.msgTime) / 60000)} min). Solo se registra en el Live Inbox.`);
+                    continue;
                   }
+
+                  if (isBotGloballyPaused() || isBotPaused(targetJid)) {
+                    console.log(`[WhatsApp] Mensaje acumulado de ${targetJid} omitido: chat pausado.`);
+                    continue;
+                  }
+
+                  // [HUMAN TAKEOVER] Si un asesor ya respondió después de ese mensaje, el bot no
+                  // interviene: la conversación ya está siendo atendida por una persona.
+                  const sesion = db.prepare('SELECT asesor_ultimo_at FROM chat_sessions WHERE jid = ?').get(targetJid);
+                  if (sesion?.asesor_ultimo_at && Number(sesion.asesor_ultimo_at) >= clientData.msgTime) {
+                    console.log(`[WhatsApp] Mensaje acumulado de ${targetJid} omitido: un asesor ya respondió esa consulta.`);
+                    continue;
+                  }
+
+                  // Respuesta normal del bot (sin prefijos raros ni saludos a destiempo)
+                  await deliverBotResponse(targetJid, clientData.text, clientData.pushName, false, null);
+                  await new Promise(r => setTimeout(r, 2000));
                 } catch (mErr: any) {
-                  console.error(`[WhatsApp] Error respondiendo mensaje matutino a ${targetJid}:`, mErr?.message || mErr);
+                  console.error(`[WhatsApp] Error respondiendo mensaje acumulado a ${targetJid}:`, mErr?.message || mErr);
                 }
               }
             }, 8000);
+            if (overnightCatchupTimer && overnightCatchupTimer.unref) overnightCatchupTimer.unref();
           }
           continue;
         }
@@ -402,6 +570,14 @@ export function registerMessageHandler(): void {
       console.log(`[WhatsApp] 📥 Mensaje recibido de "${pushName}" (${jid}): "${text || `[${mediaType}]`}"`);
 
       notifyLiveMessage({ jid, pushName, remitente: 'cliente', contenido: text || `[Mensaje ${mediaType}]`, timestamp: Date.now() });
+
+      // [ANTI-BANEO / RITMO HUMANO] Marcar el mensaje como leído (doble check azul) igual que
+      // lo haría una persona del mostrador. No añade retardo al flujo y hace ver la cuenta activa.
+      try {
+        if (sock && connectionStatus === 'connected' && msg.key) {
+          await sock.readMessages([msg.key]);
+        }
+      } catch (readErr: any) { /* el marcado de leído nunca debe interrumpir la atención */ }
 
       // DEBOUNCING de mensajes en ráfaga (anti-flood): agrupa fragmentos en 1.2s
       if (!messageDebounceQueues.has(jid)) {
@@ -427,6 +603,30 @@ export function registerMessageHandler(): void {
         const activePushName = queue[queue.length - 1]?.pushName || pushName || 'amigo/a';
 
         console.log(`[WhatsApp Bot] ⚙️ Procesando consulta de ${activePushName} (${jid}): "${combinedText || '[Multimedia]'}"`);
+
+        // [REACTIVACIÓN AUTOMÁTICA] Si el bot quedó silenciado por un asesor y el cliente
+        // vuelve a escribir después del tiempo configurado sin respuesta humana, el bot retoma
+        // la conversación como si un vendedor le pasara el chat de nuevo.
+        let fueReactivadoPorAsesor = false;
+        try {
+          const previo = db.prepare('SELECT bot_pausado, bot_pausado_por FROM chat_sessions WHERE jid = ?').get(jid);
+          fueReactivadoPorAsesor = !!previo && parseInt(previo.bot_pausado) === 1 && previo.bot_pausado_por === 'asesor';
+        } catch {}
+
+        if (shouldReactivateBotForClient(jid) && fueReactivadoPorAsesor) {
+          const minutosReactivacion = parseInt(getSettings().reactivar_bot_minutos || '180', 10) || 180;
+          const horasTexto = minutosReactivacion >= 60
+            ? `${Math.round(minutosReactivacion / 60)} hora(s)`
+            : `${minutosReactivacion} minutos`;
+          console.log(`[WhatsApp Bot] ♻️ Bot reactivado automáticamente en ${jid} (asesor inactivo).`);
+          try {
+            db.prepare(`
+              INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+              VALUES (?, 'sistema', ?, ?)
+            `).run(jid, `♻️ El bot retomó la conversación automáticamente: el asesor no responde hace más de ${horasTexto}.`, Date.now());
+          } catch {}
+          notifyChatState({ jid, pausado: false, por: null, auto: true, origen: 'auto' });
+        }
 
         // [ROBUSTEZ] No perder mensajes durante la ventana de estabilización: encolar
         if (!botReadyRef.value) {

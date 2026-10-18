@@ -67,14 +67,22 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 - **Ante los Términos de Servicio de WhatsApp (Meta):** Meta establece en sus políticas privadas comerciales la preferencia por su API oficial de pago (WhatsApp Business Cloud API). El bot de Crastur utiliza **Baileys**, una librería de conexión directa WebSocket basada en el protocolo nativo de WhatsApp Web.
 
 ### Mecanismos de Protección y Humanización Implementados:
-1. **Presencia Humana Simulada (`composing`):**  
-   Antes de despachar cualquier respuesta automática, el bot envía el evento de presencia a WhatsApp para que en el celular del cliente aparezca el estado *"Escribiendo..."*.
+1. **Presencia Humana Simulada (`composing` / `available`):**  
+   Antes de despachar cualquier respuesta automática, el bot envía el evento de presencia a WhatsApp para que en el celular del cliente aparezca el estado *"Escribiendo..."*. Al conectar, además, se marca como disponible, como una persona que abre WhatsApp Web en el mostrador.
 2. **Retardo Humano Variable (Human Typing Delay):**  
-   El bot no responde de forma instantánea (<200ms) como los bots maliciosos; aplica un retraso orgánico calculado de 1.2 a 2.2 segundos para simular el ritmo de digitación humana.
-3. **Agrupación de Mensajes por Ráfaga (Debounce Anti-Spam de 1.2s):**  
+   El bot no responde de forma instantánea (<200ms) como los bots maliciosos; el tiempo de "escribiendo..." **crece con el largo del mensaje** (como una persona tecleando) y tiene un tope de **4.2 segundos** para no frenar la atención.
+3. **Lectura natural (Doble Check Azul):**  
+   Los mensajes entrantes se marcan como leídos igual que lo haría una persona del mostrador.
+4. **Agrupación de Mensajes por Ráfaga (Debounce Anti-Spam de 1.2s):**  
    Si el cliente envía varios mensajes cortos seguidos (*"hola"*, *"tienen bujía?"*, *"precio?"*), el bot los procesa en un único bloque en lugar de bombardear al cliente con múltiples respuestas concurrentes.
-4. **Protección Contra Grupos, Canales y Estados:**  
+5. **Anti-Duplicado:**  
+   Si la respuesta que va a enviarse es idéntica a la que se envió hace menos de 90 segundos, el sistema omite el envío (nada de "doble mensaje seguido").
+6. **Protección Contra Grupos, Canales y Estados:**  
    El bot ignora estrictamente mensajes de grupos (`@g.us`), canales (`@newsletter`), estados de WhatsApp (`status@broadcast`) y difusiones masivas para evitar saturación de la cuenta.
+7. **Cola de Salida con Espaciado Humano:**  
+   Los recordatorios y avisos proactivos se despachan **uno por uno** con pausas aleatorias de 3.5 a 6.5 segundos entre mensajes, y nunca fuera del horario de tienda. Si WhatsApp se desconecta, los mensajes **se reencolan** en lugar de perderse.
+8. **Reconexión Estable (una sola vinculación):**  
+   Una vez que se escanea el QR **una sola vez**, el sistema se reconecta **solo e ilimitadamente** ante cortes de internet, reinicios o caídas momentáneas (espera progresiva de 5 segundos a 1 minuto con variación aleatoria). Solo se pide un nuevo QR cuando no existe ninguna sesión vinculada.
 
 ### ⚠️ Reglas de Oro para el Comerciante (Evitar Bloqueos de Línea):
 1. **No enviar mensajes masivos a números desconocidos:** El bot debe utilizarse para responder a clientes que escriben a la tienda, **nunca para enviar publicidad en frío a bases de datos compradas**.
@@ -132,8 +140,8 @@ Al terminar el turno o cerrar la tienda, el apagado se realiza de forma elegante
 
 ### ¿Qué hacer si se cambia de teléfono o WhatsApp se desconecta?
 1. Dirígete a **Conexión WhatsApp** en el panel.
-2. Haz clic en el botón **"Nuevo QR Limpio"** (o "Cerrar Sesión").
-3. El sistema purgará las credenciales caducadas y generará un nuevo código QR limpio para escanear con la nueva línea.
+2. **Desconexión pasajera (corte de internet, reinicio, caída momentánea):** si la línea ya estaba vinculada, **el sistema se reconecta solo** en segundos (con espera progresiva de 5 segundos a 1 minuto) sin pedir nada. El objetivo es que **escanear el QR sea una sola vez en la vida**.
+3. **Cambio de teléfono o desvinculación real:** si desvinculaste WhatsApp desde el celular (o cambiaste de número), el panel te avisará que **no hay una sesión vinculada** y habilitará el botón **"Nuevo QR Limpio"**. Púlsalo y escanea el nuevo código con la nueva línea.
 
 ---
 
@@ -177,8 +185,11 @@ El servicio de financiamiento en 3 cuotas quincenales sin interés de Cashea exi
 
 El panel incluye la sección **Live Inbox**, donde el personal de ventas puede supervisar los chats de WhatsApp y tomar el control manual cuando sea necesario:
 
-1. **Pausar Bot en un Chat Específico (Human Takeover):**  
-   Si deseas atender tú mismo a un cliente sin que el bot envíe respuestas automáticas, abre el chat y presiona **"Pausar Bot (Atender Yo)"**. El bot guardará silencio en esa conversación hasta que presiones **"Reanudar Bot"**.
+1. **Pausa del Bot por Human Takeover (Automática y Manual):**  
+   - **Automática (viene activada):** apenas un vendedor responde en un chat —desde el teléfono o desde el panel— el bot **se queda en silencio en esa conversación** para no interrumpir a la persona. En el Live Inbox verás la insignia verde **A** sobre el avatar del chat y un banner de estado en la conversación.
+   - **Reactivación con respeto:** si el cliente vuelve a escribir después de **3 horas** sin respuesta del vendedor, el bot retoma la conversación. El tiempo es configurable (1 hora / 3 horas / 6 horas / nunca) en **Ajustes ➔ 2. Asistente Virtual ➔ 3. Recordatorio**.
+   - **Manual:** si prefieres silenciar el bot tú mismo, abre el chat y presiona **"Pausar Bot (Atender Yo)"** (insignia ámbar **P**). Esa pausa **solo la quita un humano** con **"Reanudar Bot"**.
+   - **Respuestas a tiempo:** si el bot estaba redactando una respuesta y el vendedor contesta antes de que salga, **la respuesta se descarta**: nunca llega tarde ni "atropella" a la persona.
 2. **Banco de Atajos Comerciales Profesionales (9 Plantillas Oficiales):**  
    Dispones de botones rápidos con respuestas redactadas y verificadas de Crastur:
    - **👋 Saludo Asesor**
@@ -203,6 +214,12 @@ El panel incluye la sección **Live Inbox**, donde el personal de ventas puede s
    Si un cliente escribe *"no me escriban más"*, el sistema deja de enviarle mensajes automáticos
    (seguimientos y recordatorios), pero **no bloquea al cliente**: si vuelve a escribir, el bot lo
    atiende con normalidad.
+7. **Recordatorios con Respeto (máximo 1 por conversación):**  
+   El recordatorio automático de "¿sigues interesado?" solo sale si se cumplen **todas** estas reglas:
+   **máximo 1 por chat**, **mínimo 1 hora** de espera, **solo dentro del horario de tienda**, **nunca si
+   un vendedor ya respondió**, **nunca si el cliente se despidió** ("gracias", "ok", "ya compré") y
+   **nunca si el bot no logró entender 3 mensajes seguidos** (en ese caso es un humano quien atiende).
+   Se configura en **Ajustes ➔ 2. Asistente Virtual ➔ 3. Recordatorio**.
 
 ---
 
@@ -224,7 +241,7 @@ También disponibles por terminal:
 - **`npm run typecheck:server` / `build:server`**: Verificación de tipos y compilación del backend.
 
 ### B. Suite de Pruebas de Estrés y Validación Extrema (`npm test`)
-El sistema cuenta con una batería de **204 pruebas automatizadas** que validan:
+El sistema cuenta con una batería de **242 pruebas automatizadas** que validan:
 - **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en pocos milisegundos (> 1.000 req/s).
 - **35 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
 - **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (ráfaga de flood masivo, sin silenciar conversaciones humanas normales).

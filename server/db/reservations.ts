@@ -49,13 +49,17 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
   const safeProductoNombre = typeof producto_nombre === 'string' ? producto_nombre.trim() : '';
 
   // Normalizar la lista de ítems a reservar: usa el detalle del combo si viene, o el producto único
-  let itemsToReserve: Array<{ id: number; nombre: string }> = [];
+  let itemsToReserve: Array<{ id: number; nombre: string; cantidad: number }> = [];
   if (Array.isArray(items) && items.length > 0) {
     itemsToReserve = items
       .filter((it: any) => it && it.id !== undefined && it.id !== null)
-      .map((it: any) => ({ id: Number(it.id), nombre: String(it.nombre || '') }));
+      .map((it: any) => ({
+        id: Number(it.id),
+        nombre: String(it.nombre || ''),
+        cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1)
+      }));
   } else if (producto_id !== undefined && producto_id !== null && producto_id !== '') {
-    itemsToReserve = [{ id: Number(producto_id), nombre: safeProductoNombre }];
+    itemsToReserve = [{ id: Number(producto_id), nombre: safeProductoNombre, cantidad: 1 }];
   }
 
   // [INTEGRIDAD] Un apartado sin ítems dejaría stock inconsistente: se rechaza explícitamente.
@@ -79,8 +83,8 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
     }
     // [INTEGRIDAD] Un stock NULL se trata como 0 (agotado), no como "sin límite".
     const stock = (prod.stock === null || prod.stock === undefined) ? 0 : Number(prod.stock);
-    if (!Number.isFinite(stock) || stock <= 0) {
-      throw new Error(`El repuesto "${item.nombre || `${prod.marca} ${prod.modelo}`}" no cuenta con stock disponible para apartar.`);
+    if (!Number.isFinite(stock) || stock < item.cantidad) {
+      throw new Error(`El repuesto "${item.nombre || `${prod.marca} ${prod.modelo}`}" no cuenta con stock suficiente para apartar ${item.cantidad} unidad(es).`);
     }
   }
 
@@ -94,7 +98,7 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
   db.exec('BEGIN TRANSACTION;');
   try {
     for (const item of itemsToReserve) {
-      const upd = db.prepare('UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0').run(item.id);
+      const upd = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(item.cantidad, item.id, item.cantidad);
       const changed = db.prepare('SELECT changes() AS c').get()?.c;
       if (!changed) {
         throw new Error(`El repuesto "${item.nombre}" se agotó mientras se generaba el apartado.`);
@@ -147,25 +151,27 @@ export function createReservation({ jid, nombre, cedula, telefono, producto_id, 
  * Usa el detalle de ítems del combo (items_json); si no existe, repone solo el producto principal.
  */
 export function restoreReservationStock(current: any): void {
-  let items: Array<{ id: number }> = [];
+  let items: Array<{ id: number; cantidad: number }> = [];
   if (current && current.items_json) {
     try {
       const parsed = JSON.parse(current.items_json);
       if (Array.isArray(parsed)) {
-        items = parsed.filter((it: any) => it && it.id !== undefined && it.id !== null).map((it: any) => ({ id: Number(it.id) }));
+        items = parsed
+          .filter((it: any) => it && it.id !== undefined && it.id !== null)
+          .map((it: any) => ({ id: Number(it.id), cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1) }));
       }
     } catch {}
   }
 
   if (items.length === 0 && current && current.producto_id) {
-    items = [{ id: Number(current.producto_id) }];
+    items = [{ id: Number(current.producto_id), cantidad: 1 }];
   }
 
   const seen = new Set<number>();
   for (const it of items) {
     if (seen.has(it.id)) continue;
     seen.add(it.id);
-    db.prepare('UPDATE products SET stock = stock + 1 WHERE id = ?').run(it.id);
+    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(it.cantidad, it.id);
   }
 }
 
@@ -176,18 +182,20 @@ export function restoreReservationStock(current: any): void {
  * apartado estuvo cancelado/vencido.
  */
 export function deductReservationStock(current: any): void {
-  let items: Array<{ id: number }> = [];
+  let items: Array<{ id: number; cantidad: number }> = [];
   if (current && current.items_json) {
     try {
       const parsed = JSON.parse(current.items_json);
       if (Array.isArray(parsed)) {
-        items = parsed.filter((it: any) => it && it.id !== undefined && it.id !== null).map((it: any) => ({ id: Number(it.id) }));
+        items = parsed
+          .filter((it: any) => it && it.id !== undefined && it.id !== null)
+          .map((it: any) => ({ id: Number(it.id), cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1) }));
       }
     } catch {}
   }
 
   if (items.length === 0 && current && current.producto_id) {
-    items = [{ id: Number(current.producto_id) }];
+    items = [{ id: Number(current.producto_id), cantidad: 1 }];
   }
 
   // 1. Verificación previa de disponibilidad real para todos los ítems del apartado
@@ -197,17 +205,17 @@ export function deductReservationStock(current: any): void {
       throw new Error(`No se puede reactivar el apartado: el repuesto #${it.id} ya no existe en el catálogo.`);
     }
     const stock = (prod.stock === null || prod.stock === undefined) ? 0 : Number(prod.stock);
-    if (!Number.isFinite(stock) || stock <= 0) {
-      throw new Error(`No se puede reactivar el apartado: "${prod.marca} ${prod.modelo}" no tiene stock disponible.`);
+    if (!Number.isFinite(stock) || stock < it.cantidad) {
+      throw new Error(`No se puede reactivar el apartado: "${prod.marca} ${prod.modelo}" no tiene stock suficiente.`);
     }
   }
 
-  // 2. Descontar una unidad por cada ítem (sin bajar de 0 por seguridad)
+  // 2. Descontar las unidades indicadas por cada ítem (sin bajar de 0 por seguridad)
   const seen = new Set<number>();
   for (const it of items) {
     if (seen.has(it.id)) continue;
     seen.add(it.id);
-    db.prepare('UPDATE products SET stock = MAX(0, stock - 1) WHERE id = ?').run(it.id);
+    db.prepare('UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?').run(it.cantidad, it.id);
   }
 }
 
@@ -233,7 +241,10 @@ export function updateReservationStatus(id: number | string, estado: string) {
     throw new Error(`No existe un apartado con el ID ${id}.`);
   }
 
-  if (current) {
+  // [TRANSACCIÓN ATÓMICA] El ajuste de stock y el cambio de estado ocurren como una sola
+  // unidad: si algo falla, se revierte todo y el inventario no queda inconsistente.
+  db.exec('BEGIN TRANSACTION;');
+  try {
     // Si se cancela o vence un apartado activo, devolver stock al catálogo
     if ((estado === 'cancelado' || estado === 'vencido') && current.estado === 'activo') {
       restoreReservationStock(current);
@@ -242,8 +253,12 @@ export function updateReservationStatus(id: number | string, estado: string) {
     if (estado === 'activo' && current.estado !== 'activo') {
       deductReservationStock(current);
     }
+    db.prepare("UPDATE reservations SET estado = ? WHERE id = ?").run(estado, id);
+    db.exec('COMMIT;');
+  } catch (e) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    throw e;
   }
-  db.prepare("UPDATE reservations SET estado = ? WHERE id = ?").run(estado, id);
   persistDB();
 }
 

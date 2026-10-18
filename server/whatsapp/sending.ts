@@ -5,20 +5,24 @@
  */
 
 import fs from 'fs';
-import { db } from '../database';
+import { db, registerAdvisorActivity } from '../database';
 import { standardizeBotMessage } from '../bot/utils/textUtils';
-import { sock, connectionStatus, notifyLiveMessage } from './socketState';
+import { sock, connectionStatus, notifyLiveMessage, notifyChatState } from './socketState';
 
 /** Registro de identificadores de mensajes enviados por el bot para evitar bucles de eco. */
 const knownSentMessageIds = new Set<string>();
 
 /**
- * Registra un ID de mensaje saliente con un TTL de 60 segundos para ignorar ecos en `messages.upsert`.
+ * Registra un ID de mensaje saliente para ignorar ecos en `messages.upsert`.
+ * [ANTI-BANEO] El TTL es amplio (15 min) porque en conexiones lentas o con reintentos
+ * (códigos 428/408) el eco `fromMe` puede llegar mucho después de los 60s. Si expiraba,
+ * el bot interpretaba su propio mensaje como del asesor y se auto-pausaba por error.
  */
 export function trackSentMessageId(msgId: string): void {
   if (!msgId) return;
   knownSentMessageIds.add(msgId);
-  setTimeout(() => knownSentMessageIds.delete(msgId), 60000);
+  const ttl = setTimeout(() => knownSentMessageIds.delete(msgId), 15 * 60 * 1000);
+  if (ttl.unref) ttl.unref();
 }
 
 /** Verifica si un ID de mensaje fue enviado por el propio bot (anti-eco). */
@@ -200,6 +204,17 @@ export async function sendManualMessage(jid: string, text: string): Promise<{ su
   } catch (e: any) { }
 
   notifyLiveMessage({ id: insertId, jid, pushName: 'Asesor Humano', remitente: 'asesor', contenido: text, timestamp: now });
+
+  // [HUMAN TAKEOVER AUTOMÁTICO] El asesor respondió desde el panel: el bot queda silenciado
+  // en este chat y se cancela cualquier respuesta automática que estuviera en camino.
+  try {
+    const autoPaused = registerAdvisorActivity(jid);
+    if (autoPaused) {
+      notifyChatState({ jid, pausado: true, por: 'asesor', auto: true, origen: 'panel' });
+    }
+  } catch (e: any) {
+    console.warn('[WhatsApp] No se pudo registrar la intervención del asesor:', e?.message || e);
+  }
 
   return { success: true, id: insertId, timestamp: now };
 }

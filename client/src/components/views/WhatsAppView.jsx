@@ -127,8 +127,9 @@ export default function WhatsAppView({
               {reconexionPausada && (
                 <div className="mt-2 p-3 bg-amber-950/40 border border-amber-500/40 rounded-2xl text-left">
                   <p className="text-xs text-amber-300 leading-relaxed">
-                    ⏸️ <span className="font-bold">Reconexión automática en pausa</span> tras varios intentos fallidos.
-                    Pulsa <span className="font-bold">"Nuevo QR Limpio"</span> para reintentar y escanear el código.
+                    ⏸️ <span className="font-bold">No hay una sesión vinculada.</span> Pulsa{' '}
+                    <span className="font-bold">"Nuevo QR Limpio"</span> para generar el código y escanearlo una sola vez.
+                    Después de vincular, el sistema se reconectará solo si hay cortes de internet.
                   </p>
                 </div>
               )}

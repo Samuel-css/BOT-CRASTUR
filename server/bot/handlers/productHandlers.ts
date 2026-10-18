@@ -8,6 +8,8 @@ import { db } from '../../database';
 import { formatBs, formatRate } from '../utils/formatters';
 import { detectCaracasZone } from '../utils/caracasDelivery';
 import { normalizeText } from '../utils/textUtils';
+import { resolveCasheaPlan } from '../utils/cashea';
+import { stockLabel } from '../utils/stock';
 import type { Product } from '../../types/database';
 import type { BotResponse } from '../../types/bot';
 
@@ -27,12 +29,13 @@ function handleSingleProductDetail(
   settings: Record<string, string>,
   session: any
 ): BotResponse {
-  const precioUsd = parseFloat(p.precio_usd);
+  const precioUsd = parseFloat(p.precio_usd) || 0;
   const precioBs = precioUsd * tasa;
-  const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
-  // [CONSISTENCIA] Respeta el porcentaje configurado en el panel (cashea_inicial_pct),
-  // no un 40% fijo, para que la ficha coincida con la configuración de la tienda.
-  const inicialPct = (parseFloat(settings.cashea_inicial_pct || '40') || 40) / 100;
+  // [CONSISTENCIA] Plan Cashea centralizado: respeta el nivel del cliente (session.nivel_cashea)
+  // y la configuración del panel, evitando que la ficha diga 40% cuando Cashea aplica 20%.
+  const plan = resolveCasheaPlan(settings, session);
+  const cuotasCashea = plan.cuotas;
+  const inicialPct = plan.inicialPct;
   const n1 = precioUsd * inicialPct;
 
   let msg = `🛞🏍️ *${p.marca} - ${p.modelo}*\n`;
@@ -41,7 +44,7 @@ function handleSingleProductDetail(
   }
   msg += `💵 *Precio Promoción en Divisas:* *$${precioUsd.toFixed(2)} USD* _(Efectivo / Binance Pay 🪙)_\n`;
   msg += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(precioBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n`;
-  msg += `📦 *Disponibilidad:* ${p.stock > 0 ? '✅ Disponible para entrega inmediata' : '⚠️ Consultar stock'}\n\n`;
+  msg += `📦 *Disponibilidad:* ${stockLabel(p)}\n\n`;
 
   // Esquema resumido de financiamiento Cashea
   if (precioUsd < 25) {
@@ -157,14 +160,15 @@ function handleProductResults(
   settings: Record<string, string>,
   session: any
 ): string {
-  const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
-  const inicialPct = parseFloat(settings.cashea_inicial_pct || '40') / 100;
+  const plan = resolveCasheaPlan(settings, session);
+  const cuotasCashea = plan.cuotas;
+  const inicialPct = plan.inicialPct;
 
   const nombreNegocio = settings.nombre_negocio || 'Crastur';
   let msg = `🛞🏍️ *${nombreNegocio}* 📦\n\n`;
 
   products.forEach((p: any, idx: number) => {
-    const precioUsd = parseFloat(p.precio_usd);
+    const precioUsd = parseFloat(p.precio_usd) || 0;
     const precioBs = precioUsd * tasa;
     const inicialUsd = precioUsd * inicialPct;
     const cuotaUsd = (precioUsd - inicialUsd) / cuotasCashea;
@@ -180,7 +184,7 @@ function handleProductResults(
     } else {
       msg += `   💛 Cashea en Tienda: Inicial *$${inicialUsd.toFixed(2)}* + ${cuotasCashea} cuotas de *$${cuotaUsd.toFixed(2)}*\n`;
     }
-    msg += `   📦 Stock: ${p.stock > 0 ? '✅ En tienda' : '⚠️ Consultar'}\n\n`;
+    msg += `   📦 Stock: ${stockLabel(p, 'En tienda')}\n\n`;
   });
 
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -190,6 +194,30 @@ function handleProductResults(
   msg += `👉 Escribe *VENDEDOR* para atención personalizada de un asesor.`;
 
   return msg;
+}
+
+/**
+ * [SELECCIÓN CONTEXTUAL ÚNICA] Traduce respuestas como "1", "el 2", "la opción 3",
+ * "primero"… a un índice base 0. Se usa tanto para el listado normal como para las
+ * sugerencias de venta cruzada, evitando que una de las dos rutas acepte formatos distintos.
+ *
+ * @returns Índice 0..5 o -1 si el mensaje no es una selección.
+ */
+function parseSelectionIndex(norm: string): number {
+  const ordinales: Record<string, number> = {
+    primero: 0, primera: 0, segundo: 1, segunda: 1, tercero: 2, tercera: 2,
+    cuarto: 3, cuarta: 3, quinto: 4, quinta: 4, sexto: 5, sexta: 5
+  };
+  if (ordinales[norm] !== undefined) return ordinales[norm];
+
+  const m = norm.match(/^(?:el|la)?\s*(?:opcion\s*)?([1-6])$/);
+  if (m) return parseInt(m[1], 10) - 1;
+
+  // Consultas de financiamiento sobre el primer producto mostrado.
+  if (norm.includes('la inicial') || norm.includes('cuanto es la inicial') || norm.includes('las cuotas')) {
+    return 0;
+  }
+  return -1;
 }
 
 /**
@@ -221,29 +249,14 @@ function handleContextualSelection(
 
   if (products.length === 0) return null;
 
-  let selectedIndex = -1;
-
-  if (norm === '1' || norm === 'el 1' || norm === 'el primero' || norm === 'la opcion 1' || norm === 'primero') {
-    selectedIndex = 0;
-  } else if (norm === '2' || norm === 'el 2' || norm === 'el segundo' || norm === 'la opcion 2' || norm === 'segundo') {
-    selectedIndex = 1;
-  } else if (norm === '3' || norm === 'el 3' || norm === 'el tercero' || norm === 'la opcion 3' || norm === 'tercero') {
-    selectedIndex = 2;
-  } else if (norm === '4' || norm === 'el 4' || norm === 'el cuarto' || norm === 'la opcion 4') {
-    selectedIndex = 3;
-  } else if (norm.includes('la inicial') || norm.includes('cuanto es la inicial') || norm.includes('las cuotas')) {
-    selectedIndex = 0;
-  }
+  const selectedIndex = parseSelectionIndex(norm);
 
   // [VENTA CRUZADA] Si el contexto es una sugerencia (producto base + complementos) y el
   // cliente responde con un número, se arma un pedido con su producto + el complemento elegido.
   const base = products.find((p: any) => p.es_base);
   if (base) {
     const sugeridos = products.filter((p: any) => p.es_sugerido);
-    const selIdx = norm === '1' || norm === 'el 1' || norm === 'el primero' || norm === 'opcion 1' || norm === 'primero' ? 0
-      : norm === '2' || norm === 'el 2' || norm === 'el segundo' || norm === 'opcion 2' || norm === 'segundo' ? 1
-      : norm === '3' || norm === 'el 3' || norm === 'el tercero' || norm === 'opcion 3' || norm === 'tercero' ? 2
-      : -1;
+    const selIdx = parseSelectionIndex(norm);
 
     if (selIdx >= 0 && selIdx < sugeridos.length) {
       const elegido = sugeridos[selIdx];
@@ -463,9 +476,10 @@ function handleMultiProductResults(
   session: any,
   text: string = ''
 ): string {
-  const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
-  // [CONSISTENCIA] Porcentaje de inicial configurable desde el panel.
-  const inicialPct = (parseFloat(settings.cashea_inicial_pct || '40') || 40) / 100;
+  const plan = resolveCasheaPlan(settings, session);
+  const cuotasCashea = plan.cuotas;
+  // [CONSISTENCIA] Porcentaje de inicial configurable desde el panel y por nivel Cashea.
+  const inicialPct = plan.inicialPct;
   // [CANTIDAD] Cada artículo puede llevar una cantidad (ej. "4 aceites" -> cantidad 4).
   const qtyOf = (p: any) => Math.max(1, Math.min(99, parseInt(p.cantidad, 10) || 1));
   const totalUsd = products.reduce((sum: number, p: any) => sum + (parseFloat(p.precio_usd) || 0) * qtyOf(p), 0);
@@ -488,7 +502,7 @@ function handleMultiProductResults(
     if (qty > 1 && p.stock > 0 && qty > p.stock) {
       msg += `   ⚠️ Solo hay *${p.stock}* en tienda — el resto se confirma al retirar.\n`;
     } else {
-      msg += `   📦 Stock: ${p.stock > 0 ? '✅ Disponible en tienda' : '⚠️ Consultar'}\n`;
+      msg += `   📦 Stock: ${stockLabel(p, 'Disponible en tienda')}\n`;
     }
     msg += `\n`;
   });
@@ -557,7 +571,7 @@ function handleInstagramCombosResponse(
 
   if (combos.length === 1) {
     const c = combos[0];
-    const precioUsd = parseFloat(c.precio_usd);
+    const precioUsd = parseFloat(c.precio_usd) || 0;
     const precioBs = precioUsd * tasa;
     let msg = `🔥 *Combo Promocional Oficial - ${c.marca} ${c.modelo}* 🛞📸\n\n`;
     if (c.descripcion) {
@@ -568,7 +582,7 @@ function handleInstagramCombosResponse(
     if (precioUsd >= 25) {
       msg += `💛 *Cashea en Tienda Física:* Disponible en cuotas quincenales sin interés.\n`;
     }
-    msg += `📦 *Disponibilidad:* ${c.stock > 0 ? '✅ Disponible para entrega hoy' : '⚠️ Consultar stock'}\n\n`;
+    msg += `📦 *Disponibilidad:* ${stockLabel(c, 'Disponible para entrega hoy')}\n\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `👉 Escribe *APARTAR* para reservarlo 24h sin costo y retirar en tienda física.\n`;
     msg += `👉 Escribe *DELIVERY* para cotizar envío en moto a tu ubicación en Caracas.\n`;
@@ -603,7 +617,7 @@ function handleInstagramCombosResponse(
   // Antes el mensaje prometía "responde 1 para ver detalles" pero el número abría el catálogo.
   if (jid && combos.length >= 2) {
     try {
-      const contextJson = JSON.stringify(combos.slice(0, 5).map((c: any) => ({
+      const contextJson = JSON.stringify(combos.slice(0, 6).map((c: any) => ({
         id: c.id, marca: c.marca, modelo: c.modelo, precio_usd: c.precio_usd, categoria: c.categoria
       })));
       db.prepare(`

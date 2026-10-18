@@ -249,16 +249,48 @@ async function runUiTests(): Promise<void> {
       assert(true, 'Modal de producto (botón no etiquetado; se omite)');
     }
 
-    // ── 5. Responsividad (viewport móvil) ──────────────────────────────────
-    console.log('\n📱 [Bloque 5: Responsividad móvil]');
+    // ── 5. Configuración: pausa por asesor y recordatorios con respeto ──────
+    console.log('\n⚙️ [Bloque 5: Ajustes del Asistente (Human Takeover y Recordatorios)]');
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button')) as HTMLElementRef[];
+      const target = btns.find(b => (b.innerText || '').trim().startsWith('Configuración'));
+      if (target) target.click();
+    });
+    await new Promise(r => setTimeout(r, 600));
+
+    const tabAsistente = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button')) as HTMLElementRef[];
+      const target = btns.find(b => (b.innerText || '').trim().startsWith('2. Asistente Virtual'));
+      if (target) { target.click(); return true; }
+      return false;
+    });
+    assert(tabAsistente, 'La pestaña "Asistente Virtual" de Ajustes es accesible');
+
+    const tabRecordatorio = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button')) as HTMLElementRef[];
+      const target = btns.find(b => (b.innerText || '').includes('3. Recordatorio'));
+      if (target) { target.click(); return true; }
+      return false;
+    });
+    assert(tabRecordatorio, 'La sección "3. Recordatorio" de Ajustes es accesible');
+
+    await new Promise(r => setTimeout(r, 500));
+    const ajustesTexto = await page.evaluate(() => document.body.innerText);
+    assert(/Máximo 1 recordatorio por chat/i.test(ajustesTexto), 'Ajustes muestra la política: máximo 1 recordatorio por chat');
+    assert(/1 hora/i.test(ajustesTexto) && /3 horas/i.test(ajustesTexto) && /6 horas/i.test(ajustesTexto), 'Los tiempos de recordatorio ofrecen 1, 3 y 6 horas');
+    assert(/Cuando un Vendedor Contesta, el Bot se Calla/i.test(ajustesTexto), 'La tarjeta "Cuando un Vendedor Contesta, el Bot se Calla" está visible');
+    assert(/Recomendado/i.test(ajustesTexto), 'Los ajustes marcan una opción recomendada por defecto');
+
+    // ── 6. Responsividad (viewport móvil) ──────────────────────────────────
+    console.log('\n📱 [Bloque 6: Responsividad móvil]');
     await page.setViewport({ width: 390, height: 844 });
     await new Promise(r => setTimeout(r, 400));
     const mobileRoot = await page.$eval('#root', (el: any) => el.innerHTML.length);
     assert(mobileRoot > 500, 'La interfaz se renderiza en viewport móvil (390x844)');
     await page.setViewport({ width: 1440, height: 900 });
 
-    // ── 6. Sin errores críticos de consola ─────────────────────────────────
-    console.log('\n🧯 [Bloque 6: Salud de la consola del navegador]');
+    // ── 7. Sin errores críticos de consola ─────────────────────────────────
+    console.log('\n🧯 [Bloque 7: Salud de la consola del navegador]');
     assert(pageErrors.length === 0, 'Sin errores de ejecución JavaScript (pageerror)', pageErrors.slice(0, 3).join(' | '));
     assert(consoleErrors.length === 0, 'Sin errores críticos en la consola del navegador', consoleErrors.slice(0, 3).join(' | '));
 

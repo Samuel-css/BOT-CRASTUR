@@ -14,6 +14,8 @@
 import { Router, Request, Response } from 'express';
 const router = Router();
 import {
+  db,
+  getEffectiveRate,
   getReservations,
   createReservation,
   updateReservationStatus,
@@ -46,6 +48,18 @@ router.post('/', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Faltan campos obligatorios para el apartado' });
     }
 
+    // [INTEGRIDAD DE PRECIOS] El servidor no debe aceptar un precio negativo ni arbitrario.
+    // Si el panel no envía un precio válido, se toma el precio real del catálogo.
+    const producto = producto_id ? db.prepare('SELECT id, precio_usd FROM products WHERE id = ?').get(producto_id) : null;
+    const usdRecibido = parseFloat(precio_usd);
+    const usdCatalogo = producto ? (parseFloat(producto.precio_usd) || 0) : 0;
+    const safeUsd = Number.isFinite(usdRecibido) && usdRecibido > 0 ? usdRecibido : usdCatalogo;
+    if (!Number.isFinite(safeUsd) || safeUsd <= 0) {
+      return res.status(400).json({ success: false, error: 'El precio del apartado debe ser mayor a 0' });
+    }
+    const bsRecibido = parseFloat(precio_bs);
+    const safeBs = Number.isFinite(bsRecibido) && bsRecibido > 0 ? bsRecibido : safeUsd * getEffectiveRate();
+
     const reservation = createReservation({
       jid: jid || '',
       nombre,
@@ -53,8 +67,8 @@ router.post('/', (req: Request, res: Response) => {
       telefono,
       producto_id,
       producto_nombre,
-      precio_usd,
-      precio_bs
+      precio_usd: safeUsd,
+      precio_bs: safeBs
     });
 
     broadcast('reservations_updated', { action: 'created', reservation });

@@ -9,9 +9,11 @@ import type { Server } from 'http';
 import {
   getStatus,
   subscribeStatusChange,
-  subscribeLiveMessages
+  subscribeLiveMessages,
+  subscribeChatState
 } from './whatsappService';
 import { isBotGloballyPaused } from './database';
+import { isAllowedOrigin } from './config/origins';
 import type { WhatsAppStatusPayload } from './types/whatsapp';
 
 /** Instancia singleton activa del servidor WebSocket */
@@ -22,6 +24,8 @@ let heartbeatInterval: any = null;
 let unsubscribeStatus: (() => void) | null = null;
 /** Función de limpieza de suscripciones de mensajes en vivo */
 let unsubscribeLive: (() => void) | null = null;
+/** Función de limpieza de suscripciones de estado del bot por chat */
+let unsubscribeChatState: (() => void) | null = null;
 
 /**
  * Inicializa el servidor WebSocket montándolo sobre el servidor HTTP de Express.
@@ -36,12 +40,23 @@ export function initWebSocket(server: Server): WebSocketServer {
   if (wssInstance) {
     try { if (unsubscribeStatus) unsubscribeStatus(); } catch (_) {}
     try { if (unsubscribeLive) unsubscribeLive(); } catch (_) {}
+    try { if (unsubscribeChatState) unsubscribeChatState(); } catch (_) {}
     try { if (heartbeatInterval) clearInterval(heartbeatInterval); } catch (_) {}
     try { wssInstance.close(); } catch (_) {}
     wssInstance = null;
   }
 
-  wssInstance = new WebSocketServer({ server, path: '/ws' });
+  // [SEGURIDAD] WebSocket no está sujeto a CORS: sin validar el origen, cualquier página
+  // abierta en el navegador podría conectarse a ws://127.0.0.1:3333/ws y leer chats/QR.
+  wssInstance = new WebSocketServer({
+    server,
+    path: '/ws',
+    verifyClient: (info: any, callback: (ok: boolean, code?: number, message?: string) => void) => {
+      if (isAllowedOrigin(info?.origin)) return callback(true);
+      console.warn(`[WebSocket] Conexión rechazada desde origen no autorizado: ${info?.origin}`);
+      return callback(false, 403, 'Origen no autorizado');
+    }
+  });
 
   // Retransmitir cambios de estado del socket WhatsApp (QR, conexión, desconexión)
   unsubscribeStatus = subscribeStatusChange((statusData: WhatsAppStatusPayload) => {
@@ -51,6 +66,11 @@ export function initWebSocket(server: Server): WebSocketServer {
   // Retransmitir mensajes entrantes y salientes en tiempo real para el Live Inbox
   unsubscribeLive = subscribeLiveMessages((liveMsg: any) => {
     broadcast('live_chat_message', liveMsg);
+  });
+
+  // Retransmitir cambios del estado del bot por chat (pausado/reanudado por un asesor)
+  unsubscribeChatState = subscribeChatState((chatState: any) => {
+    broadcast('chat_pause_changed', chatState);
   });
 
   // Enviar estado inicial inmediato al cliente web que acaba de abrir la interfaz

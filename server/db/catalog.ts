@@ -12,7 +12,7 @@ import { db, persistDB } from './engine';
  * Exporta el catálogo activo en formato JSON para transferencias ligeras.
  */
 export function exportCatalog() {
-  const products = db.prepare('SELECT marca, modelo, categoria, precio_usd, descripcion, stock FROM products WHERE activo = 1').all();
+  const products = db.prepare('SELECT marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock, activo FROM products WHERE activo = 1').all();
   return {
     version: '1.0',
     exportado_en: new Date().toISOString(),
@@ -37,11 +37,11 @@ export function importCatalog(productsList: any[]) {
     'SELECT id FROM products WHERE LOWER(TRIM(marca)) = LOWER(TRIM(?)) AND LOWER(TRIM(modelo)) = LOWER(TRIM(?)) LIMIT 1'
   );
   const insertStmt = db.prepare(`
-    INSERT INTO products (marca, modelo, categoria, precio_usd, descripcion, stock, activo)
-    VALUES (?, ?, ?, ?, ?, ?, 1)
+    INSERT INTO products (marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock, activo)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const updateStmt = db.prepare(`
-    UPDATE products SET categoria = ?, precio_usd = ?, descripcion = ?, stock = ?, activo = 1 WHERE id = ?
+    UPDATE products SET categoria = ?, precio_usd = ?, descripcion = ?, imagen_url = COALESCE(?, imagen_url), stock = ?, activo = ? WHERE id = ?
   `);
 
   let inserted = 0;
@@ -62,14 +62,19 @@ export function importCatalog(productsList: any[]) {
 
       const precio = parseFloat(p.precio_usd) || 0;
       const desc = String(p.descripcion || '').trim();
-      const stock = parseInt(p.stock || 1, 10);
+      const img = p.imagen_url != null ? String(p.imagen_url) : null;
+      // [FIX] `parseInt(p.stock || 1)` convertía stock 0 (agotado) en 1.
+      const stockRaw = p.stock !== undefined && p.stock !== null ? parseInt(p.stock, 10) : 1;
+      const stock = Number.isFinite(stockRaw) ? stockRaw : 0;
+      // [FIX] Respetar productos desactivados del respaldo en lugar de reactivarlos siempre.
+      const activo = p.activo !== undefined && p.activo !== null ? (p.activo ? 1 : 0) : 1;
 
       const existing = findStmt.get(marca, modelo);
       if (existing) {
-        updateStmt.run(cat, precio, desc, stock, existing.id);
+        updateStmt.run(cat, precio, desc, img, stock, activo, existing.id);
         updated++;
       } else {
-        insertStmt.run(marca, modelo, cat, precio, desc, stock);
+        insertStmt.run(marca, modelo, cat, precio, desc, img, stock, activo);
         inserted++;
       }
     }

@@ -68,8 +68,14 @@ router.get('/status', (req: Request, res: Response) => {
  * Útil durante jornadas de mantenimiento, contingencias o atención humana prioritaria.
  */
 router.post('/bot/pause-global', (req: Request, res: Response) => {
-  const { pausado } = req.body;
-  const nuevoEstado = setBotGlobalPause(pausado !== undefined ? !!pausado : !isBotGloballyPaused());
+  const body: any = req.body || {};
+  // [FIX] El panel enviaba `paused` y el backend leía `pausado`, por lo que el endpoint
+  // siempre alternaba (podía reactivar el bot cuando el usuario quería pausarlo).
+  const hasValue = body.pausado !== undefined || body.paused !== undefined;
+  const raw = body.pausado !== undefined ? body.pausado : body.paused;
+  const solicitado = raw === true || raw === 'true' || raw === 1 || raw === '1';
+  const nuevoEstado = hasValue ? solicitado : !isBotGloballyPaused();
+  setBotGlobalPause(nuevoEstado);
   broadcast('bot_global_pause_changed', { bot_pausado_global: nuevoEstado });
   res.json({ success: true, bot_pausado_global: nuevoEstado });
 });

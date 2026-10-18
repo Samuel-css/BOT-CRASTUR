@@ -103,7 +103,7 @@ export function exportMasterBackup() {
   for (const s of settingsRows) settingsMap[s.key] = s.value;
 
   return {
-    version: '3.0',
+    version: '3.1',
     exportado_en: new Date().toISOString(),
     total_productos: products.length,
     total_vendedores: sellers.length,
@@ -144,12 +144,12 @@ export function importMasterBackup(payload: any) {
     const findStmt = db.prepare('SELECT id FROM products WHERE LOWER(TRIM(marca)) = LOWER(TRIM(?)) AND LOWER(TRIM(modelo)) = LOWER(TRIM(?))');
     const updateStmt = db.prepare(`
       UPDATE products SET
-        categoria = ?, precio_usd = ?, descripcion = ?, imagen_url = COALESCE(?, imagen_url), stock = ?, activo = 1
+        categoria = ?, precio_usd = ?, descripcion = ?, imagen_url = COALESCE(?, imagen_url), stock = ?, activo = ?
       WHERE id = ?
     `);
     const insertStmt = db.prepare(`
       INSERT INTO products (marca, modelo, categoria, precio_usd, descripcion, imagen_url, stock, activo)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const p of payload.productos) {
@@ -159,12 +159,15 @@ export function importMasterBackup(payload: any) {
         const precio = parseFloat(p.precio_usd) || 0;
         const desc = p.descripcion || '';
         const img = p.imagen_url || null;
-        const stock = parseInt(p.stock || 1, 10);
+        // [FIX] Respetar stock 0 (agotado) y el estado activo del respaldo.
+        const stockRaw = p.stock !== undefined && p.stock !== null ? parseInt(p.stock, 10) : 1;
+        const stock = Number.isFinite(stockRaw) ? stockRaw : 0;
+        const activo = p.activo !== undefined && p.activo !== null ? (p.activo ? 1 : 0) : 1;
 
         if (existing) {
-          updateStmt.run(cat, precio, desc, img, stock, existing.id);
+          updateStmt.run(cat, precio, desc, img, stock, activo, existing.id);
         } else {
-          insertStmt.run(p.marca.trim(), p.modelo.trim(), cat, precio, desc, img, stock);
+          insertStmt.run(p.marca.trim(), p.modelo.trim(), cat, precio, desc, img, stock, activo);
         }
         importedProducts++;
       }

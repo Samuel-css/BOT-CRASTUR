@@ -139,7 +139,15 @@ export interface Settings {
   mensaje_fuera_horario?: string;
   /** Pausa global de la intervención del bot */
   bot_pausado_global?: string;
-  /** Zonas de delivery y tarifas personalizadas */
+  /** Pausa automática del bot cuando un asesor responde (1/0) */
+  auto_pausa_asesor?: string;
+  /** Minutos de inactividad del asesor para que el bot retome la conversación */
+  reactivar_bot_minutos?: string;
+  /** Tope diario de mensajes proactivos (seguimientos) */
+  proactivos_max_dia?: string;
+  /** Zonas de delivery personalizadas (JSON) */
+  delivery_zonas_json?: string;
+  /** Zonas de delivery y tarifas personalizadas (clave heredada) */
   zonas_delivery_custom?: string;
   [key: string]: string | undefined;
 }
@@ -183,7 +191,7 @@ export interface ChatMessage {
   /** WhatsApp JID de la conversación */
   jid: string;
   /** Remitente del mensaje */
-  remitente: 'cliente' | 'bot' | 'asesor';
+  remitente: 'cliente' | 'bot' | 'asesor' | 'sistema';
   /** Texto legible del mensaje */
   contenido: string;
   /** Timestamp Unix (ms) del mensaje */

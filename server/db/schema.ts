@@ -160,6 +160,23 @@ export function applySchemaAndMigrations(): void {
   // Con 2 seguidos se ofrece menú + asesor humano. NO guarda el texto del cliente.
   addColumnIfMissing('chat_sessions', 'fallos_consecutivos', 'INTEGER DEFAULT 0');
 
+  // [HUMAN TAKEOVER AUTOMÁTICO] Trazabilidad de la pausa del bot:
+  //   - bot_pausado_por: 'asesor' (automática al responder un humano) o 'manual' (botón del panel).
+  //   - bot_pausado_at:  momento en que se pausó (para mostrar "hace X min" en el panel).
+  //   - asesor_ultimo_at: última vez que un asesor humano escribió en el chat; controla la
+  //     reactivación automática cuando el cliente vuelve a escribir tras un tiempo prudencial.
+  addColumnIfMissing('chat_sessions', 'bot_pausado_por', 'TEXT');
+  addColumnIfMissing('chat_sessions', 'bot_pausado_at', 'INTEGER');
+  addColumnIfMissing('chat_sessions', 'asesor_ultimo_at', 'INTEGER');
+
+  // [SALUDAR UNA SOLA VEZ] Marca si el cliente ya recibió el menú de bienvenida. Si vuelve a
+  // saludar sin pedir nada, recibe un saludo corto en lugar del menú completo.
+  addColumnIfMissing('chat_sessions', 'saludo_enviado', 'INTEGER DEFAULT 0');
+
+  // [RECORDATORIOS CON RESPETO] Contador total de recordatorios automáticos enviados en el chat.
+  // La política comercial es máximo UN recordatorio por conversación.
+  addColumnIfMissing('chat_sessions', 'recordatorio_total', 'INTEGER DEFAULT 0');
+
   // [LIMPIEZA DE MÓDULO RETIRADO] La gestión de proveedores/mayoristas fue eliminada
   // del sistema. Si se restaura un respaldo antiguo, se descarta esa tabla para
   // mantener el esquema actual coherente.
@@ -185,6 +202,13 @@ export function applySchemaAndMigrations(): void {
     `);
   } catch {}
 
+  // [COHERENCIA DE CONFIGURACIÓN] El servicio de recordatorios impone un mínimo real de
+  // 60 minutos (ver followUpService.ts). Las instalaciones antiguas guardaron 15 minutos,
+  // así que el panel mostraba un valor que el bot nunca respetaba. Se normaliza una sola vez.
+  try {
+    db.prepare("UPDATE settings SET value = '60' WHERE key = 'insistencia_minutos' AND CAST(value AS INTEGER) < 60").run();
+  } catch {}
+
   // Índices para optimizar rendimiento de lectura en dashboards y colas.
   // [ROBUSTEZ] Cada índice va aislado: si una tabla restaurada carece de la columna,
   // no debe abortar el resto de la inicialización ni dejar la base a medias.
@@ -194,10 +218,18 @@ export function applySchemaAndMigrations(): void {
     }
   };
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_products_activo ON products(activo)');
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_products_activo_categoria ON products(activo, categoria)');
+  // [RENDIMIENTO] Acelera la detección de duplicados (marca+modelo) usada al crear e importar.
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_products_marca_modelo ON products(LOWER(TRIM(marca)), LOWER(TRIM(modelo)))');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_sessions_jid ON chat_sessions(jid)');
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_sessions_ultimo ON chat_sessions(ultimo_mensaje_at)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_messages_jid ON chat_messages(jid)');
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON chat_messages(jid, timestamp)');
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_metrics_evento ON bot_metrics(evento, timestamp)');
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON bot_metrics(timestamp)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_reservations_estado ON reservations(estado, expira_en)');
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_reservations_jid ON reservations(jid, estado, expira_en)');
 
   // [MERCADO VENEZUELA] Parámetros operativos y comerciales por defecto
   const defaultSettings = {
@@ -212,11 +244,20 @@ export function applySchemaAndMigrations(): void {
     'cashea_cuotas': '3',
     'cashea_info': '¡En Crastur contamos con Cashea! Llévate hoy tus repuestos y accesorios para moto e insumos pagando solo una inicial y el resto en 3 cuotas quincenales sin interés.',
     'insistencia_activa': '1',
-    'insistencia_minutos': '15',
+    // [RECORDATORIOS CON RESPETO] Mínimo 1 hora (el servicio lo impone aunque se guarde menos)
+    // y máximo 1 recordatorio por chat. Nunca se recuerda si un asesor ya atendió la conversación.
+    'insistencia_minutos': '60',
+    // [HUMAN TAKEOVER AUTOMÁTICO] El bot se pausa solo cuando un asesor responde en el chat
+    // y se reactiva únicamente si el cliente vuelve a escribir después de este tiempo sin
+    // que el asesor responda. 0 = no reactivar nunca de forma automática.
+    'auto_pausa_asesor': '1',
+    'reactivar_bot_minutos': '180',
+    // [ANTI-BANEO] Tope diario de mensajes proactivos (seguimientos). 0 = desactivados.
+    'proactivos_max_dia': '30',
     'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM',
     'politica_envios': 'Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.',
     'metodos_pago': 'Efectivo $, Binance Pay (USDT), Pago Móvil BCV, Cashea en Tienda, Punto de Venta, Transferencia Bancaria',
-    'mensaje_insistencia': '¡Hola, {nombre}! 👋 ¿Pudiste revisar el precio de *{producto}*? Recuerda que tenemos tienda física en Caracas, garantía y Cashea 💛. Si necesitas hablar con un asesor, solo escribe *VENDEDOR*.',
+    'mensaje_insistencia': '¿Cómo va todo, {nombre}? 👋 Quedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda. Escribe *VENDEDOR* si prefieres una persona.',
     'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.',
     'fuera_horario_activo': '0',
     'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨',

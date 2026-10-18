@@ -3,9 +3,15 @@
  * @description Cola estocástica saliente anti-baneo (Políticas Meta 2025).
  * Despacha recordatorios y avisos programados con retardos humanizados, simulando
  * presencia de escritura y respetando pausas/opt-out antes de cada envío.
+ *
+ * [PERSISTENCIA] La cola se guarda en disco (`data/outbound_queue.json`) para que un
+ * reinicio del sistema (apagón, actualización, corte) NO pierda los mensajes que estaban
+ * pendientes de salir. Al arrancar se vuelve a cargar automáticamente.
  */
 
-import { db } from '../database';
+import path from 'path';
+import fs from 'fs';
+import { db, dataDir } from '../database';
 import { sock, connectionStatus } from './socketState';
 import { sendTextMessage } from './sending';
 
@@ -14,15 +20,68 @@ interface OutboundQueueItem {
   text: string;
 }
 
+/** Archivo donde se respalda la cola de salida. */
+const QUEUE_FILE = path.join(dataDir || path.join(__dirname, '..', '..', 'data'), 'outbound_queue.json');
+
+/** Cola en memoria (se inicializa desde disco si existe). */
 const outboundQueue: OutboundQueueItem[] = [];
 let isProcessingOutboundQueue = false;
+let retryTimer: any = null;
+
+/**
+ * Guarda la cola en disco de forma atómica (archivo .tmp + rename).
+ * Es deliberadamente silenciosa: un fallo de disco nunca debe romper el envío.
+ */
+function persistQueue(): void {
+  try {
+    const tmp = QUEUE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(outboundQueue), 'utf8');
+    try {
+      fs.renameSync(tmp, QUEUE_FILE);
+    } catch {
+      // Windows/NTFS puede bloquear el rename por antivirus: copia directa como respaldo.
+      fs.copyFileSync(tmp, QUEUE_FILE);
+      try { fs.unlinkSync(tmp); } catch {}
+    }
+  } catch (e: any) {
+    console.warn('[WhatsApp Queue] No se pudo guardar la cola en disco:', e?.message || e);
+  }
+}
+
+/** Carga la cola pendiente desde disco al iniciar el proceso. */
+function loadQueue(): void {
+  try {
+    if (!fs.existsSync(QUEUE_FILE)) return;
+    const parsed = JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'));
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (item && item.jid && item.text) outboundQueue.push({ jid: String(item.jid), text: String(item.text) });
+      }
+      if (outboundQueue.length > 0) {
+        console.log(`[WhatsApp Queue] 🔄 ${outboundQueue.length} mensaje(s) pendientes recuperados de la sesión anterior.`);
+      }
+    }
+  } catch (e: any) {
+    console.warn('[WhatsApp Queue] No se pudo leer la cola pendiente:', e?.message || e);
+  }
+}
+
+// Cargar al iniciar el módulo.
+loadQueue();
 
 /**
  * Encola un mensaje saliente para ser despachado con retardos aleatorios humanizados.
  */
 export function enqueueOutboundMessage(targetJid: string, messageText: string): void {
+  if (!targetJid || !messageText) return;
   outboundQueue.push({ jid: targetJid, text: messageText });
+  persistQueue();
   processOutboundQueue();
+}
+
+/** Número de mensajes pendientes por salir (para diagnóstico/monitorización). */
+export function getOutboundQueueSize(): number {
+  return outboundQueue.length;
 }
 
 /**
@@ -42,6 +101,7 @@ export async function processOutboundQueue(): Promise<void> {
       const session = db.prepare('SELECT no_molestar, bot_pausado FROM chat_sessions WHERE jid = ?').get(item.jid);
       if (session && (session.no_molestar === 1 || session.bot_pausado === 1)) {
         console.log(`[WhatsApp Queue] ⏸️ Mensaje a ${item.jid} omitido (marcado como no_molestar o pausado)`);
+        persistQueue();
         continue;
       }
 
@@ -50,6 +110,7 @@ export async function processOutboundQueue(): Promise<void> {
       // avisos de apartado silenciosamente durante cortes de conexión.
       if (connectionStatus !== 'connected' || !sock) {
         outboundQueue.unshift(item);
+        persistQueue();
         break;
       }
 
@@ -59,7 +120,9 @@ export async function processOutboundQueue(): Promise<void> {
           await sock.sendPresenceUpdate('composing', item.jid);
         } catch (e: any) {}
 
-        const typingDelay = 1500 + Math.floor(Math.random() * 1200);
+        // [ANTI-BANEO / RITMO HUMANO] El tiempo de "escribiendo..." crece con el largo del
+        // texto (como una persona tecleando), con tope de 4.2s para no frenar la atención.
+        const typingDelay = Math.min(4200, 900 + item.text.length * 22) + Math.floor(Math.random() * 400);
         await new Promise(r => setTimeout(r, typingDelay));
 
         await sendTextMessage(item.jid, item.text);
@@ -70,6 +133,8 @@ export async function processOutboundQueue(): Promise<void> {
       } catch (sendErr: any) {
         console.warn(`[WhatsApp Queue] Error enviando recordatorio a ${item.jid}:`, sendErr?.message || sendErr);
       }
+
+      persistQueue();
 
       // [ANTI-BANEO] Retardo aleatorio de 3.5s a 6.5s entre mensajes encolados consecutivos
       const humanDelay = 3500 + Math.floor(Math.random() * 3000);
@@ -82,7 +147,19 @@ export async function processOutboundQueue(): Promise<void> {
   }
 
   // Si quedaron mensajes pendientes (por falta de conexión), reprogramar el intento.
+  // Se usa un único temporizador para no apilar reintentos.
   if (outboundQueue.length > 0 && connectionStatus !== 'connected') {
-    setTimeout(() => { processOutboundQueue(); }, 15000);
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      processOutboundQueue();
+    }, 15000);
+    if (retryTimer.unref) retryTimer.unref();
   }
 }
+
+export default {
+  enqueueOutboundMessage,
+  processOutboundQueue,
+  getOutboundQueueSize
+};

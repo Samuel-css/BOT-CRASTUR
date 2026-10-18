@@ -42,6 +42,7 @@ import { detectCaracasZone } from './utils/caracasDelivery';
 // Handlers de Respuestas Especializados
 import {
   handleGreetingResponse,
+  handleShortGreeting,
   handleCourtesyResponse,
   handleAffirmativeResponse,
   handleNegativeResponse
@@ -67,7 +68,9 @@ import {
   handleLocationResponse,
   handleCarInquiryResponse,
   handleHowToBuyResponse,
-  handleCategoryBrowseResponse
+  handleCategoryBrowseResponse,
+  handlePriceInquiryResponse,
+  handleWholesaleResponse
 } from './handlers/infoHandlers';
 import { handleCasheaSmart, handleCasheaResponse } from './handlers/casheaHandlers';
 import {
@@ -78,7 +81,7 @@ import {
   handleInstagramCombosResponse
 } from './handlers/productHandlers';
 import { handleSellersResponse } from './handlers/advisoryHandlers';
-import { handleDefaultFallback, handleSecondFallback } from './handlers/fallbackHandlers';
+import { handleDefaultFallback, handleSecondFallback, esRespuestaFallback } from './handlers/fallbackHandlers';
 import { runWebIntents } from './handlers/webIntentHandlers';
 import {
   handleCatalogMenuResponse,
@@ -90,13 +93,18 @@ import {
   initiateApartadoFlow,
   handleApartadoNombre,
   handleApartadoCedula,
-  handleApartadoTelefono
+  handleApartadoTelefono,
+  isApartadoEscapeCommand
 } from './apartado/apartadoFlow';
 import { checkPendingFollowUps, check22hReservationReminders } from './followUp/followUpService';
 
 // Módulos de enrutamiento extraídos (guards y comandos de flujo)
 import { runGuards, SILENCE } from './router/guards';
 import { runFlowCommands } from './router/flowCommands';
+import { KEYWORDS, includesAny, equalsAny } from './router/keywords';
+
+// [AVISO AL PANEL] Notificación en vivo al Live Inbox cuando el bot necesita ayuda humana
+import { notifyLiveMessage } from '../whatsapp/socketState';
 
 /**
  * Procesa un mensaje entrante de WhatsApp y genera la respuesta automática correspondiente.
@@ -215,15 +223,18 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 5] Máquina de Estados: Flujo de Apartados (Límite 24 Horas)
   // ============================================================================
-  if (session.step === 'apartado_pidiendo_nombre') {
+  // [SALIDA DE EMERGENCIA] Si el cliente está a mitad de un apartado y escribe MENU, hola,
+  // CATALOGO, VENDEDOR o una opción 1-6, se reinicia el apartado y el mensaje sigue por el
+  // enrutador normal. Sin esto, el cliente quedaba atrapado repitiendo el dato solicitado.
+  if (session.step && String(session.step).startsWith('apartado_') && isApartadoEscapeCommand(norm)) {
+    db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
+    session.step = 'start';
+    session.apartado_metadata = null;
+  } else if (session.step === 'apartado_pidiendo_nombre') {
     return handleApartadoNombre(jid, text, session, tasa, settings);
-  }
-
-  if (session.step === 'apartado_pidiendo_cedula') {
+  } else if (session.step === 'apartado_pidiendo_cedula') {
     return handleApartadoCedula(jid, text, session, tasa, settings);
-  }
-
-  if (session.step === 'apartado_pidiendo_telefono') {
+  } else if (session.step === 'apartado_pidiendo_telefono') {
     return handleApartadoTelefono(jid, text, session, tasa, settings);
   }
 
@@ -296,8 +307,12 @@ function processIncomingMessageCore(
     norm === 'si!' ||
     norm === 'ok' ||
     norm === 'ok!' ||
+    norm === 'okey' ||
     norm === 'dale' ||
     norm === 'dale!' ||
+    norm === 'listo' ||
+    norm === 'perfecto' ||
+    norm === 'vale' ||
     norm === 'claro' ||
     norm === 'seguro' ||
     norm === 'por favor' ||
@@ -338,13 +353,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 8] Consultas de Cripto / Binance Pay (USDT)
   // ============================================================================
-  if (
-    norm.includes('binance') ||
-    norm.includes('usdt') ||
-    norm.includes('binance pay') ||
-    norm.includes('cripto') ||
-    norm.includes('crypto')
-  ) {
+  if (includesAny(norm, KEYWORDS.binance)) {
     recordMetric('consulta_binance', text, jid);
     return handleBinancePaymentResponse(tasa, settings);
   }
@@ -363,18 +372,9 @@ function processIncomingMessageCore(
 
   if (
     !comboConProductosReales && (
-      norm.includes('combo') ||
-      norm.includes('combos') ||
-      (!isKitProductSearch && norm.includes('kits')) ||
-      (!isKitProductSearch && norm === 'kit') ||
-      norm.includes('instagram') ||
-      norm.includes('promo') ||
-      norm.includes('promos') ||
-      norm.includes('promocion') ||
-      norm.includes('promociones') ||
-      norm.includes('vi en ig') ||
-      norm.includes('vi en instagram') ||
-      norm.includes('publicacion')
+      includesAny(norm, KEYWORDS.combos) ||
+      (!isKitProductSearch && includesAny(norm, KEYWORDS.combosKits)) ||
+      (!isKitProductSearch && norm === 'kit')
     )
   ) {
     recordMetric('consulta_combos_instagram', text, jid);
@@ -385,15 +385,8 @@ function processIncomingMessageCore(
   // [SECCIÓN 11] Catálogos Oficiales en PDF por Categoría
   // ============================================================================
   const isCatalogPdfQuery =
-    norm.includes('catalogo') ||
-    norm.includes('catalogos') ||
-    norm.includes('lista de precios') ||
-    norm.includes('listado de precios') ||
-    norm === 'pdf' ||
-    norm === 'en pdf' ||
-    norm === 'el pdf' ||
-    norm.includes('en pdf') ||
-    norm.includes('el pdf');
+    includesAny(norm, KEYWORDS.catalog) ||
+    equalsAny(norm, KEYWORDS.catalogEquals);
 
   if (isCatalogPdfQuery) {
     recordMetric('consulta_catalogo_pdf', text, jid);
@@ -441,15 +434,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 12] Aclaratoria de Medios No Aceptados (Zelle, Banesco Panamá, etc.)
   // ============================================================================
-  if (
-    norm.includes('zelle') ||
-    norm.includes('banesco panama') ||
-    norm.includes('punto de venta') ||
-    norm.includes('tienen punto') ||
-    norm.includes('tarjeta de debito') ||
-    norm.includes('tarjeta de credito') ||
-    norm.includes('tarjeta')
-  ) {
+  if (includesAny(norm, KEYWORDS.nonAcceptedPayments)) {
     recordMetric('consulta_pago_especifico', text, jid);
     return handleNonAcceptedPaymentsResponse(tasa, settings);
   }
@@ -460,18 +445,8 @@ function processIncomingMessageCore(
   const isPaymentMethodContext = norm.includes('pago movil') || norm.includes('transferencia') || norm.includes('como pagar') || norm.includes('formas de pago') || norm.includes('metodos de pago') || norm.includes('aceptan');
   if (
     !isPaymentMethodContext && (
-      norm.includes('a que tasa') ||
-      norm.includes('cual es la tasa') ||
-      norm.includes('que tasa') ||
-      norm.includes('tasa bcv') ||
-      norm.includes('tasa de hoy') ||
-      norm.includes('tasa del dia') ||
-      norm.includes('a como esta el dolar') ||
-      norm.includes('a como reciben') ||
-      norm.includes('precio del dolar') ||
-      norm === 'tasa' ||
-      norm === 'precio' ||
-      norm === 'precios'
+      includesAny(norm, KEYWORDS.rate) ||
+      equalsAny(norm, KEYWORDS.rateEquals)
     )
   ) {
     recordMetric('consulta_tasa_bcv', text, jid);
@@ -479,27 +454,26 @@ function processIncomingMessageCore(
   }
 
   // ============================================================================
+  // [SECCIÓN 13b] Precio sin decir el producto ("cuanto vale?", "cuanto cuesta?")
+  // Se responde pidiendo el repuesto con ejemplos, en vez de un fallback seco.
+  // ============================================================================
+  if (equalsAny(norm, KEYWORDS.barePriceEquals)) {
+    recordMetric('consulta_precio_generico', text, jid);
+    return handlePriceInquiryResponse(settings);
+  }
+
+  // ============================================================================
+  // [SECCIÓN 13c] Compras al Mayor / para Negocios
+  // ============================================================================
+  if (includesAny(norm, KEYWORDS.wholesale)) {
+    recordMetric('consulta_mayorista', text, jid);
+    return handleWholesaleResponse(settings);
+  }
+
+  // ============================================================================
   // [SECCIÓN 14] [MERCADO VENEZUELA] Envíos Nacionales e Interior del País
   // ============================================================================
-  if (
-    norm.includes('nacional') ||
-    norm.includes('al interior') ||
-    norm.includes('interior del pais') ||
-    norm.includes('otra ciudad') ||
-    norm.includes('otro estado') ||
-    norm.includes('tealca') ||
-    norm.includes('zoom') ||
-    norm.includes('mrw') ||
-    norm.includes('domesa') ||
-    norm.includes('valencia') ||
-    norm.includes('maracay') ||
-    norm.includes('barquisimeto') ||
-    norm.includes('maracaibo') ||
-    norm.includes('puerto la cruz') ||
-    norm.includes('maturin') ||
-    norm.includes('merida') ||
-    norm.includes('san cristobal')
-  ) {
+  if (includesAny(norm, KEYWORDS.nationalShipping)) {
     recordMetric('consulta_envio_nacional', text, jid);
     return handleNationalShippingResponse(session, tasa);
   }
@@ -507,24 +481,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 15] Retiro Inmediato en Tienda Física
   // ============================================================================
-  if (
-    norm.includes('puedo ir ya') ||
-    norm.includes('puedo pasar ya') ||
-    norm.includes('puedo ir ahorita') ||
-    norm.includes('puedo pasar ahorita') ||
-    norm.includes('estan atendiendo ahorita') ||
-    norm.includes('lo puedo retirar hoy') ||
-    norm.includes('puedo retirar hoy') ||
-    norm.includes('puedo retirar') ||
-    norm.includes('retirar ya') ||
-    norm.includes('retirar en la tienda') ||
-    norm.includes('retirar en tienda') ||
-    norm.includes('mandar a retirar') ||
-    norm.includes('pasar a retirar') ||
-    norm.includes('retirar yo mismo') ||
-    norm.includes('retirar personalmente') ||
-    norm.includes('lo busco ya')
-  ) {
+  if (includesAny(norm, KEYWORDS.immediatePickup)) {
     recordMetric('consulta_retiro_inmediato', text, jid);
     return handleImmediatePickupResponse(settings);
   }
@@ -532,17 +489,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 16] Puntos de Referencia y Cómo Llegar (Metro / Parque Central)
   // ============================================================================
-  if (
-    norm.includes('como llego') ||
-    norm.includes('punto de referencia') ||
-    norm.includes('puntos de referencia') ||
-    norm.includes('cerca de donde') ||
-    norm.includes('cerca de que') ||
-    norm.includes('que metro') ||
-    norm.includes('estacion de metro') ||
-    norm.includes('parque central') ||
-    norm.includes('nuevo circo')
-  ) {
+  if (includesAny(norm, KEYWORDS.referencePoints)) {
     recordMetric('consulta_referencias', text, jid);
     return handleReferencePointsResponse(settings);
   }
@@ -550,17 +497,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 17] Servicio Mecánico / Instalación (Aclaratoria de Solo Venta)
   // ============================================================================
-  if (
-    norm.includes('instalan') ||
-    norm.includes('instalacion') ||
-    norm.includes('tienen taller') ||
-    norm.includes('tienen mecanico') ||
-    norm.includes('hacen la instalacion') ||
-    norm.includes('quien lo monta') ||
-    norm.includes('lo montan') ||
-    norm.includes('cambian aceite') ||
-    norm.includes('cambio de aceite')
-  ) {
+  if (includesAny(norm, KEYWORDS.installation)) {
     recordMetric('consulta_instalacion', text, jid);
     return handleInstallationQueryResponse(session);
   }
@@ -568,19 +505,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 18] Calidad de Repuestos (OEM, Originales, Marcas)
   // ============================================================================
-  if (
-    norm.includes('son originales') ||
-    norm.includes('que marca') ||
-    norm.includes('son de buena calidad') ||
-    norm.includes('calidad') ||
-    norm.includes('son chinos') ||
-    norm.includes('son japoneses') ||
-    norm.includes('son americanos') ||
-    norm.includes('marcas trabajan') ||
-    norm.includes('usados') ||
-    norm.includes('nuevos') ||
-    norm.includes('segunda mano')
-  ) {
+  if (includesAny(norm, KEYWORDS.quality)) {
     recordMetric('consulta_calidad_marcas', text, jid);
     return handleQualityAndBrandsResponse();
   }
@@ -589,30 +514,10 @@ function processIncomingMessageCore(
   // [SECCIÓN 19] Aclaratoria de Repuestos de Carro (Solo Moto y Cauchera)
   // ============================================================================
   if (
-    norm.includes('repuestos de carro') ||
-    norm.includes('repuesto de carro') ||
-    norm.includes('repuestos para carro') ||
-    norm.includes('repuesto para carro') ||
-    norm.includes('cosas de carro') ||
-    norm.includes('repuestos de auto') ||
-    norm.includes('repuesto de auto') ||
-    norm.includes('para carros') ||
-    norm.includes('para carro') ||
-    norm.includes('para autos') ||
-    norm.includes('toyota') ||
-    norm.includes('corolla') ||
-    norm.includes('aveo') ||
-    norm.includes('optra') ||
-    norm.includes('spark') ||
-    norm.includes('chevrolet') ||
-    norm.includes('ford') ||
-    norm.includes('tren delantero') ||
-    norm.includes('caja de cambio') ||
-    norm.includes('caja automatica') ||
-    norm.includes('caja sincronica') ||
-    norm.includes('tripoides') ||
-    norm.includes('cremallera') ||
-    norm.includes('amortiguador')
+    includesAny(norm, KEYWORDS.carInquiry) ||
+    // [MOTO VS CARRO] El amortiguador también existe en motos: solo se trata como
+    // repuesto de carro cuando el mensaje no menciona moto.
+    (norm.includes('amortiguador') && !norm.includes('moto'))
   ) {
     recordMetric('consulta_partes_no_manejadas', text, jid);
     return handleCarInquiryResponse();
@@ -621,14 +526,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 20] Facturación Fiscal y Presupuestos
   // ============================================================================
-  if (
-    norm.includes('factura fiscal') ||
-    norm.includes('dan factura') ||
-    norm.includes('factura') ||
-    norm.includes('presupuesto') ||
-    norm.includes('cotizacion formal') ||
-    norm.includes('nota de entrega')
-  ) {
+  if (includesAny(norm, KEYWORDS.invoicing)) {
     recordMetric('consulta_facturacion', text, jid);
     return handleInvoicingQueryResponse();
   }
@@ -636,18 +534,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 21] Descuentos y Promociones en Divisas
   // ============================================================================
-  if (
-    norm.includes('descuento') ||
-    norm.includes('rebaja') ||
-    norm.includes('promo') ||
-    norm.includes('lo ultimo') ||
-    norm.includes('mas barato') ||
-    norm.includes('precio minimo') ||
-    norm.includes('precio en divisas') ||
-    norm.includes('pago en divisas') ||
-    norm.includes('descuento en divisas') ||
-    norm.includes('descuento en dolares')
-  ) {
+  if (includesAny(norm, KEYWORDS.discount)) {
     recordMetric('consulta_descuento', text, jid);
     return handleDiscountResponse(tasa, settings);
   }
@@ -659,21 +546,8 @@ function processIncomingMessageCore(
   const isSpecializedPaymentOrDelivery = norm.includes('cashea') || norm.includes('motorizado') || norm.includes('delivery');
   if (
     !hasProductInPaymentQuery && !isSpecializedPaymentOrDelivery && (
-      norm === 'como se paga' ||
-      norm === 'formas de pago' ||
-      norm === 'metodos de pago' ||
-      norm.includes('como pagar') ||
-      norm.includes('formas de pago') ||
-      norm.includes('metodos de pago') ||
-      norm.includes('pago movil') ||
-      norm.includes('que metodo') ||
-      norm.includes('aceptan dolares') ||
-      norm.includes('aceptan divisas') ||
-      norm.includes('como reciben el pago') ||
-      norm.includes('como se realiza el pago') ||
-      norm.includes('transferencia') ||
-      norm.includes('se puede pagar') ||
-      norm.includes('puedo pagar')
+      equalsAny(norm, KEYWORDS.paymentMethodsEquals) ||
+      includesAny(norm, KEYWORDS.paymentMethods)
     )
   ) {
     recordMetric('consulta_pagos', text, jid);
@@ -683,20 +557,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 23] Solicitud de Apartado / Reserva 24h
   // ============================================================================
-  if (
-    norm.includes('apartar') ||
-    norm.includes('reservar') ||
-    norm.includes('aparta') ||
-    norm.includes('reserva') ||
-    norm.includes('guardamelo') ||
-    norm.includes('guardamela') ||
-    norm.includes('guardalo') ||
-    norm.includes('guardala') ||
-    norm.includes('lo quiero apartar') ||
-    norm.includes('quiero apartar') ||
-    norm.includes('lo paso a buscar') ||
-    norm.includes('lo voy a buscar')
-  ) {
+  if (includesAny(norm, KEYWORDS.apartado)) {
     recordMetric('intencion_apartado', text, jid);
     if (settings.fuera_horario_activo === '1') {
       return handleOutOfHoursTransactionResponse(settings, 'apartar');
@@ -749,19 +610,7 @@ function processIncomingMessageCore(
   const isAddressText = /\b(av|avenida|esquina|calle|torre|edificio|residencia|edif|piso|apto|apartamento|baralt)\b/i.test(text);
 
   if (
-    norm.includes('delivery') ||
-    norm.includes('envio') ||
-    norm.includes('envios') ||
-    norm.includes('hacen delivery') ||
-    norm.includes('ponen delivery') ||
-    norm.includes('traen') ||
-    norm.includes('llevan') ||
-    norm.includes('motorizado') ||
-    norm.includes('mandan') ||
-    norm.includes('flete') ||
-    norm.includes('a domicilio') ||
-    norm.includes('a toda caracas') ||
-    norm.includes('a todas caracas') ||
+    includesAny(norm, KEYWORDS.delivery) ||
     (detectedDeliveryZone && isAddressText)
   ) {
     recordMetric('consulta_delivery', text, jid);
@@ -772,17 +621,7 @@ function processIncomingMessageCore(
   // [SECCIÓN 26] Horario Comercial de Tienda Física
   // ============================================================================
   if (
-    norm.includes('horario') ||
-    norm.includes('abren') ||
-    norm.includes('cierran') ||
-    norm.includes('estan abiertos') ||
-    norm.includes('que hora abren') ||
-    norm.includes('a que hora') ||
-    norm.includes('hasta que hora') ||
-    norm.includes('atienden hoy') ||
-    norm.includes('atienden el') ||
-    (norm.includes('sabado') && !norm.includes('bera') && !norm.includes('moto') && !norm.includes('sbr') && !norm.includes('kit') && norm.length < 30) ||
-    (norm.includes('domingo') && !norm.includes('moto') && norm.length < 30) ||
+    includesAny(norm, KEYWORDS.storeHours) ||
     (norm.includes('hora') && (norm.includes('abren') || norm.includes('cierran') || norm.includes('atienden') || norm.includes('horario')))
   ) {
     recordMetric('consulta_horario', text, jid);
@@ -800,14 +639,7 @@ function processIncomingMessageCore(
   const cambioIsServiceContext = norm.includes('cambio') && hasProductContext;
 
   if (
-    norm.includes('garantia') ||
-    norm.includes('devolucion') ||
-    norm.includes('defectuoso') ||
-    norm.includes('si no le sirve') ||
-    norm.includes('si no le queda') ||
-    norm.includes('no le funciono') ||
-    norm.includes('vino malo') ||
-    norm.includes('vino defectuoso') ||
+    includesAny(norm, KEYWORDS.warranty) ||
     (norm.includes('cambio') && !cambioIsServiceContext && (norm.includes('garantia') || norm.includes('devolucion') || norm.includes('regresar') || norm.includes('queja') || norm.includes('reclamar') || norm === 'cambio'))
   ) {
     recordMetric('consulta_garantia', text, jid);
@@ -818,11 +650,7 @@ function processIncomingMessageCore(
   // [SECCIÓN 28] Disponibilidad Inmediata en Inventario
   // ============================================================================
   if (
-    norm === 'disponibilidad' ||
-    norm === 'disponible' ||
-    norm === 'hay disponible' ||
-    norm === 'tienen en tienda' ||
-    norm === 'entrega inmediata' ||
+    equalsAny(norm, KEYWORDS.availabilityEquals) ||
     (norm.includes('disponible') && searchProductsFuzzy(text).length === 0) ||
     (norm.includes('disponibilidad') && searchProductsFuzzy(text).length === 0) ||
     norm.includes('hay disponible en tienda') ||
@@ -952,21 +780,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 31] [MERCADO VENEZUELA] Financiamiento Cashea Inteligente
   // ============================================================================
-  if (
-    norm.includes('cashea') ||
-    norm.includes('financiamiento') ||
-    norm.includes('financiado') ||
-    norm.includes('financiar') ||
-    norm.includes('financiera') ||
-    norm.includes('a credito') ||
-    norm.includes('credito') ||
-    norm.includes('cuotas') ||
-    norm.includes('cuota') ||
-    norm.includes('inicial') ||
-    norm.includes('nivel') ||
-    norm.includes('pagar por partes') ||
-    norm.includes('pago por partes')
-  ) {
+  if (includesAny(norm, KEYWORDS.cashea)) {
     recordMetric('consulta_cashea', text, jid);
     return handleCasheaSmart(text, norm, settings, tasa, session);
   }
@@ -977,21 +791,8 @@ function processIncomingMessageCore(
   if (
     norm === 'donde' ||
     norm.startsWith('donde ') ||
-    norm.includes('ubicacion') ||
-    norm.includes('direccion') ||
-    norm.includes('mapa') ||
-    norm.includes('maps') ||
-    norm.includes('donde estan') ||
-    norm.includes('donde queda') ||
-    norm.includes('donde quedan') ||
-    norm.includes('donde es') ||
-    norm.includes('que parte') ||
-    norm.includes('q parte') ||
-    norm.includes('por donde') ||
-    norm.includes('quedan') ||
-    norm.includes('qdan') ||
-    norm.includes('se ubican') ||
-    norm.includes('se encuentran') ||
+    includesAny(norm, KEYWORDS.location) ||
+    /\bdireccion(es)?\b/.test(norm) ||
     (norm.includes('tienda') && (norm.includes('donde') || norm.includes('como llego') || norm.includes('como queda') || norm.includes('fisica')))
   ) {
     recordMetric('consulta_ubicacion', text, jid);
@@ -1001,20 +802,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 32b] Cómo Comprar / Hacer un Pedido (Guía para Clientes Nuevos)
   // ============================================================================
-  if (
-    norm.includes('como compro') ||
-    norm.includes('como comprar') ||
-    norm.includes('como hago para comprar') ||
-    norm.includes('como puedo comprar') ||
-    norm.includes('como se compra') ||
-    norm.includes('como hago un pedido') ||
-    norm.includes('como pido') ||
-    norm.includes('como hago el pedido') ||
-    norm.includes('como hacer el pedido') ||
-    norm.includes('quiero comprar') ||
-    norm.includes('quiero hacer un pedido') ||
-    norm.includes('como se hace la compra')
-  ) {
+  if (includesAny(norm, KEYWORDS.howToBuy)) {
     recordMetric('consulta_como_comprar', text, jid);
     return handleHowToBuyResponse(settings);
   }
@@ -1096,34 +884,14 @@ function processIncomingMessageCore(
   // [SECCIÓN 34] Consultas Genéricas de Moto o Cauchera sin Coincidencia
   // ============================================================================
   if (
-    norm.includes('para moto') ||
-    norm.includes('de moto') ||
-    norm.includes('repuestos de moto') ||
-    norm.includes('repuesto de moto') ||
-    norm.includes('cosas de moto') ||
-    norm.includes('para motos') ||
-    norm === 'moto' ||
-    norm.includes('motocicleta') ||
-    norm.includes('scooter')
+    includesAny(norm, KEYWORDS.moto) ||
+    equalsAny(norm, KEYWORDS.motoEquals)
   ) {
     recordMetric('consulta_motos', text, jid);
     return handleMotoQueryResponse();
   }
 
-  if (
-    norm.includes('cauchera') ||
-    norm.includes('caucho') ||
-    norm.includes('llanta') ||
-    norm.includes('llantas') ||
-    norm.includes('goma') ||
-    norm.includes('gomas') ||
-    norm.includes('valvula') ||
-    norm.includes('parche') ||
-    norm.includes('nitrogeno') ||
-    norm.includes('inflado') ||
-    norm.includes('camara de aire') ||
-    norm.includes('neumatico')
-  ) {
+  if (includesAny(norm, KEYWORDS.cauchera)) {
     recordMetric('consulta_cauchera', text, jid);
     return handleCaucheraQueryResponse();
   }
@@ -1132,54 +900,38 @@ function processIncomingMessageCore(
   // [SECCIÓN 35] Saludos y Menú Inicial
   // ============================================================================
   if (
-    norm === 'hola' ||
-    norm === 'hola!' ||
-    norm === 'ola' ||
+    equalsAny(norm, KEYWORDS.greetingEquals) ||
     (norm.startsWith('hola ') && norm.length < 15 && !norm.includes('tienes') && !norm.includes('hay') && !norm.includes('precio') && !norm.includes('quiero') && !norm.includes('busco')) ||
-    norm.includes('buenos dias') ||
-    norm.includes('buenas tardes') ||
-    norm.includes('buenas noches') ||
-    norm === 'buenas' ||
-    norm === 'menu' ||
-    norm === 'inicio' ||
-    norm === 'ayuda' ||
-    norm === 'info' ||
-    norm === 'informacion' ||
-    norm.includes('epale') ||
-    norm.includes('que mas') ||
-    norm.includes('que tal') ||
-    norm.includes('saludos') ||
-    norm.includes('mi pana') ||
+    includesAny(norm, KEYWORDS.greetingParts) ||
     // [CLIENTE NUEVO] Preguntas de sondeo: "¿qué tienen?", "¿qué venden?", "¿qué manejan?".
     // Deben mostrar el menú de categorías, no un fallback genérico.
-    norm === 'que tienen' ||
-    norm === 'que venden' ||
-    norm === 'que manejan' ||
-    norm === 'que tienen disponible' ||
-    norm === 'que ofrecen' ||
-    norm === 'que productos tienen' ||
-    norm === 'que productos venden' ||
-    norm === 'que venden aqui' ||
-    norm === 'que tienes' ||
     norm.startsWith('que venden ') ||
-    norm.startsWith('que tienen ') ||
-    norm === 'tienen catalogo' ||
-    norm === 'que hay'
+    norm.startsWith('que tienen ')
   ) {
     recordMetric('saludo_menu', text, jid);
+
+    // [SALUDAR UNA SOLA VEZ] Si el cliente ya recibió el menú hace poco y solo vuelve a
+    // saludar, no le repetimos el menú completo: un saludo corto basta y se siente más
+    // humano. Si vuelve después de 6 horas (u otro día), sí ve el menú otra vez.
+    const esSaludoPuro = /^(hola|ola|buenas|buenos dias|buenas tardes|buenas noches|saludos|epale|que mas|que tal)(\s+\w+){0,2}$/.test(norm);
+    const yaSaludo = parseInt(session?.saludo_enviado) === 1;
+    const ultimaActividadPrevia = Number(session?.ultimo_mensaje_at || 0);
+    const saludoReciente = yaSaludo && ultimaActividadPrevia > 0 && (Date.now() - ultimaActividadPrevia) < 6 * 60 * 60 * 1000;
+    if (esSaludoPuro && saludoReciente) {
+      recordMetric('saludo_repetido', text, jid);
+      return handleShortGreeting(pushName);
+    }
+
     if (jid) {
       try {
-        db.prepare("UPDATE chat_sessions SET contexto_productos = NULL, step = 'start' WHERE jid = ?").run(jid);
+        db.prepare("UPDATE chat_sessions SET contexto_productos = NULL, step = 'start', saludo_enviado = 1 WHERE jid = ?").run(jid);
       } catch {}
     }
     return handleGreetingResponse(pushName, settings, tasa);
   }
 
   // Aclaratoria cuando consultan explícitamente por vehículos de 4 ruedas
-  if (
-    norm.includes('carro') || norm.includes('auto') || norm.includes('vehiculo') ||
-    norm.includes('camioneta') || norm.includes('sedan') || norm.includes('4x4')
-  ) {
+  if (includesAny(norm, KEYWORDS.carGeneric)) {
     recordMetric('consulta_carro_no_match', text, jid);
     return handleCarInquiryResponse();
   }
@@ -1200,9 +952,34 @@ function processIncomingMessageCore(
     db.prepare('UPDATE chat_sessions SET fallos_consecutivos = ? WHERE jid = ?').run(nuevosFallos, jid);
   } catch {}
 
+  // [NO INSISTIR / NO SABROSEAR] Tercer mensaje seguido sin entender: el bot deja de
+  // responder (evita el efecto "bot necio") y deja un aviso visible en el Live Inbox para
+  // que un asesor humano tome el chat. Los comandos (VENDEDOR, MENU, precios, etc.) siguen
+  // funcionando porque se evalúan antes de esta sección.
+  if (nuevosFallos >= 3) {
+    if (nuevosFallos === 3) {
+      const aviso = '🟡 El bot no logró entender 3 mensajes seguidos. Un asesor debería atender esta conversación.';
+      try {
+        const avisoInsert = db.prepare(`
+          INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
+          VALUES (?, 'sistema', ?, ?)
+        `).run(jid, aviso, Date.now());
+        notifyLiveMessage({
+          id: avisoInsert?.lastInsertRowid,
+          jid,
+          pushName: 'Sistema',
+          remitente: 'sistema',
+          contenido: aviso,
+          timestamp: Date.now()
+        });
+      } catch {}
+      console.log(`[Bot] 🤐 Silencio preventivo para ${jid}: 3 mensajes seguidos sin coincidencia. Aviso enviado al panel.`);
+    }
+    return null;
+  }
+
   if (nuevosFallos >= 2) {
-    // El cliente ya lleva 2 mensajes sin coincidencia → menú + asesor
-    try { db.prepare('UPDATE chat_sessions SET fallos_consecutivos = 0 WHERE jid = ?').run(jid); } catch {}
+    // El cliente ya lleva 2 mensajes sin coincidencia → persona del mostrador (sin listas largas)
     return handleSecondFallback(pushName, settings);
   }
 
@@ -1226,10 +1003,15 @@ function processIncomingMessage(
   // [RESPUESTA ASÍNCRONA] Algunas rutas (p. ej. entrega de catálogo PDF) devuelven
   // una Promesa. Se resuelve y se aplica el mismo reinicio de contador de fallos.
   if (respuesta && typeof respuesta.then === 'function') {
-    return respuesta.then((resuelta: any) => {
-      evaluarFallback(resuelta, jid);
-      return resuelta;
-    });
+    return respuesta
+      .then((resuelta: any) => {
+        evaluarFallback(resuelta, jid);
+        return resuelta;
+      })
+      .catch((err: any) => {
+        console.error('[Bot] Error en respuesta asíncrona:', err?.message || err);
+        return handleDefaultFallback(pushName, undefined);
+      });
   }
 
   evaluarFallback(respuesta, jid);
@@ -1244,7 +1026,7 @@ function evaluarFallback(respuesta: any, jid: string): void {
       ? respuesta
       : (respuesta && typeof respuesta === 'object' ? (respuesta.text || respuesta.caption || '') : '');
 
-    const esFallback = !textoResp || textoResp.includes('No logré ubicar el producto') || textoResp.includes('Gracias por tu paciencia');
+    const esFallback = esRespuestaFallback(textoResp);
 
     if (!esFallback && jid) {
       // El bot entendió: reiniciar el contador de fallos consecutivos

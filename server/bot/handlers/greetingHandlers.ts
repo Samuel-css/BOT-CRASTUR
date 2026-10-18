@@ -29,24 +29,28 @@ export function handleGreetingResponse(
     if (customNotice) {
       msg += `⏰ ${customNotice}\n\n`;
     } else {
-      msg += `⏰ *Nota de Horario:* Nuestra tienda física se encuentra *cerrada* en este momento (Horario: ${settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM'}).\n\n`;
+      msg += `⏰ *Tienda cerrada* en este momento (Horario: ${settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM'}).\n`;
+      msg += `¡Nuestro asistente virtual está activo 24/7! 💬\n\n`;
     }
-    msg += `💬 *¡Nuestro Asistente Virtual está 100% activo!* Puedes consultar precios, marcas y disponibilidad en cualquier momento:\n\n`;
   } else {
     msg += `${settings?.mensaje_bienvenida || 'Te damos la bienvenida a *Crastur* 🛞🏍️📦\nTu tienda de insumos para caucheras, repuestos de moto y otros productos en Caracas con Cashea.'}\n\n`;
   }
 
-  msg += `🇻🇪 *Tasa oficial BCV hoy:* *Bs. ${tasaFormatted} / USD*\n\n`;
-  msg += `¿Qué estás buscando hoy? Puedes responder con el *número* o escribir directamente el producto:\n\n`;
-  msg += `1️⃣ *Insumos Cauchera* 🛞\n_(Parches, pegas, válvulas, mechas para pinchazos, plomos de balanceo, tripas)_\n\n`;
-  msg += `2️⃣ *Repuestos Moto* 🏍️\n_(Kits de arrastre, cadenas, pastillas y bandas de freno, bujías, repuestos de motor)_\n\n`;
-  msg += `3️⃣ *Accesorios Moto* 🪖\n_(Puños, mallas porta-casco, retrovisores, luces LED, spray para cadena)_\n\n`;
-  msg += `4️⃣ *Otros Productos* 📦\n_(Aceites de motor 4T/2T, refrigerantes para radiador, aditivos, bombillos, plumillas)_\n\n`;
-  msg += `5️⃣ *Pagar con Cashea en la Tienda* 💛\n_(Llévate tus productos hoy pagando solo la inicial en compras desde $25)_\n\n`;
-  msg += `6️⃣ *Hablar con un Asesor / Vendedor* 👨‍🔧\n_(Atención directa con nuestro equipo de ventas en tienda)_\n\n`;
-  msg += `¡Escríbenos lo que necesitas y te damos precio y disponibilidad al instante! 🤝✨`;
+  // [MENSAJES CORTOS] Menú en 2 líneas: el cliente no lee descripciones largas.
+  msg += `🇻🇪 *Tasa BCV:* Bs. ${tasaFormatted} / USD\n\n`;
+  msg += `1️⃣ Insumos Cauchera 🛞 · 2️⃣ Repuestos Moto 🏍️ · 3️⃣ Accesorios Moto 🪖\n`;
+  msg += `4️⃣ Aceites y Otros 📦 · 5️⃣ Cashea 💛 · 6️⃣ Asesor 👨‍🔧\n\n`;
+  msg += `✍️ Escribe el *producto* que buscas (o responde 1 a 6).`;
 
   return msg;
+}
+
+/**
+ * [SALUDAR UNA SOLA VEZ] Respuesta breve cuando el cliente ya vio el menú y vuelve a saludar.
+ * Evita repetir el menú completo en cada saludo (el bot no debe "sabrosear" la conversación).
+ */
+export function handleShortGreeting(pushName: string): string {
+  return `¡Hola de nuevo, *${pushName}*! 👋 En *Crastur* seguimos listos: dime el *producto* que buscas y te doy precio al instante.`;
 }
 
 /**
@@ -57,16 +61,7 @@ export function handleGreetingResponse(
  * @returns Mensaje cordial con ubicación y horario
  */
 export function handleCourtesyResponse(pushName: string, settings: Record<string, string>): string {
-  const direccion = settings?.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas';
-  const mapsUrl = settings?.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA';
-  let msg = `¡A tu total orden, *${pushName}*! 😊\n\n`;
-  msg += `Si necesitas consultar algún otro producto de moto, cauchera o apartar una pieza, estamos para servirte.\n\n`;
-  msg += `🏢 *Tienda física:* ${direccion}\n`;
-  msg += `🗺️ *Google Maps:* ${mapsUrl}\n`;
-  const horario = settings?.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM';
-  msg += `🕒 *Horario:* ${horario}.\n\n`;
-  msg += `¡Que tengas un excelente día! 🛞🏍️✨`;
-  return msg;
+  return `¡A tu orden, *${pushName}*! 😊 En *Crastur* seguimos a la orden para cualquier repuesto de moto o insumo de cauchera 🛞🏍️`;
 }
 
 /**
@@ -76,11 +71,9 @@ export function handleCourtesyResponse(pushName: string, settings: Record<string
  * @returns Orientación para continuar la consulta
  */
 export function handleAffirmativeResponse(pushName: string): string {
-  let msg = `¡Excelente, *${pushName}*! 👍\n\n`;
-  msg += `¿Qué producto o repuesto te podemos cotizar hoy?\n\n`;
-  msg += `👉 Escribe directamente el nombre (por ejemplo: *"parches"*, *"pega"*, *"valvulas"*, *"kit de arrastre"*, *"bujia"*, *"refrigerante"*).\n`;
-  msg += `👉 O indícanos el modelo de tu moto para confirmarte disponibilidad de una vez.\n`;
-  msg += `👉 Escribe *MENU* para ver todas las opciones o *VENDEDOR* para hablar con nuestro equipo.`;
+  let msg = `¡Perfecto, *${pushName}*! 👍\n`;
+  msg += `Dime qué repuesto buscas (ej: *pastillas*, *bujía*) y te doy precio al instante.\n`;
+  msg += `Escribe *MENU* para ver las opciones o *VENDEDOR* para hablar con una persona.`;
   return msg;
 }
 
@@ -90,14 +83,12 @@ export function handleAffirmativeResponse(pushName: string): string {
  * @returns Mensaje de cierre educado
  */
 export function handleNegativeResponse(): string {
-  let msg = `¡Entendido! 👍\n\n`;
-  msg += `Guarda nuestro contacto de *Crastur*. Cuando necesites insumos para tu cauchera, repuestos para tu moto o financiamiento con Cashea, escríbenos con toda confianza.\n\n`;
-  msg += `¡Estamos a tu orden en Caracas de Lunes a Sábado de 8:00 AM a 8:00 PM! 🛞🏍️✨`;
-  return msg;
+  return `¡Entendido! 👍 Cuando necesites algo para tu moto o tu cauchera, aquí estamos en *Crastur* para servirte 🛞🏍️`;
 }
 
 export default {
   handleGreetingResponse,
+  handleShortGreeting,
   handleCourtesyResponse,
   handleAffirmativeResponse,
   handleNegativeResponse

@@ -7,7 +7,7 @@
  * Normaliza números móviles venezolanos agregando el prefijo de país 58 (+58) para enlaces directos.
  */
 
-import { db } from '../../database';
+import { db, getSettings } from '../../database';
 import type { Seller } from '../../types/database';
 
 /**
@@ -27,7 +27,8 @@ export function handleSellersResponse(pushName: string): string {
     msg += `📍 *Ubicación en Caracas:*\nEdificio Liberalba, Avenida Sur 9, San Agustín Norte.\n\n`;
     msg += `🗺️ *Enlace directo en Google Maps:*\n`;
     msg += `https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA\n\n`;
-    msg += `🕒 *Horario de Atención:* Lunes a Sábado de 8:00 AM a 8:00 PM.`;
+    const horario = getSettings().horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM';
+    msg += `🕒 *Horario de Atención:* ${horario}.`;
     return msg;
   }
 
