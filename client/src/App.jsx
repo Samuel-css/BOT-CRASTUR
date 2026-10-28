@@ -300,12 +300,17 @@ export default function App() {
   const refreshBCV = () => {
     setLoading(true);
     fetch('/api/bcv/refresh', { method: 'POST' })
-      .then(r => r.json())
-      .then(() => {
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
         setLoading(false);
         loadBCV();
         loadProducts();
-        toast.success('¡Tasa BCV actualizada exitosamente!');
+        if (data && data.success === false) {
+          // [VERACIDAD] La consulta falló y se mantiene la última tasa guardada.
+          toast.warning(`No se pudo consultar el BCV ahora. Se mantiene la última tasa guardada${data?.tasa ? ` (Bs. ${Number(data.tasa).toFixed(2)})` : ''}.`);
+        } else {
+          toast.success('¡Tasa BCV actualizada exitosamente!');
+        }
       })
       .catch(() => {
         setLoading(false);
@@ -371,7 +376,7 @@ export default function App() {
       message: 'El bot dejará de responder mensajes automáticos y apartados hasta que vuelvas a escanear el código QR con tu teléfono.',
       confirmText: 'Cerrar Sesión',
       checkboxLabel: 'Vaciar también el historial de chats del Live Inbox (Privacidad)',
-      checkboxChecked: true,
+      checkboxChecked: false,
       isDanger: true,
       onConfirm: (clearChats) => {
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
@@ -660,14 +665,17 @@ export default function App() {
     const tasa = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;
     const precioUsd = parseFloat(product.precio_usd) || 0;
     const precioBs = precioUsd * tasa;
-    const n1 = precioUsd * 0.40;
-    const cuota = (precioUsd - n1) / 3;
+    // [CONSISTENCIA] Usa el plan real de Ajustes y los valores ya calculados por el backend.
+    const cuotasCashea = Math.max(1, parseInt(product.cashea_cuotas ?? settings.cashea_cuotas ?? 3, 10) || 3);
+    const inicialPct = Number(product.cashea_inicial_pct ?? parseFloat(settings.cashea_inicial_pct || '40'));
+    const n1 = Number(product.cashea_inicial_usd ?? (precioUsd * (inicialPct / 100)));
+    const cuota = Number(product.cashea_cuota_usd ?? ((precioUsd - n1) / cuotasCashea));
 
     const casheaLine = precioUsd >= 25
-      ? `💛 *Cashea (En tienda física):* Inicial de *$${n1.toFixed(2)}* (Bs. ${formatBs(n1 * tasa)}) + 3 cuotas quincenales de *$${cuota.toFixed(2)}* (Pago en caja escaneando con tu App Cashea)`
+      ? `💛 *Cashea (En tienda física):* Inicial de *$${n1.toFixed(2)}* (Bs. ${formatBs(n1 * tasa)}) + ${cuotasCashea} cuotas quincenales de *$${cuota.toFixed(2)}* (Pago en caja escaneando con tu App Cashea)`
       : `💛 *Cashea:* Disponible para compras a partir de $25 USD en tienda física`;
 
-    const quote = `🚗 *${product.marca} - ${product.modelo}* ⚙️\n💵 Precio: *$${precioUsd.toFixed(2)} USD*\n🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}* (Tasa BCV: ${formatRate(tasa)})\n${casheaLine}\n📦 *Disponibilidad:* Retiro inmediato en tienda física Crastur (Caracas).\n\n📍 *Ubicación:*\nEdificio Liberalba, Av. Sur 9, San Agustín, Caracas\nhttps://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`;
+    const quote = `🏍️ *${product.marca} - ${product.modelo}* 🛞\n💵 Precio: *$${precioUsd.toFixed(2)} USD*\n🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}* (Tasa BCV: ${formatRate(tasa)})\n${casheaLine}\n📦 *Disponibilidad:* Retiro inmediato en tienda física Crastur (Caracas).\n\n📍 *Ubicación:*\nEdificio Liberalba, Av. Sur 9, San Agustín, Caracas\nhttps://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`;
     navigator.clipboard.writeText(quote);
     setCopiedId(product.id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -679,12 +687,13 @@ export default function App() {
   const copyManualQuote = (usdAmount, nivel, inicialUsd, inicialBs, cuotaUsd, _cuotaBs) => {
     const tasa = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;
     const precioBs = usdAmount * tasa;
+    const cuotasCashea = Math.max(1, parseInt(settings.cashea_cuotas || '3', 10) || 3);
 
     const casheaLine = usdAmount >= 25
-      ? `💛 *Cashea (Nivel ${nivel} - En tienda física):* Inicial hoy de *$${inicialUsd.toFixed(2)}* (Bs. ${formatBs(inicialBs)}) + 3 cuotas quincenales de *$${cuotaUsd.toFixed(2)}* (Escaneas en caja al retirar)`
+      ? `💛 *Cashea (Nivel ${nivel} - En tienda física):* Inicial hoy de *$${inicialUsd.toFixed(2)}* (Bs. ${formatBs(inicialBs)}) + ${cuotasCashea} cuotas quincenales de *$${cuotaUsd.toFixed(2)}* (Escaneas en caja al retirar)`
       : `💛 *Cashea:* Disponible para compras a partir de $25 USD en tienda física`;
 
-    const quote = `🚗 *Cotización de Repuesto / Accesorio - Crastur* ⚙️\n💵 Monto: *$${usdAmount.toFixed(2)} USD*\n🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}* (Tasa BCV: ${formatRate(tasa)})\n${casheaLine}\n\n🏢 *Tienda Física:* Edificio Liberalba, Av. Sur 9, San Agustín, Caracas.\nhttps://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`;
+    const quote = `🏍️ *Cotización de Repuesto / Accesorio - Crastur* 🛞\n💵 Monto: *$${usdAmount.toFixed(2)} USD*\n🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}* (Tasa BCV: ${formatRate(tasa)})\n${casheaLine}\n\n🏢 *Tienda Física:* Edificio Liberalba, Av. Sur 9, San Agustín, Caracas.\nhttps://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`;
     navigator.clipboard.writeText(quote);
     setCopiedId('manual');
     setTimeout(() => setCopiedId(null), 2000);
@@ -867,6 +876,7 @@ export default function App() {
                 bcvRate={currentRate}
                 onCopyManualQuote={copyManualQuote}
                 copiedId={copiedId}
+                casheaCuotas={settings.cashea_cuotas}
               />
             )}
 
@@ -918,6 +928,8 @@ export default function App() {
         isOpen={productModal.isOpen}
         editingProduct={productModal.editing}
         bcvRate={currentRate}
+        casheaInicialPct={settings.cashea_inicial_pct}
+        casheaCuotas={settings.cashea_cuotas}
         onClose={() => setProductModal({ isOpen: false, editing: null })}
         onSave={handleSaveProduct}
       />
@@ -958,6 +970,7 @@ export default function App() {
         onClose={() => setQuickPriceOpen(false)}
         products={products}
         bcvData={bcvData}
+        casheaCuotas={settings.cashea_cuotas}
       />
 
       {/* NOTIFICACIONES TOAST FLOTANTES (CENTRADAS) */}

@@ -5,9 +5,10 @@
  */
 
 import fs from 'fs';
-import { db, registerAdvisorActivity } from '../database';
+import { db } from '../database';
 import { standardizeBotMessage } from '../bot/utils/textUtils';
-import { sock, connectionStatus, notifyLiveMessage, notifyChatState } from './socketState';
+import { sock, connectionStatus, notifyLiveMessage } from './socketState';
+import { registerHumanTakeover } from './takeover';
 
 /** Registro de identificadores de mensajes enviados por el bot para evitar bucles de eco. */
 const knownSentMessageIds = new Set<string>();
@@ -206,12 +207,10 @@ export async function sendManualMessage(jid: string, text: string): Promise<{ su
   notifyLiveMessage({ id: insertId, jid, pushName: 'Asesor Humano', remitente: 'asesor', contenido: text, timestamp: now });
 
   // [HUMAN TAKEOVER AUTOMÁTICO] El asesor respondió desde el panel: el bot queda silenciado
-  // en este chat y se cancela cualquier respuesta automática que estuviera en camino.
+  // en este chat y se cancela cualquier respuesta automática que estuviera en camino
+  // (incluido el retardo de "escribiendo..." y el debounce de mensajes en ráfaga).
   try {
-    const autoPaused = registerAdvisorActivity(jid);
-    if (autoPaused) {
-      notifyChatState({ jid, pausado: true, por: 'asesor', auto: true, origen: 'panel' });
-    }
+    registerHumanTakeover(jid, now, 'panel');
   } catch (e: any) {
     console.warn('[WhatsApp] No se pudo registrar la intervención del asesor:', e?.message || e);
   }

@@ -22,7 +22,8 @@ export default function CasheaCalculatorView({
   products = [],
   bcvRate = 849.56,
   onCopyManualQuote,
-  copiedId
+  copiedId,
+  casheaCuotas = 3
 }) {
   const [calcMode, setCalcMode] = useState('catalog'); // 'catalog' | 'manual'
   const [manualUsd, setManualUsd] = useState('50');
@@ -133,7 +134,8 @@ export default function CasheaCalculatorView({
 
   const saldoFinanciarUsd = totalUsd - inicialUsd;
 
-  const cuotaQuincenalUsd = saldoFinanciarUsd / 3;
+  const cuotasCasheaNum = Math.max(1, parseInt(casheaCuotas, 10) || 3);
+  const cuotaQuincenalUsd = saldoFinanciarUsd / cuotasCasheaNum;
   const cuotaQuincenalBs = cuotaQuincenalUsd * bcvRate;
 
   const qualifiesCashea = totalUsd >= 25;
@@ -161,12 +163,12 @@ export default function CasheaCalculatorView({
       if (qualifiesCashea) {
         quoteText += `💛 *Plan de Pago Cashea (Nivel ${selectedNivel} - ${Math.round(inicialPct * 100)}%):*\n`;
         quoteText += `👉 *Inicial hoy en tienda:* *$${inicialUsd.toFixed(2)} USD* (Bs. ${formatBs(inicialBs)})\n`;
-        quoteText += `👉 *3 Cuotas quincenales sin interés:* *$${cuotaQuincenalUsd.toFixed(2)} USD / cuota* (Bs. ${formatBs(cuotaQuincenalBs)})\n\n`;
+        quoteText += `👉 *${cuotasCasheaNum} Cuotas quincenales sin interés:* *$${cuotaQuincenalUsd.toFixed(2)} USD / cuota* (Bs. ${formatBs(cuotaQuincenalBs)})\n\n`;
         quoteText += `📍 *Retiro inmediato:* Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas.\n`;
         quoteText += `🛵 O si prefieres te lo enviamos con delivery a toda Caracas.\n\n`;
         quoteText += `¿Deseas que te apartemos este combo por 24 horas sin costo? Escribe *SI* para reservarlo.`;
       } else {
-        quoteText += `⚠️ *Aviso Cashea:* Para financiar en 3 cuotas con tu app Cashea, el consumo mínimo en tienda es de *$25 USD* (faltan solo $${amountShort.toFixed(2)} USD). ¡Puedes agregar otro repuesto para llevarte todo financiado!\n\n`;
+        quoteText += `⚠️ *Aviso Cashea:* Para financiar en ${cuotasCasheaNum} cuotas con tu app Cashea, el consumo mínimo en tienda es de *$25 USD* (faltan solo $${amountShort.toFixed(2)} USD). ¡Puedes agregar otro repuesto para llevarte todo financiado!\n\n`;
         quoteText += `Escribe *VENDEDOR* si deseas que te armemos un combo a tu medida. 👨‍🔧`;
       }
     } else if (selectedProduct) {
@@ -176,7 +178,7 @@ export default function CasheaCalculatorView({
       if (qualifiesCashea) {
         quoteText += `💛 *Financiamiento Cashea (Nivel ${selectedNivel}):*\n`;
         quoteText += `👉 *Inicial hoy en tienda:* *$${inicialUsd.toFixed(2)} USD* (Bs. ${formatBs(inicialBs)})\n`;
-        quoteText += `👉 *3 Cuotas quincenales:* *$${cuotaQuincenalUsd.toFixed(2)} USD / cuota* (Bs. ${formatBs(cuotaQuincenalBs)})\n\n`;
+        quoteText += `👉 *${cuotasCasheaNum} Cuotas quincenales:* *$${cuotaQuincenalUsd.toFixed(2)} USD / cuota* (Bs. ${formatBs(cuotaQuincenalBs)})\n\n`;
         quoteText += `📍 *Retiro en tienda física:* San Agustín Norte, Caracas.\n`;
         quoteText += `👉 Escribe *APARTAR* para reservarlo por 24 horas sin costo.`;
       } else {
@@ -234,7 +236,7 @@ export default function CasheaCalculatorView({
                 <Calculator size={18} className="text-orange-400" />
                 Parámetros de Financiamiento
               </h3>
-              <p className="text-xs text-slate-400 mt-1">Calcula inicial y 3 cuotas exactas con tasa oficial BCV</p>
+              <p className="text-xs text-slate-400 mt-1">Calcula inicial y {cuotasCasheaNum} cuotas exactas con tasa oficial BCV</p>
             </div>
             {isComboActive && (
               <button
@@ -554,7 +556,7 @@ export default function CasheaCalculatorView({
             <div className="pb-4 border-b border-slate-800 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-base text-white">Plan de Pago Cashea</h3>
-                <p className="text-xs text-slate-400">3 Cuotas Quincenales sin Interés (Tienda Física)</p>
+                <p className="text-xs text-slate-400">{cuotasCasheaNum} Cuotas Quincenales sin Interés (Tienda Física)</p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-orange-500/15 text-orange-400 border border-orange-500/30 flex items-center justify-center">
                 <ShoppingBag size={18} />
@@ -583,7 +585,7 @@ export default function CasheaCalculatorView({
                 </div>
 
                 <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                  Cashea aplica a partir de <strong>$25 USD</strong> en tienda física. Puedes sumar otro repuesto o aumentar la cantidad para activar las 3 cuotas.
+                  Cashea aplica a partir de <strong>$25 USD</strong> en tienda física. Puedes sumar otro repuesto o aumentar la cantidad para activar las {cuotasCasheaNum} cuotas.
                 </p>
 
                 {/* Sugerencias rápidas para completar el combo */}
@@ -641,10 +643,10 @@ export default function CasheaCalculatorView({
               <p className="text-[11px] text-orange-400/80">Escaneas con tu app Cashea en caja y retiras de inmediato</p>
             </div>
 
-            {/* 3 Cuotas Quincenales */}
+            {/* Cuotas Quincenales */}
             <div className="p-4 bg-[#070b14] rounded-2xl border border-slate-800 space-y-2">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                3 Cuotas Quincenales (Vía Cashea)
+                {cuotasCasheaNum} Cuotas Quincenales (Vía Cashea)
               </span>
               <div className="flex items-baseline justify-between">
                 <span className="text-xl font-black text-white font-mono">

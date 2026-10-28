@@ -4,7 +4,7 @@ import { formatBs, formatRate } from '../../utils/formatters';
 import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
-export default function QuickPriceModal({ isOpen, onClose, products = [], bcvData }) {
+export default function QuickPriceModal({ isOpen, onClose, products = [], bcvData, casheaCuotas = 3 }) {
   const [query, setQuery] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const inputRef = useRef(null);
@@ -102,7 +102,9 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
               const precioUsd = parseFloat(p.precio_usd) || 0;
               const precioBs = precioUsd * tasa;
               const hasCashea = precioUsd >= 25;
-              const casheaInicial = precioUsd * 0.40;
+              // [CONSISTENCIA] Usa el plan calculado por el backend según Ajustes.
+              const casheaInicial = Number(p.cashea_inicial_usd ?? (precioUsd * 0.40));
+              const cuotasCashea = Math.max(1, parseInt(p.cashea_cuotas ?? casheaCuotas, 10) || 3);
               const isCopied = copiedId === p.id;
               const hasStock = p.stock > 0;
 
@@ -138,7 +140,7 @@ export default function QuickPriceModal({ isOpen, onClose, products = [], bcvDat
 
                     {hasCashea && (
                       <div className="mt-1.5 text-[11px] text-amber-300 font-semibold flex items-center gap-1">
-                        <span>💛 Cashea: Inicial ${casheaInicial.toFixed(2)} + 3 cuotas quincenales</span>
+                        <span>💛 Cashea: Inicial ${casheaInicial.toFixed(2)} + {cuotasCashea} cuotas quincenales</span>
                       </div>
                     )}
                   </div>

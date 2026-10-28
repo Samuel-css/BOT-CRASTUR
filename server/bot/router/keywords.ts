@@ -25,6 +25,20 @@ export function equalsAny(norm: string, phrases: readonly string[]): boolean {
   return phrases.includes(norm);
 }
 
+/**
+ * [PRECISIÓN] True si el texto contiene la frase como PALABRA COMPLETA.
+ * Necesario para claves ambiguas: evita que "aparta" active apartados en "apartamento"
+ * o que "auto" active la respuesta de carros en "automático".
+ */
+export function includesWordAny(norm: string, phrases: readonly string[]): boolean {
+  for (const phrase of phrases) {
+    if (!phrase) continue;
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(^|\\s)${escaped}(\\s|$)`).test(norm)) return true;
+  }
+  return false;
+}
+
 export const KEYWORDS = {
   binance: ['binance', 'usdt', 'binance pay', 'cripto', 'crypto', 'bitcoin', 'btc', 'criptomoneda', 'criptomonedas'],
 
@@ -43,7 +57,7 @@ export const KEYWORDS = {
   ],
 
   rate: ['a que tasa', 'cual es la tasa', 'que tasa', 'tasa bcv', 'tasa de hoy', 'tasa del dia', 'a como esta el dolar', 'a como reciben', 'precio del dolar'],
-  rateEquals: ['tasa', 'precio', 'precios', 'dolar', 'dolares'],
+  rateEquals: ['tasa', 'dolar', 'dolares'],
 
   nationalShipping: ['nacional', 'al interior', 'interior del pais', 'otra ciudad', 'otro estado', 'tealca', 'zoom', 'mrw', 'domesa', 'valencia', 'maracay', 'barquisimeto', 'maracaibo', 'puerto la cruz', 'maturin', 'merida', 'san cristobal'],
 
@@ -64,13 +78,13 @@ export const KEYWORDS = {
   paymentMethods: ['como pagar', 'como pago', 'formas de pago', 'metodos de pago', 'pago movil', 'que metodo', 'aceptan dolares', 'aceptan divisas', 'como reciben el pago', 'como se realiza el pago', 'transferencia', 'se puede pagar', 'puedo pagar', 'pagar al llegar', 'pago al llegar', 'pagar en persona', 'pago en persona', 'pagar al recibir', 'pago al recibir', 'pago contra entrega', 'pagar al recibir el pedido', 'aceptan efectivo', 'pago en efectivo', 'efectivo', 'bolivares', 'en bolivares'],
   paymentMethodsEquals: ['como se paga', 'formas de pago', 'metodos de pago'],
 
-  apartado: ['apartar', 'reservar', 'aparta', 'reserva', 'guardamelo', 'guardamela', 'guardalo', 'guardala', 'lo quiero apartar', 'quiero apartar', 'lo paso a buscar', 'lo voy a buscar'],
+  apartado: ['apartar', 'reservar', 'aparta', 'reserva', 'guardamelo', 'guardamela', 'guardalo', 'guardala', 'lo quiero apartar', 'quiero apartar', 'lo paso a buscar', 'lo voy a buscar', 'apartame', 'reservame', 'apartalo', 'apartala', 'apartalos', 'apartalas'],
 
   delivery: ['delivery', 'envio', 'envios', 'hacen delivery', 'ponen delivery', 'traen', 'llevan', 'motorizado', 'mandan', 'flete', 'a domicilio', 'a toda caracas', 'a todas caracas'],
 
-  storeHours: ['horario', 'abren', 'cierran', 'estan abiertos', 'que hora abren', 'a que hora', 'hasta que hora', 'atienden hoy', 'atienden el', 'trabajan los domingos', 'trabajan domingos', 'trabajan el domingo', 'atienden el domingo', 'abren los domingos', 'abren domingo'],
+  storeHours: ['horario', 'abren', 'cierran', 'estan abiertos', 'que hora abren', 'a que hora', 'hasta que hora', 'atienden hoy', 'atienden el', 'trabajan los domingos', 'trabajan domingos', 'trabajan el domingo', 'atienden el domingo', 'abren los domingos', 'abren domingo', 'feriado', 'feriados', 'dia feriado'],
 
-  warranty: ['garantia', 'devolucion', 'defectuoso', 'si no le sirve', 'si no le queda', 'no le funciono', 'vino malo', 'vino defectuoso'],
+  warranty: ['garantia', 'devolucion', 'defectuoso', 'si no le sirve', 'si no le queda', 'no le funciono', 'vino malo', 'vino defectuoso', 'viene malo', 'sale malo', 'salio malo', 'no funciona', 'dejo de funcionar'],
 
   availability: ['hay disponible en tienda', 'entrega inmediata', 'tienes en stock', 'disponible', 'disponibilidad'],
   availabilityEquals: ['disponibilidad', 'disponible', 'hay disponible', 'tienen en tienda', 'entrega inmediata'],
@@ -86,16 +100,20 @@ export const KEYWORDS = {
 
   cauchera: ['cauchera', 'caucho', 'llanta', 'llantas', 'goma', 'gomas', 'valvula', 'parche', 'nitrogeno', 'inflado', 'camara de aire', 'neumatico'],
 
-  greetingParts: ['buenos dias', 'buenas tardes', 'buenas noches', 'epale', 'que mas', 'que tal', 'saludos', 'mi pana'],
+  greetingParts: ['buenos dias', 'buen dia', 'buenas tardes', 'buenas noches', 'epale', 'que mas', 'que tal', 'saludos', 'mi pana'],
   greetingEquals: ['hola', 'hola!', 'ola', 'buenas', 'menu', 'inicio', 'ayuda', 'info', 'informacion', 'que tienen', 'que venden', 'que manejan', 'que tienen disponible', 'que ofrecen', 'que productos tienen', 'que productos venden', 'que venden aqui', 'que tienes', 'tienen catalogo', 'que hay', 'chamo', 'pana', 'todo', 'todo el catalogo', 'ver todo'],
 
   // [VENTA AL MAYOR] Consultas de compra por volumen
-  wholesale: ['al mayor', 'mayorista', 'por mayor', 'precio al mayor', 'ventas al mayor', 'compra por volumen', 'al detal'],
+  wholesale: ['al mayor', 'mayorista', 'por mayor', 'precio al mayor', 'ventas al mayor', 'compra por volumen'],
 
   // [PRECIO SIN PRODUCTO] El cliente pregunta el precio sin decir qué repuesto
-  barePriceEquals: ['cuanto vale', 'cuanto cuesta', 'cuanto sale', 'cuanto es', 'cuanto seria', 'vale', 'cuesta'],
+  barePriceEquals: [
+    'cuanto vale', 'cuanto cuesta', 'cuanto sale', 'cuanto es', 'cuanto seria',
+    'vale', 'cuesta', 'precio', 'precios', 'que precio', 'a como', 'a cuanto',
+    'cuanto valen', 'cuanto cuestan', 'cuanto esta', 'cuanto estan', 'cotizame'
+  ],
 
   carGeneric: ['carro', 'auto', 'vehiculo', 'camioneta', 'sedan', '4x4']
 } as const;
 
-export default { KEYWORDS, includesAny, equalsAny };
+export default { KEYWORDS, includesAny, equalsAny, includesWordAny };

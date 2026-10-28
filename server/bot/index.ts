@@ -101,7 +101,7 @@ import { checkPendingFollowUps, check22hReservationReminders } from './followUp/
 // Módulos de enrutamiento extraídos (guards y comandos de flujo)
 import { runGuards, SILENCE } from './router/guards';
 import { runFlowCommands } from './router/flowCommands';
-import { KEYWORDS, includesAny, equalsAny } from './router/keywords';
+import { KEYWORDS, includesAny, equalsAny, includesWordAny } from './router/keywords';
 
 // [AVISO AL PANEL] Notificación en vivo al Live Inbox cuando el bot necesita ayuda humana
 import { notifyLiveMessage } from '../whatsapp/socketState';
@@ -557,7 +557,7 @@ function processIncomingMessageCore(
   // ============================================================================
   // [SECCIÓN 23] Solicitud de Apartado / Reserva 24h
   // ============================================================================
-  if (includesAny(norm, KEYWORDS.apartado)) {
+  if (includesWordAny(norm, KEYWORDS.apartado)) {
     recordMetric('intencion_apartado', text, jid);
     if (settings.fuera_horario_activo === '1') {
       return handleOutOfHoursTransactionResponse(settings, 'apartar');
@@ -767,6 +767,16 @@ function processIncomingMessageCore(
     norm.includes('al mostrador') ||
     norm.includes('asesores') ||
     norm.includes('hablar con alguien') ||
+    norm.includes('un humano') ||
+    norm.includes('una humana') ||
+    norm.includes('persona real') ||
+    norm.includes('pasame con') ||
+    norm.includes('paseme con') ||
+    norm.includes('comunicame con') ||
+    norm.includes('encargado') ||
+    norm.includes('operador') ||
+    norm.includes('un agente') ||
+    norm.includes('agente de ventas') ||
     (norm.includes('vendedor') && !norm.includes('el vendedor me dijo') && !norm.includes('otro vendedor') && !norm.includes('su vendedor')) ||
     (norm.includes('asesor') && !norm.includes('mi asesor') && !norm.includes('asesor financiero') && !norm.includes('asesor de banco')) ||
     (norm.includes('contacto') && (norm.includes('tienda') || norm.includes('crastur') || norm.includes('ustedes') || norm === 'contacto')) ||
@@ -801,8 +811,11 @@ function processIncomingMessageCore(
 
   // ============================================================================
   // [SECCIÓN 32b] Cómo Comprar / Hacer un Pedido (Guía para Clientes Nuevos)
+  // [PRIORIDAD DE PRODUCTO] "quiero comprar una bujía" debe cotizar la bujía, no
+  // mostrar la guía genérica. Solo se responde la guía si NO se detectó producto.
   // ============================================================================
-  if (includesAny(norm, KEYWORDS.howToBuy)) {
+  const productHintForHowToBuy = searchProductsFuzzy(text).length > 0 || searchMultipleProducts(text).length > 0;
+  if (!productHintForHowToBuy && includesAny(norm, KEYWORDS.howToBuy)) {
     recordMetric('consulta_como_comprar', text, jid);
     return handleHowToBuyResponse(settings);
   }
@@ -931,7 +944,7 @@ function processIncomingMessageCore(
   }
 
   // Aclaratoria cuando consultan explícitamente por vehículos de 4 ruedas
-  if (includesAny(norm, KEYWORDS.carGeneric)) {
+  if (includesWordAny(norm, KEYWORDS.carGeneric)) {
     recordMetric('consulta_carro_no_match', text, jid);
     return handleCarInquiryResponse();
   }

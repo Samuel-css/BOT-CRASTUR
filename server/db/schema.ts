@@ -75,6 +75,12 @@ export function applySchemaAndMigrations(): void {
       timestamp INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS chat_aliases (
+      alias_jid TEXT PRIMARY KEY,
+      canonical_jid TEXT NOT NULL,
+      updated_at INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS reservations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       jid TEXT NOT NULL,
@@ -226,6 +232,9 @@ export function applySchemaAndMigrations(): void {
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_messages_jid ON chat_messages(jid)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_messages_jid_ts ON chat_messages(jid, timestamp)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON chat_messages(timestamp)');
+  // [ALIAS DE CHAT] Agrupa el número real y el LID de un mismo contacto para que la pausa
+  // del bot por intervención humana aplique sin importar qué identificador llegue.
+  createIndexSafe('CREATE INDEX IF NOT EXISTS idx_chat_aliases_canonical ON chat_aliases(canonical_jid)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_metrics_evento ON bot_metrics(evento, timestamp)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON bot_metrics(timestamp)');
   createIndexSafe('CREATE INDEX IF NOT EXISTS idx_reservations_estado ON reservations(estado, expira_en)');
@@ -235,7 +244,7 @@ export function applySchemaAndMigrations(): void {
   const defaultSettings = {
     'nombre_negocio': 'Crastur - Insumos para Caucheras, Repuestos de Moto & Otros Productos',
     'tasa_bcv': '849.56',
-    'fecha_tasa': 'Sincronizado con BCV',
+    'fecha_tasa': 'Sin sincronizar',
     'tasa_manual_activa': '0',
     'tasa_personalizada': '849.56',
     'direccion_tienda': 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas, Venezuela',

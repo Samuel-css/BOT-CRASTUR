@@ -15,13 +15,124 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.INSTALLER_PORT) || 4545;
 const isWin = process.platform === 'win32';
 
-// ─── Utilidades ─────────────────────────────────────────────────────────────
+/** [REQUISITO DE NODE] Baileys 7 + Vite 8: Node 20.19+ o 22.12+. */
+function isNodeCompatible() {
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 12) || (major === 20 && minor >= 19);
+}
+
+/** Escapa una cadena como literal de PowerShell (comillas simples duplicadas). */
+function psString(value) {
+  return "'" + String(value).replace(/'/g, "''") + "'";
+}
+
+/** Ruta del acceso directo de inicio automático de Windows. */
+function startupShortcutPath() {
+  const appData = process.env.APPDATA || '';
+  if (!appData) return '';
+  return path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'Crastur.lnk');
+}
+
+function hasAutoStart() {
+  if (!isWin) return false;
+  const p = startupShortcutPath();
+  return !!p && fs.existsSync(p);
+}
+
+/**
+ * Crea/actualiza un acceso directo de Windows que ejecuta el iniciador silencioso.
+ * Se usa para el inicio automático al encender la PC.
+ */
+function createWindowsShortcut(shortcutPath) {
+  if (!isWin || !shortcutPath) throw new Error('El inicio automático solo está disponible en Windows.');
+  const vbs = path.join(ROOT, 'Crastur_SegundoPlano.vbs');
+  const ico = path.join(ROOT, 'crastur.ico');
+  if (!fs.existsSync(vbs)) throw new Error('No se encontró Crastur_SegundoPlano.vbs.');
+
+  const shortcutDir = path.dirname(shortcutPath);
+  if (!fs.existsSync(shortcutDir)) fs.mkdirSync(shortcutDir, { recursive: true });
+
+  const psScript = [
+    '$ErrorActionPreference = "Stop"',
+    '$ws = New-Object -ComObject WScript.Shell',
+    `$s = $ws.CreateShortcut(${psString(shortcutPath)})`,
+    `$s.TargetPath = ${psString('wscript.exe')}`,
+    `$s.Arguments = ${psString('"' + vbs + '"')}`,
+    `$s.WorkingDirectory = ${psString(ROOT)}`,
+    `$s.IconLocation = ${psString(ico + ',0')}`,
+    '$s.Description = "Crastur - Sistema de Ventas y Bot de WhatsApp"',
+    '$s.Save()'
+  ].join('\r\n');
+
+  const dataDir = path.join(ROOT, 'data');
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+  const psFile = path.join(dataDir, 'crear_acceso_inicio.ps1');
+  fs.writeFileSync(psFile, psScript, 'utf8');
+  try {
+    execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psFile], { stdio: 'ignore', timeout: 15000 });
+  } finally {
+    try { fs.unlinkSync(psFile); } catch {}
+  }
+}
+
+/**
+ * [INSTALACIÓN COMPLETA] Revisa las piezas que el servidor necesita para arrancar,
+ * no solo `express`. Antes una instalación a medias se consideraba "lista" y el
+ * sistema fallaba al iniciar (faltaba `tsx`, `sql.js` o la librería de WhatsApp).
+ */
+function hasModules() {
+  const nm = path.join(ROOT, 'node_modules');
+  const required = [
+    ['express'],
+    ['tsx'],
+    ['sql.js'],
+    ['ws'],
+    ['@whiskeysockets', 'baileys']
+  ];
+  for (const parts of required) {
+    if (!fs.existsSync(path.join(nm, ...parts))) return false;
+  }
+  return hasPlatformEsbuild();
+}
+
+/** El motor de TypeScript (esbuild) trae un binario distinto por sistema operativo. */
+function hasPlatformEsbuild() {
+  try {
+    const dir = path.join(ROOT, 'node_modules', '@esbuild');
+    if (!fs.existsSync(dir)) return false;
+    const prefix = `${process.platform}-`;
+    return fs.readdirSync(dir).some((d) => d.startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
+
+function hasClientDist() {
+  return fs.existsSync(path.join(ROOT, 'client', 'dist', 'index.html'));
+}
+function hasClientModules() {
+  if (!fs.existsSync(path.join(ROOT, 'client', 'node_modules', 'vite'))) return false;
+  // Vite también usa esbuild: si las dependencias del panel vienen de otro sistema
+  // operativo, el binario no sirve y la compilación falla.
+  try {
+    const esbuildDir = path.join(ROOT, 'client', 'node_modules', '@esbuild');
+    if (!fs.existsSync(esbuildDir)) return true;
+    return fs.readdirSync(esbuildDir).some((d) => d.startsWith(`${process.platform}-`));
+  } catch {
+    return false;
+  }
+}
+function dbExists() {
+  return fs.existsSync(path.join(ROOT, 'data', 'crastur.db'));
+}
+
+/** Ejecuta un comando y transmite su salida en vivo al panel del instalador. */
 function run(cmd, args, opts = {}) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
@@ -35,19 +146,6 @@ function run(cmd, args, opts = {}) {
     child.on('close', code => resolve({ code, out }));
     child.on('error', err => resolve({ code: -1, out: String(err) }));
   });
-}
-
-function hasModules() {
-  return fs.existsSync(path.join(ROOT, 'node_modules', 'express'));
-}
-function hasClientDist() {
-  return fs.existsSync(path.join(ROOT, 'client', 'dist', 'index.html'));
-}
-function hasClientModules() {
-  return fs.existsSync(path.join(ROOT, 'client', 'node_modules'));
-}
-function dbExists() {
-  return fs.existsSync(path.join(ROOT, 'data', 'crastur.db'));
 }
 
 /**
@@ -72,17 +170,30 @@ const routes = {
       ok: true,
       sistema: 'Crastur',
       node: process.version,
+      nodeCompatible: isNodeCompatible(),
+      nodeRequerido: '20.19+ o 22.12+ (recomendado 22 LTS)',
       plataforma: process.platform,
       carpeta: ROOT,
       dependencias: hasModules(),
       clienteInstalado: hasClientModules(),
       panelCompilado: hasClientDist(),
       baseDeDatos: dbExists(),
-      listo: hasModules() && hasClientDist() && dbExists()
+      inicioAutomatico: hasAutoStart(),
+      // [VERACIDAD] La base de datos se crea al iniciar Crastur por primera vez.
+      // No debe impedir que el instalador muestre "listo" tras una instalación correcta.
+      listo: hasModules() && hasClientDist()
     };
   },
 
   'POST /api/instalar': async (send) => {
+    if (!isNodeCompatible()) {
+      send({
+        completado: true,
+        exito: false,
+        texto: `Tu Node.js (${process.version}) no es compatible. Instala Node.js 22 LTS desde https://nodejs.org y vuelve a intentarlo.`
+      });
+      return;
+    }
     send({ paso: 1, total: 4, texto: 'Instalando componentes del servidor...' });
     if (!hasModules()) {
       const r1 = await run('npm', ['install', '--no-audit', '--no-fund'], { onData: (d) => send({ log: d }) });
@@ -121,6 +232,10 @@ const routes = {
   },
 
   'POST /api/respaldar': async (send) => {
+    if (!hasModules()) {
+      send({ completado: true, exito: false, texto: 'Primero completa la instalación del sistema para poder crear respaldos.' });
+      return;
+    }
     send({ paso: 1, total: 1, texto: 'Creando copia de seguridad del catálogo y asesores...' });
     const outName = `catalogo_asesores_${new Date().toISOString().slice(0, 10)}.json`;
     const outPath = path.join('data', 'backups', outName);
@@ -131,12 +246,16 @@ const routes = {
   'POST /api/restaurar': async (body, send) => {
     // body: { archivo: 'ruta/al/archivo.json' }
     if (!body?.archivo) { send({ completado: true, exito: false, texto: 'No se indicó archivo a restaurar.' }); return; }
+    if (!hasModules()) {
+      send({ completado: true, exito: false, texto: 'Primero completa la instalación del sistema para poder restaurar respaldos.' });
+      return;
+    }
 
     // [SEGURIDAD] La ruta debe vivir dentro de la carpeta de respaldos del propio proyecto.
     // Esto evita que un valor manipulado pueda apuntar a otra ubicación del disco.
     const backupsDir = path.resolve(ROOT, 'data', 'backups');
     const archivo = path.resolve(ROOT, body.archivo);
-    if (!archivo.startsWith(backupsDir + path.sep) && !archivo.startsWith(path.resolve(ROOT) + path.sep)) {
+    if (!archivo.startsWith(backupsDir + path.sep)) {
       send({ completado: true, exito: false, texto: 'El archivo de respaldo no se encuentra en la carpeta permitida.' });
       return;
     }
@@ -159,11 +278,78 @@ const routes = {
   },
 
   'POST /api/arrancar': async (send) => {
+    if (!isNodeCompatible()) {
+      send({
+        completado: true,
+        exito: false,
+        texto: `Tu Node.js (${process.version}) no es compatible. Instala Node.js 22 LTS desde https://nodejs.org.`
+      });
+      return;
+    }
     send({ texto: 'Iniciando Crastur en segundo plano...' });
-    const cmd = isWin ? 'cmd' : 'node';
-    const args = isWin ? ['/c', 'start', '""', 'node', 'launcher.js'] : ['launcher.js'];
-    spawn(cmd, args, { cwd: ROOT, detached: true, stdio: 'ignore', shell: true }).unref();
-    setTimeout(() => send({ completado: true, texto: 'Crastur está iniciando. Abriendo el panel...' }), 1500);
+    // [SIN VENTANA NEGRA] En Windows se usa el mismo iniciador silencioso del acceso
+    // directo. Antes se abría una consola con `node launcher.js` y, si fallaba, el error
+    // se perdía porque la salida no se guardaba en ningún lado.
+    if (isWin) {
+      const vbs = path.join(ROOT, 'Crastur_SegundoPlano.vbs');
+      spawn('wscript.exe', [vbs], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn(process.execPath, ['launcher.js'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref();
+    }
+    setTimeout(() => send({ completado: true, texto: 'Crastur está iniciando. En unos segundos se abrirá el panel en tu navegador.' }), 1500);
+  },
+
+  'POST /api/inicio-automatico': async (body, send) => {
+    if (!isWin) {
+      send({ completado: true, exito: false, texto: 'El inicio automático al encender la PC está disponible solo en Windows.' });
+      return;
+    }
+    const activar = !!body?.activar;
+    try {
+      const target = startupShortcutPath();
+      if (!target) throw new Error('No se pudo ubicar la carpeta de Inicio de Windows.');
+      if (activar) {
+        createWindowsShortcut(target);
+        if (!fs.existsSync(target)) throw new Error('Windows no pudo crear el acceso directo de inicio.');
+      } else if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+      send({
+        completado: true,
+        exito: true,
+        activo: activar,
+        inicioAutomatico: activar,
+        texto: activar
+          ? 'Listo: Crastur se iniciará automáticamente al encender la PC.'
+          : 'Listo: Crastur ya no se iniciará automáticamente al encender la PC.'
+      });
+    } catch (e) {
+      send({ completado: true, exito: false, texto: `No se pudo cambiar el inicio automático: ${e?.message || e}` });
+    }
+  },
+
+  'POST /api/catalogo-demo': async (send) => {
+    if (!isNodeCompatible()) {
+      send({ completado: true, exito: false, texto: 'Actualiza Node.js a 20.19+ o 22.12+ antes de cargar el catálogo de prueba.' });
+      return;
+    }
+    if (!hasModules()) {
+      send({ completado: true, exito: false, texto: 'Primero completa la instalación del sistema.' });
+      return;
+    }
+    if (await estaCrasturEncendido()) {
+      send({ completado: true, exito: false, texto: 'Para cargar el catálogo de prueba, primero apaga Crastur desde el botón “Apagar” del panel y vuelve a intentarlo.' });
+      return;
+    }
+    send({ texto: 'Cargando catálogo de demostración...' });
+    const result = await run('npx', ['tsx', 'scripts/cargar_catalogo_demo.ts'], { onData: (d) => send({ log: d }) });
+    send({
+      completado: true,
+      exito: result.code === 0,
+      texto: result.code === 0
+        ? '¡Catálogo de demostración cargado! Enciende Crastur para probar el bot.'
+        : 'No se pudo cargar el catálogo de demostración. Revisa el detalle de arriba.'
+    });
   },
 
   'GET /api/respaldos': () => {
@@ -211,12 +397,12 @@ const server = http.createServer(async (req, res) => {
   const key = `${req.method} ${url}`;
   if (routes[key]) {
     const body = req.method === 'POST' ? await readBody(req) : null;
-    if (url === '/api/instalar' || url === '/api/actualizar-panel' || url === '/api/respaldar' || url === '/api/restaurar' || url === '/api/arrancar') {
+    if (url === '/api/instalar' || url === '/api/actualizar-panel' || url === '/api/respaldar' || url === '/api/restaurar' || url === '/api/arrancar' || url === '/api/inicio-automatico' || url === '/api/catalogo-demo') {
       // Streaming NDJSON de progreso
       res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Transfer-Encoding': 'chunked' });
       const send = (obj) => { try { res.write(JSON.stringify(obj) + '\n'); } catch {} };
       try {
-        if (url === '/api/restaurar') { await routes[key](body, send); }
+        if (url === '/api/restaurar' || url === '/api/inicio-automatico') { await routes[key](body, send); }
         else { await routes[key](send); }
       } catch (e) { send({ error: String(e) }); }
       res.end();
@@ -312,6 +498,11 @@ const PAGE_HTML = `<!doctype html>
   <h1>🛞🏍️ Crastur <span style="font-size:13px;color:var(--mut);font-weight:400">Panel de Instalación y Mantenimiento</span></h1>
   <div class="sub">Instala, actualiza y respalda tu sistema con un clic. No necesitas escribir comandos.</div>
 
+  <div class="card" id="avisoNode" style="display:none;border:1px solid var(--red);background:#2a0e12">
+    <h2 style="color:#fca5a5">⚠ Tu versión de Node.js no es compatible</h2>
+    <p style="color:#fecaca">Crastur necesita <b>Node.js 20.19+ o 22.12+</b> (recomendado 22 LTS). Instálalo desde <b>https://nodejs.org</b> y vuelve a abrir este instalador.</p>
+  </div>
+
   <div class="grid" id="stats"></div>
 
   <div class="card">
@@ -324,6 +515,15 @@ const PAGE_HTML = `<!doctype html>
     <div class="bar"><i id="barra"></i></div>
     <div class="msg" id="msg"></div>
     <div class="log" id="log"></div>
+  </div>
+
+  <div class="card">
+    <h2>Catálogo de demostración (opcional)</h2>
+    <p>Para probar el bot y el panel antes de cargar tu inventario real. Se puede quitar después con el comando <b>npm run catalogo-demo -- --limpiar</b>. Apaga Crastur antes de usarlo.</p>
+    <div class="row">
+      <button class="b-2" id="btnDemo">🧪 Cargar catálogo de demostración</button>
+    </div>
+    <div class="msg" id="msgDemo"></div>
   </div>
 
   <div class="card">
@@ -345,30 +545,49 @@ const PAGE_HTML = `<!doctype html>
     </div>
   </div>
 
+  <div class="card" id="cardInicioAuto">
+    <h2>4. Inicio automático al encender la PC</h2>
+    <p>Recomendado para la computadora del bot: si hay un corte de luz o reinicias Windows, Crastur vuelve a arrancar solo sin que nadie haga clic.</p>
+    <div class="row">
+      <button class="b-2" id="btnInicioAuto">⚙️ Activar inicio automático</button>
+    </div>
+    <div class="msg" id="msgInicio"></div>
+  </div>
+
   <div class="foot">Crastur · Insumos para Caucheras y Repuestos de Moto · Caracas</div>
 </div>
 
 <script>
 const el = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+let inicioAutoActivo = false;
 
 async function cargarEstado(){
   try{
     const r = await fetch('/api/estado'); const d = await r.json();
     const s = (v,ok) => '<span class="'+(ok?'ok':'no')+'">'+(v?'✓ Instalado':'✗ Falta')+'</span>';
+    const aviso = el('avisoNode');
+    if (aviso) aviso.style.display = d.nodeCompatible ? 'none' : 'block';
+    const cardAuto = el('cardInicioAuto');
+    if (cardAuto) cardAuto.style.display = d.plataforma === 'win32' ? 'block' : 'none';
     el('stats').innerHTML = [
-      ['Sistema', d.sistema + ' (' + d.node + ')'],
+      ['Node.js', '<span class="'+(d.nodeCompatible?'ok':'no')+'">'+d.node+(d.nodeCompatible?' ✓':' ✗ incompatible')+'</span>'],
       ['Dependencias servidor', s(d.dependencias, d.dependencias)],
       ['Panel visual compilado', s(d.panelCompilado, d.panelCompilado)],
-      ['Base de datos', s(d.baseDeDatos, d.baseDeDatos)],
+      ['Base de datos', d.baseDeDatos ? s(true,true) : '<span style="color:var(--mut)">Se crea al iniciar</span>'],
+      ['Inicio automático', d.inicioAutomatico ? '<span class="ok">✓ Activado</span>' : '<span style="color:var(--mut)">Desactivado</span>'],
       ['Estado', d.listo ? '<span class="ok">Listo para usar</span>' : '<span class="no">Requiere instalación</span>']
     ].map(([k,v]) => '<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>').join('');
+    inicioAutoActivo = !!d.inicioAutomatico;
+    const btnAuto = el('btnInicioAuto');
+    if (btnAuto) btnAuto.textContent = inicioAutoActivo ? '⛔ Quitar inicio automático' : '⚙️ Activar inicio automático';
   }catch(e){ el('stats').innerHTML = '<div class="stat"><div class="v no">No se pudo leer el estado</div></div>'; }
 }
 
-async function stream(url, opts, onDone){
+async function stream(url, opts, onDone, msgId = 'msg'){
   const logEl = el('log'); logEl.style.display='block'; logEl.textContent='';
   const barra = el('barra'); barra.style.width='5%';
+  const msgEl = el(msgId);
   try{
     const res = await fetch(url, Object.assign({method:'POST',headers:{'Content-Type':'application/json'}}, opts));
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf='';
@@ -381,13 +600,13 @@ async function stream(url, opts, onDone){
         if(!line) continue;
         let j; try{ j = JSON.parse(line); }catch{ continue; }
         if(j.log){ logEl.textContent += j.log; logEl.scrollTop = logEl.scrollHeight; }
-        if(j.texto){ el('msg').textContent = j.texto; el('msg').className='msg ok'; }
+        if(j.texto){ msgEl.textContent = j.texto; msgEl.className='msg ok'; }
         if(j.paso && j.total){ barra.style.width = Math.round(j.paso/j.total*100)+'%'; }
-        if(j.completado){ barra.style.width='100%'; el('msg').textContent = j.texto || 'Listo'; el('msg').className='msg '+(j.exito===false?'no':'ok'); if(onDone) onDone(j); }
-        if(j.error){ el('msg').textContent = 'Error: '+j.error; el('msg').className='msg no'; }
+        if(j.completado){ barra.style.width='100%'; msgEl.textContent = j.texto || 'Listo'; msgEl.className='msg '+(j.exito===false?'no':'ok'); if(onDone) onDone(j); }
+        if(j.error){ msgEl.textContent = 'Error: '+j.error; msgEl.className='msg no'; }
       }
     }
-  }catch(e){ el('msg').textContent = 'Error de conexión: '+e; }
+  }catch(e){ msgEl.textContent = 'Error de conexión: '+e; }
   cargarEstado();
 }
 
@@ -395,6 +614,18 @@ el('btnInstalar').onclick = async () => { el('btnInstalar').disabled=true; await
 el('btnPanel').onclick = async () => { el('btnPanel').disabled=true; await stream('/api/actualizar-panel',{},()=>el('btnPanel').disabled=false); el('btnPanel').disabled=false; };
 el('btnRespaldar').onclick = async () => { el('btnRespaldar').disabled=true; await stream('/api/respaldar',{},()=>{el('btnRespaldar').disabled=false; verRespaldos();}); el('btnRespaldar').disabled=false; };
 el('btnArrancar').onclick = async () => { el('btnArrancar').disabled=true; await stream('/api/arrancar',{},()=>{}); el('btnArrancar').disabled=false; };
+el('btnInicioAuto').onclick = async () => {
+  const activar = !inicioAutoActivo;
+  el('btnInicioAuto').disabled = true;
+  await stream('/api/inicio-automatico', { body: JSON.stringify({ activar }) }, () => { el('btnInicioAuto').disabled = false; }, 'msgInicio');
+  el('btnInicioAuto').disabled = false;
+};
+el('btnDemo').onclick = async () => {
+  if (!confirm('¿Cargar el catálogo de demostración? Se agregarán productos de prueba (no borra los que ya tengas). Recuerda apagar Crastur primero.')) return;
+  el('btnDemo').disabled = true;
+  await stream('/api/catalogo-demo', {}, () => { el('btnDemo').disabled = false; }, 'msgDemo');
+  el('btnDemo').disabled = false;
+};
 
 async function verRespaldos(){
   const r = await fetch('/api/respaldos'); const d = await r.json();

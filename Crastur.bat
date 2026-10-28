@@ -35,19 +35,30 @@ where node >nul 2>nul
 if %errorlevel% equ 0 goto check_node_version
 
 :check_node_version
-rem Crastur requiere Node.js 18 o superior
-for /f "tokens=1 delims=." %%v in ('node -p "process.versions.node"') do set "NODE_MAJOR=%%v"
-if %NODE_MAJOR% lss 18 goto error_old_node
+rem Crastur requiere Node.js 20.19+ (o 22.12+) por Baileys 7 y Vite 8.
+for /f "tokens=1,2 delims=." %%v in ('node -p "process.versions.node"') do (
+    set "NODE_MAJOR=%%v"
+    set "NODE_MINOR=%%w"
+)
+if %NODE_MAJOR% lss 20 goto error_old_node
+if %NODE_MAJOR% equ 20 if %NODE_MINOR% lss 19 goto error_old_node
+if %NODE_MAJOR% equ 21 goto error_old_node
+if %NODE_MAJOR% equ 22 if %NODE_MINOR% lss 12 goto error_old_node
 goto check_install
 
 :error_old_node
 color 0C
 echo.
 echo ==============================================================
-echo  [ERROR] Tu version de Node.js es demasiado antigua.
+echo  [ERROR] Tu version de Node.js es incompatible.
 echo ==============================================================
 echo.
-echo  Crastur necesita Node.js 18 o superior.
+echo  Crastur necesita Node.js 20.19+ o 22.12+.
+echo  Recomendado: Node.js 22 LTS.
+echo.
+echo  (La libreria de WhatsApp requiere Node 20+ y el panel visual
+echo   requiere Node 20.19+ o 22.12+).
+echo.
 echo  Descarga la version LTS mas reciente en: https://nodejs.org
 echo.
 echo  Despues de instalarla, vuelve a hacer doble clic en Crastur.bat
@@ -73,6 +84,9 @@ exit /b 1
 :check_install
 rem Si faltan dependencias o el panel compilado, abrir el INSTALADOR VISUAL
 if not exist "node_modules\express" goto needs_install
+if not exist "node_modules\tsx" goto needs_install
+if not exist "node_modules\sql.js" goto needs_install
+if not exist "node_modules\@whiskeysockets\baileys" goto needs_install
 if not exist "client\dist\index.html" goto needs_install
 goto start_launcher
 
@@ -84,7 +98,6 @@ echo   El sistema aun no esta instalado o le faltan componentes.
 echo   Se abrira el INSTALADOR VISUAL para dejarlo listo con un clic.
 echo  ------------------------------------------------------------------
 echo.
-pause
 node installer\server.js
 exit /b 0
 

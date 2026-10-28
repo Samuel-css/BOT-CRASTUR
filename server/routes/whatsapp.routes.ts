@@ -24,7 +24,8 @@ import {
   sendManualMessage,
   resumeWhatsAppReconnection,
   isWhatsAppReconnectionPaused,
-  notifyChatState
+  notifyChatState,
+  cancelPendingBotResponsesFor
 } from '../whatsappService';
 import { broadcast } from '../websocket';
 
@@ -171,6 +172,12 @@ router.post('/chat/pause', (req: Request, res: Response) => {
   if (!jid) return res.status(400).json({ error: 'JID es requerido' });
 
   toggleBotPause(jid, !!pausado);
+
+  // [HUMAN TAKEOVER] Si el operador pausa el chat, se cancela de inmediato cualquier
+  // respuesta del bot que estuviera esperando salir (retardo de "escribiendo..." incluido).
+  if (pausado) {
+    try { cancelPendingBotResponsesFor(jid); } catch {}
+  }
 
   let botPausadoPor = null;
   let botPausadoAt = null;

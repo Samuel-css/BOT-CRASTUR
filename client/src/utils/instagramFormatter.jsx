@@ -29,8 +29,11 @@ export function generateInstagramCaption(product, bcvRate = 849.56) {
   const precioBs = precioUsd * (parseFloat(bcvRate) || 849.56);
   const isCombo = categoria.toLowerCase().includes('combo') || categoria.toLowerCase().includes('kit') || modelo.toLowerCase().includes('kit') || modelo.toLowerCase().includes('combo');
   const hasCashea = precioUsd >= 25;
-  const casheaInicial = precioUsd * 0.40;
-  const casheaCuota = (precioUsd - casheaInicial) / 3;
+  // [CONSISTENCIA] Usa el plan Cashea calculado por el backend según Ajustes.
+  const casheaCuotas = Math.max(1, parseInt(product.cashea_cuotas ?? 3, 10) || 3);
+  const casheaInicialPct = Number(product.cashea_inicial_pct ?? 40);
+  const casheaInicial = Number(product.cashea_inicial_usd ?? (precioUsd * (casheaInicialPct / 100)));
+  const casheaCuota = Number(product.cashea_cuota_usd ?? ((precioUsd - casheaInicial) / casheaCuotas));
 
   let caption = `🔥 ${isCombo ? 'COMBO CRASTUR' : 'DISPONIBLE EN CRASTUR'} 🛞🏍️\n`;
   caption += `📌 *${marca ? marca.toUpperCase() + ' - ' : ''}${modelo.toUpperCase()}*\n\n`;
@@ -44,8 +47,8 @@ export function generateInstagramCaption(product, bcvRate = 849.56) {
 
   if (hasCashea) {
     caption += `💛 *Llévatelo con Cashea en Tienda Física:*\n`;
-    caption += `• Inicial hoy: *$${casheaInicial.toFixed(2)} USD* (40%)\n`;
-    caption += `• + 3 cuotas quincenales de *$${casheaCuota.toFixed(2)} USD* (sin intereses)\n\n`;
+    caption += `• Inicial hoy: *$${casheaInicial.toFixed(2)} USD* (${casheaInicialPct}%)\n`;
+    caption += `• + ${casheaCuotas} cuotas quincenales de *$${casheaCuota.toFixed(2)} USD* (sin intereses)\n\n`;
   }
 
   caption += `🏢 *Tienda física:* Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas.\n`;

@@ -4,6 +4,7 @@
 # Windows batch files MUST have CRLF line endings to prevent cmd.exe parsing errors
 *.bat text eol=crlf
 *.cmd text eol=crlf
+*.vbs text eol=crlf
 
 # Shell scripts must have LF line endings
 *.sh text eol=lf

@@ -142,7 +142,7 @@ export default function Header({
           {botPausedGlobal ? (
             <>
               <PlayCircle size={14} className="text-amber-400 shrink-0 animate-pulse" />
-              <span><span className="hidden xl:inline">Bot: </span>Pausa</span>
+              <span><span className="hidden xl:inline">Bot: </span>Pausado</span>
             </>
           ) : (
             <>
@@ -153,13 +153,25 @@ export default function Header({
         </button>
 
         {/* Badge Tasa BCV Oficial */}
-        <div className="h-8.5 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 rounded-xl bg-slate-900/90 border border-slate-800/80 shadow-sm shrink-0">
-          <DollarSign size={13} className="text-orange-400 shrink-0" />
+        <div
+          title={bcvData?.sincronizada === false
+            ? `Tasa sin sincronizar (${bcvData?.fecha_tasa || 'sin fecha'}). Pulsa el botón de actualizar o configura una tasa manual en Ajustes.`
+            : `Tasa BCV: ${bcvData?.fecha_tasa || 'sincronizada'}`}
+          className={`h-8.5 sm:h-9.5 flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 rounded-xl border shadow-sm shrink-0 ${
+            bcvData?.sincronizada === false
+              ? 'bg-amber-950/30 border-amber-500/50'
+              : 'bg-slate-900/90 border-slate-800/80'
+          }`}
+        >
+          <DollarSign size={13} className={bcvData?.sincronizada === false ? 'text-amber-400 shrink-0' : 'text-orange-400 shrink-0'} />
           <div className="flex flex-col justify-center text-left">
-            <span className="text-[11px] sm:text-xs font-bold text-white font-mono leading-none">
+            <span className={`text-[11px] sm:text-xs font-bold font-mono leading-none ${bcvData?.sincronizada === false ? 'text-amber-300' : 'text-white'}`}>
               Bs. {formatRate(bcvData?.tasa_efectiva || 849.56)}
             </span>
           </div>
+          {bcvData?.sincronizada === false && (
+            <span className="text-amber-400 text-[11px] font-bold leading-none" aria-label="Tasa sin sincronizar">⚠</span>
+          )}
           <button
             onClick={onRefreshBCV}
             disabled={loadingBCV}

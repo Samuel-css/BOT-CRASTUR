@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import db from '../server/database';
+import db, { masterSnapshotPath, registerChatAliases } from '../server/database';
+import { registerHumanTakeover, canBotSend, onCancelPendingBotResponses } from '../server/whatsapp/takeover';
 import { processIncomingMessage } from '../server/bot';
 import { resetSpam } from '../server/bot/utils/antiSpam';
 import { extractVenezuelanPhones } from '../server/bot/utils/formatters';
@@ -715,7 +716,9 @@ async function runAllTests() {
     assert(r1Str && r1Str.includes('Bujía'), 'Búsqueda telegráfica de 1 palabra "bujia"');
 
     const r2 = processIncomingMessage(jid, 'precio', 'Ridery Flash');
-    assert(r2 && (r2.includes('BCV') || r2.includes('USD') || r2.includes('Precio')), 'Respuesta inmediata a "precio"');
+    const r2Str = typeof r2 === 'object' && r2 !== null ? (r2.text || '') : String(r2 || '');
+    // [FIX] "precio" suelto debe pedir el repuesto, no devolver la tasa BCV.
+    assert(r2Str && /precio|repuesto|pieza/i.test(r2Str) && !r2Str.includes('Tasa Oficial BCV Hoy'), 'Respuesta inmediata a "precio" pide el producto (no la tasa BCV)');
 
     const r3 = processIncomingMessage(jid, 'donde', 'Ridery Flash');
     assert(r3 && (r3.includes('Liberalba') || r3.includes('San Agustín')), 'Respuesta inmediata a "donde"');
@@ -1012,8 +1015,9 @@ async function runAllTests() {
 
     // 2. Guardado de Snapshot en Disco
     db.saveMasterSnapshotToDisk();
-    const snapshotPath = path.join(__dirname, '..', 'data', 'backups', 'snapshot_maestro_crastur.json');
-    assert(fs.existsSync(snapshotPath), 'Archivo snapshot_maestro_crastur.json persistido en data/backups/');
+    // [AISLAMIENTO] La ruta depende de CRASTUR_DATA_DIR (carpeta temporal en las pruebas).
+    const snapshotPath = masterSnapshotPath;
+    assert(fs.existsSync(snapshotPath), 'Archivo snapshot_maestro_crastur.json persistido en la carpeta de datos activa');
 
     // 3. Importar Respaldo con lógica de Upsert (sin duplicar registros)
     const countAntes = db.db.prepare('SELECT COUNT(*) as count FROM products').get().count;
@@ -1256,6 +1260,110 @@ async function runAllTests() {
       db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
       db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
     }
+  }
+
+  // -------------------------------------------------------------
+  // [HUMAN TAKEOVER v3.3] Reconexión, alias LID y última milla
+  // -------------------------------------------------------------
+  console.log('\n-----------------------------------------------------------------');
+  console.log('✋ [PUNTO 1b] Takeover robusto: historial, alias LID y cancelación');
+  console.log('-----------------------------------------------------------------');
+  {
+    const jidHistorial = '584149990501@s.whatsapp.net';
+    const jidAliasPn = '584149990601@s.whatsapp.net';
+    const jidAliasLid = '900000000001@lid';
+
+    // 1. Un asesor que respondió mientras la PC estaba desconectada pausa el bot al sincronizar
+    db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidHistorial);
+    db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidHistorial);
+    const cancelaciones = { count: 0 };
+    onCancelPendingBotResponses((j) => { if (j === jidHistorial) cancelaciones.count++; });
+
+    const pausadoHistorial = registerHumanTakeover(jidHistorial, Date.now() - 60 * 1000, 'historial');
+    assert(pausadoHistorial === true, 'El asesor detectado en el historial pausa el bot');
+    assert(db.isBotPaused(jidHistorial) === true, 'La sesión queda marcada como pausada tras el historial');
+    assert(cancelaciones.count >= 1, 'Se cancelan las respuestas pendientes al detectar al asesor');
+    assert(canBotSend(jidHistorial) === false, 'La última milla impide cualquier envío automático');
+
+    // 2. Alias LID / número real: pausar uno silencia al otro
+    registerChatAliases([jidAliasPn, jidAliasLid]);
+    db.toggleBotPause(jidAliasPn, true);
+    assert(db.isBotPaused(jidAliasLid) === true, 'La pausa aplica también al identificador LID del mismo cliente');
+    assert(db.shouldReactivateBotForClient(jidAliasLid) === false, 'Una pausa manual no se reactiva por el alias');
+
+    db.toggleBotPause(jidAliasLid, false);
+    assert(db.isBotPaused(jidAliasPn) === false, 'Reanudar libera todas las identidades del mismo cliente');
+
+    // 3. Si el asesor escribe en un chat que el operador pausó a mano, la pausa sigue siendo manual
+    const jidManualTakeover = '584149990801@s.whatsapp.net';
+    db.toggleBotPause(jidManualTakeover, true);
+    registerHumanTakeover(jidManualTakeover, Date.now(), 'telefono');
+    const rowManual = db.db.prepare('SELECT bot_pausado_por FROM chat_sessions WHERE jid = ?').get(jidManualTakeover);
+    assert(rowManual?.bot_pausado_por === 'manual', 'La pausa manual no se convierte en automática si el asesor escribe');
+    db.toggleBotPause(jidManualTakeover, false);
+
+    for (const jid of [jidHistorial, jidAliasPn, jidAliasLid, jidManualTakeover]) {
+      db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jid);
+      db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jid);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // [DICCIONARIO v3.3] Frases compuestas y falsos positivos corregidos
+  // -------------------------------------------------------------
+  console.log('\n-----------------------------------------------------------------');
+  console.log('📚 [PUNTO 1c] Diccionario ampliado y detecciones precisas');
+  console.log('-----------------------------------------------------------------');
+  {
+    const jidDic = '584149990701@s.whatsapp.net';
+    const limpiarDic = () => {
+      db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidDic);
+      db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidDic);
+    };
+
+    // Frases de varias palabras que antes nunca coincidían
+    assert(searchProductsFuzzy('parche frio').length > 0, 'La frase "parche frio" se traduce y encuentra parches');
+    assert(searchProductsFuzzy('camara de aire').length > 0, 'La frase "camara de aire" se traduce a tripa');
+    assert(searchProductsFuzzy('kit de arrastre').length > 0, 'La frase "kit de arrastre" encuentra el kit');
+    assert(searchProductsFuzzy('valvula tr412').length > 0, 'La frase "valvula tr412" encuentra la válvula');
+
+    // "precio" suelto pide el producto (no la tasa)
+    limpiarDic();
+    const respPrecio = String(processIncomingMessage(jidDic, 'precio', 'Cliente Dic') || '');
+    assert(/precio|repuesto|pieza/i.test(respPrecio) && !respPrecio.includes('Tasa Oficial BCV Hoy'), '"precio" pide el producto y no la tasa BCV');
+
+    // "apartamento" no arranca el flujo de apartado
+    limpiarDic();
+    processIncomingMessage(jidDic, 'vivo en un apartamento en Caracas', 'Cliente Dic');
+    const sesApartamento = db.db.prepare('SELECT step FROM chat_sessions WHERE jid = ?').get(jidDic);
+    assert(!sesApartamento || !String(sesApartamento.step || '').startsWith('apartado_'), '"apartamento" no activa el flujo de apartados');
+
+    // "quiero comprar una bujía" cotiza la bujía
+    limpiarDic();
+    const respCompra = String(processIncomingMessage(jidDic, 'quiero comprar una bujia', 'Cliente Dic') || '');
+    assert(/buj[ií]a/i.test(respCompra) && !/C[oó]mo Comprar/i.test(respCompra), '"quiero comprar una bujía" cotiza el producto (no la guía genérica)');
+
+    // "al detal" no se confunde con mayoreo
+    limpiarDic();
+    const respDetal = String(processIncomingMessage(jidDic, 'busco precios al detal', 'Cliente Dic') || '');
+    assert(!respDetal.includes('Compras para Negocios'), '"al detal" no se confunde con venta al mayor');
+
+    // "automático" no activa la respuesta de carros
+    limpiarDic();
+    const respAuto = String(processIncomingMessage(jidDic, 'tienen cambio automatico', 'Cliente Dic') || '');
+    assert(!respAuto.includes('No vendemos piezas internas pesadas'), '"automático" no se confunde con un carro');
+
+    // Nuevas formas de pedir un humano
+    limpiarDic();
+    const respHumano = String(processIncomingMessage(jidDic, 'necesito un humano', 'Cliente Dic') || '');
+    assert(/asesor|vendedor|mostrador|equipo de ventas/i.test(respHumano), '"necesito un humano" deriva a un asesor');
+
+    // Saludo sin tilde explícita
+    limpiarDic();
+    const respBuenDia = String(processIncomingMessage(jidDic, 'buen dia', 'Cliente Dic') || '');
+    assert(/men[uú]|1️⃣|repuesto|bienvenid/i.test(respBuenDia), '"buen día" recibe el menú de bienvenida');
+
+    limpiarDic();
   }
 
   // -------------------------------------------------------------

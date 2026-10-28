@@ -30,6 +30,19 @@ import { ALLOWED_ORIGINS, isAllowedOrigin } from './config/origins';
 const app = express();
 const server = http.createServer(app);
 
+// [REQUISITO DE NODE] Baileys 7 exige Node 20+ y el panel (Vite 8) 20.19+/22.12+.
+// El .bat y el lanzador ya lo validan; esta comprobación protege a quien use `npm start`.
+{
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  const compatible = major > 22 || (major === 22 && minor >= 12) || (major === 20 && minor >= 19);
+  if (!compatible) {
+    console.error(`\n[Arranque] Node.js ${process.versions.node} es incompatible.`);
+    console.error('Crastur necesita Node.js 20.19+ o 22.12+. Recomendado: Node.js 22 LTS.');
+    console.error('Descárgalo en https://nodejs.org y vuelve a iniciar el sistema.\n');
+    process.exit(1);
+  }
+}
+
 // Inicializar capa de WebSockets para Live Inbox y streaming de eventos en tiempo real
 initWebSocket(server);
 

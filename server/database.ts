@@ -43,6 +43,7 @@ import { purgeOldData } from './db/catalog';
 // Reexportación de la API pública del subsistema de base de datos
 export * from './db/engine';
 export * from './db/settings';
+export * from './db/aliases';
 export * from './db/metrics';
 export * from './db/reservations';
 export * from './db/catalog';

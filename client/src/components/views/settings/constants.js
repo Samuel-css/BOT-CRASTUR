@@ -55,11 +55,11 @@ export const WELCOME_TONE_PRESETS = [
     id: 'cashea',
     titulo: 'Especial Cashea (En Cuotas)',
     badge: 'Cashea 💛',
-    desc: 'Destaca que el cliente puede llevarse el repuesto hoy pagando en 3 cuotas.',
+    desc: 'Destaca que el cliente puede llevarse el repuesto hoy pagando en cuotas.',
     Icon: ShoppingBagIcon,
     iconColor: 'text-amber-400',
     color: 'border-amber-500/50 bg-amber-500/10 text-amber-300',
-    texto: '¡Hola! Bienvenido a *Crastur* 🛞🏍️💛\n¡Llévate hoy tus repuestos e insumos pagando solo el 40% inicial y el resto en 3 cuotas quincenales sin interés con Cashea!\n\n¿Qué repuesto necesitas para tu moto hoy? Te confirmamos precio y cuotas al instante.'
+    texto: '¡Hola! Bienvenido a *Crastur* 🛞🏍️💛\n¡Llévate hoy tus repuestos e insumos pagando la inicial y el resto en cuotas quincenales sin interés con Cashea!\n\n¿Qué repuesto necesitas para tu moto hoy? Te confirmamos precio y cuotas al instante.'
   }
 ];
 

@@ -21,6 +21,7 @@ const RAW_PRODUCT_TYPES: string[] = [
   // ⚡ Encendido
   'bujia', 'bujias', 'bobina', 'bobinas', 'cdi', 'estator', 'magneto',
   'regulador', 'rectificador', 'bateria', 'baterias', 'acumulador',
+  'bendix', 'arranque', 'inyector', 'inyectores',
 
   // 🛑 Sistema de frenos
   'pastilla', 'pastillas', 'balata', 'balatas', 'banda', 'bandas', 'freno', 'frenos',
@@ -69,6 +70,7 @@ const RAW_PRODUCT_TYPES: string[] = [
   'horquilla', 'horquillas', 'amortiguador', 'amortiguadores',
   'suspension', 'suspensiones', 'reten', 'retenes',
   'rodamiento', 'rodamientos', 'ruleman', 'rulemanes',
+  'ciguenal', 'ciguenales',
 
   // 🔩 Tornillería, cables y componentes
   'tornillo', 'tornillos', 'tuerca', 'tuercas', 'arandela', 'arandelas',

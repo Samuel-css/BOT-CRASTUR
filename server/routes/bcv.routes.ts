@@ -23,9 +23,13 @@ import { broadcast } from '../websocket';
  */
 router.get('/', (req: Request, res: Response) => {
   const settings = getSettings();
+  const fechaTasa = String(settings.fecha_tasa || '').trim();
+  const tasaGuardada = parseFloat(settings.tasa_bcv) || 0;
   res.json({
-    tasa_bcv: parseFloat(settings.tasa_bcv) || 849.56,
-    fecha_tasa: settings.fecha_tasa,
+    tasa_bcv: tasaGuardada || 849.56,
+    fecha_tasa: fechaTasa,
+    // [VERACIDAD] Una instalación nueva sin internet no debe mostrarse como "sincronizada".
+    sincronizada: !!tasaGuardada && !!fechaTasa && !fechaTasa.toLowerCase().includes('sin sincronizar'),
     tasa_manual_activa: settings.tasa_manual_activa === '1',
     tasa_personalizada: parseFloat(settings.tasa_personalizada) || 849.56,
     tasa_efectiva: getEffectiveRate()

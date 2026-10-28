@@ -3,6 +3,20 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
+// [REQUISITO DE NODE] Baileys 7 necesita Node 20+ y el panel (Vite 8) 20.19+/22.12+.
+// Se valida también aquí para proteger a quienes ejecutan `node launcher.js` o `npm start`.
+const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+const nodeCompatible =
+  nodeMajor > 22 ||
+  (nodeMajor === 22 && nodeMinor >= 12) ||
+  (nodeMajor === 20 && nodeMinor >= 19);
+if (!nodeCompatible) {
+  console.error(`\x1b[31m[Lanzador] Node.js ${process.versions.node} es incompatible.\x1b[0m`);
+  console.error('Crastur necesita Node.js 20.19+ o 22.12+. Recomendado: Node.js 22 LTS.');
+  console.error('Descárgalo en https://nodejs.org y vuelve a intentarlo.');
+  process.exit(1);
+}
+
 // Colores para la consola
 const reset = '\x1b[0m';
 const cyan = '\x1b[36m';
@@ -97,11 +111,13 @@ function ensureDesktopShortcuts() {
     const startVbs = path.join(__dirname, 'Crastur_SegundoPlano.vbs');
 
     const shortcut = path.join(desktop, 'Crastur.lnk');
-    if (!fs.existsSync(shortcut) && fs.existsSync(startVbs)) {
-      // [WINDOWS-ROBUSTO] Se crea el acceso directo con un script de PowerShell escrito en un
-      // archivo temporal (con codificación UTF-8 y comillas simples escapadas), en lugar de
-      // una sola línea con triple escape de comillas, que fallaba con rutas que contienen
-      // espacios o caracteres especiales (ej. "C:\Users\Juan Pérez\...").
+    if (fs.existsSync(startVbs)) {
+      // [WINDOWS-ROBUSTO] Se crea/actualiza el acceso directo con un script de PowerShell
+      // escrito en un archivo temporal (con codificación UTF-8 y comillas simples escapadas),
+      // en lugar de una sola línea con triple escape de comillas, que fallaba con rutas que
+      // contienen espacios o caracteres especiales (ej. "C:\Users\Juan Pérez\...").
+      // [ACTUALIZACIÓN] Se recrea siempre: si el cliente mueve la carpeta, el acceso directo
+      // viejo apuntaba a la ruta anterior y dejaba de funcionar.
       const psScript = [
         '$ErrorActionPreference = "Stop"',
         '$ws = New-Object -ComObject WScript.Shell',
@@ -115,8 +131,13 @@ function ensureDesktopShortcuts() {
       ].join('\r\n');
       const psFile = path.join(__dirname, 'data', 'crear_acceso_directo.ps1');
       fs.writeFileSync(psFile, psScript, 'utf8');
-      execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`, { stdio: 'ignore' });
-      try { fs.unlinkSync(psFile); } catch (e) {}
+      try {
+        execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`, { stdio: 'ignore', timeout: 15000 });
+      } catch (e) {
+        console.warn('[Lanzador] No se pudo crear/actualizar el acceso directo del Escritorio.');
+      } finally {
+        try { fs.unlinkSync(psFile); } catch (e) {}
+      }
     }
 
     // Limpiar accesos redundantes anteriores si existieran
@@ -141,7 +162,13 @@ async function main() {
   }
 
   const rootNodeModules = path.join(__dirname, 'node_modules');
-  const hasRootModules = fs.existsSync(rootNodeModules) && fs.existsSync(path.join(rootNodeModules, 'express'));
+  const esbuildDir = path.join(rootNodeModules, '@esbuild');
+  const hasPlatformEsbuild = fs.existsSync(esbuildDir)
+    && fs.readdirSync(esbuildDir).some((d) => d.startsWith(`${process.platform}-`));
+  const hasRootModules = fs.existsSync(rootNodeModules)
+    && ['express', 'tsx', 'sql.js'].every((m) => fs.existsSync(path.join(rootNodeModules, m)))
+    && fs.existsSync(path.join(rootNodeModules, '@whiskeysockets', 'baileys'))
+    && hasPlatformEsbuild;
   const clientDist = path.join(__dirname, 'client', 'dist', 'index.html');
   const hasDist = fs.existsSync(clientDist);
 
@@ -153,16 +180,15 @@ async function main() {
     return;
   }
 
-  // 3) Asegurar carpetas de datos y respaldo preventivo
+  // 3) Asegurar carpetas de datos
+  // [NO SOBRESCRIBIR EL RESPALDO BUENO] Antes se copiaba `crastur.db` sobre
+  // `backups/crastur_backup.db` en cada arranque. Si la base estaba dañada, esa copia
+  // destruía el último respaldo sano y el sistema no podía recuperarse. El motor de datos
+  // ya crea su propio respaldo preventivo DESPUÉS de validar la integridad del archivo.
   const dataDir = path.join(__dirname, 'data');
   const backupDir = path.join(dataDir, 'backups');
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-
-  const dbFile = path.join(dataDir, 'crastur.db');
-  if (fs.existsSync(dbFile)) {
-    try { fs.copyFileSync(dbFile, path.join(backupDir, 'crastur_backup.db')); } catch (e) {}
-  }
 
   ensureDesktopShortcuts();
 
@@ -197,7 +223,8 @@ async function main() {
     // NO abrir el navegador si no respondió: evita el error de "no se puede conectar"
     console.log(`\n\n${red}${bold}⚠️ El sistema está tardando demasiado en responder.${reset}`);
     console.log(`${yellow}NO se abrió el navegador para no mostrar un error.${reset}`);
-    console.log(`${cyan}Espera unos segundos y vuelve a hacer doble clic en Crastur, o pulsa Instalar.bat para reparar.${reset}\n`);
+    console.log(`${cyan}Espera unos segundos y vuelve a hacer doble clic en Crastur, o pulsa Instalar.bat para reparar.${reset}`);
+    console.log(`${cyan}Si el problema continúa, revisa si otro programa está usando el puerto ${PORT}.${reset}\n`);
     return;
   }
 

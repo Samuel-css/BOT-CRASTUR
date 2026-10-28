@@ -28,6 +28,20 @@ Por eso, para una atención sin interrupciones:
 
 ---
 
+## 🧰 Requisitos de la computadora
+
+- **Windows 10 u 11 de 64 bits** (también funciona en macOS/Linux por consola).
+- **Node.js 22 LTS** — mínimo **20.19+** (o 22.12+).  
+  La librería de WhatsApp (Baileys 7) necesita Node 20+ y el panel visual (Vite 8) necesita 20.19+/22.12+.
+  Descárgalo en **https://nodejs.org**. Con Node 18 el bot no conecta correctamente.
+- **Internet durante la primera instalación** (para descargar las dependencias). Después puede funcionar sin internet, salvo la sincronización de la tasa BCV.
+- La carpeta de Crastur debe estar en una ubicación **con permisos de escritura** (por ejemplo, `C:\Crastur` o tu carpeta de usuario). Evita `C:\Program Files`.
+- Para la PC del bot se recomienda **desactivar el suspenso automático** y, si quieres que vuelva solo tras un corte de luz, activar **“Inicio automático al encender la PC”** en el instalador.
+
+> ⚠️ **No copies la carpeta `node_modules` entre computadoras distintas.** Esa carpeta contiene archivos que dependen del sistema operativo. Si mueves Crastur a otra PC, usa `npm run preparar-entrega -- --confirmar` (que la elimina) y luego abre `Instalar.bat` en la PC nueva para descargar las dependencias correctas.
+
+---
+
 ## 🚀 Cómo Iniciar, Instalar y Respaldar (Sin Consola ni Editor)
 
 El sistema está diseñado para que cualquier persona en la tienda, sin conocimientos técnicos, pueda
@@ -51,6 +65,8 @@ un **Panel de Instalación y Mantenimiento** con botones, donde puedes:
 #### 🪟 En Windows:
 1. **Primera vez:** doble clic en **`Crastur.bat`**. Si el sistema aún no está instalado, abrirá
    automáticamente el **Instalador Visual**. Una vez listo, crea el acceso directo **`Crastur`** en el Escritorio.
+   - Si más adelante faltara Node o algún componente, el acceso directo **abrirá el instalador de forma visible** (no se queda colgado en silencio).
+   - En el instalador puedes activar **“Inicio automático al encender la PC”** para que Crastur vuelva solo después de un corte de luz.
 2. **Día a día:** el cliente solo hace doble clic en el acceso directo **`Crastur`** de su Escritorio.
    - **Si está apagado:** inicia el bot y el servidor en segundo plano y abre el navegador en `http://localhost:3333`.
    - **Si ya estaba encendido:** detecta la sesión activa y solo reabre la pestaña.
@@ -229,6 +245,13 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
   avatar del chat, banner de estado y avisos del sistema dentro de la conversación.
 - **Mientras el bot está procesando una respuesta y el vendedor contesta antes de enviarla, la respuesta
   se descarta**: nunca llega tarde a interrumpir a la persona.
+- **También se entera tras un corte de internet:** si el vendedor contestó mientras la PC estaba
+  desconectada, al reconectar el bot lee el historial, detecta la intervención humana y se mantiene
+  en silencio. La pausa aplica aunque WhatsApp identifique al mismo cliente con dos identificadores
+  distintos (número real y LID).
+- **Diagnóstico visible en el panel:** en la cabecera del chat verás **“✋ Asesor: hace X minutos”**,
+  con la hora de la última respuesta humana. Si aparece, la PC está recibiendo correctamente los
+  mensajes que el vendedor envía desde el teléfono de la tienda.
 
 ### 10. ✂️ Mensajes cortos y sin insistencia (la gente no lee párrafos)
 - **Fallbacks breves:** si el bot no entiende un mensaje, pide **una sola cosa** ("dime el nombre de la
@@ -370,8 +393,10 @@ crastur/
 ### 1. ¿El sistema viene vacío o con productos de prueba?
 Siguiendo la **Opción A**, el sistema de producción se entrega **100% limpio** (0 productos, 0 chats y 0 apartados) para que la tienda física cargue sus repuestos reales directamente desde el menú Catálogo o mediante importación.
 
+- **Importación masiva (recomendada para catálogos grandes):** en **Catálogo → Importar** puedes subir un archivo **CSV** (Excel guardado como CSV) o un **JSON**. Usa el botón de descarga de plantilla para ver el formato exacto: `marca, modelo, categoria, precio_usd, descripcion, stock, imagen_url`. Los productos existentes se actualizan (no se duplican) por marca + modelo.
+
 - **Descargando desde Git** (clonado o RAR/ZIP del repositorio): arranca **limpio automáticamente**, porque la base de datos, los respaldos y la sesión de WhatsApp están excluidos del repositorio (`.gitignore`). No hay que hacer nada.
-- **Copiando la carpeta a mano a otra PC**: primero ejecuta `npm run preparar-entrega -- --confirmar` en la PC de origen. Ese comando respalda los datos fuera del proyecto y deja la instalación limpia (0 productos, sin chats, sin respaldos y sin la sesión de WhatsApp).
+- **Copiando la carpeta a mano a otra PC**: primero ejecuta `npm run preparar-entrega -- --confirmar` en la PC de origen. Ese comando respalda los datos fuera del proyecto y deja la instalación limpia (0 productos, sin chats, sin respaldos y sin la sesión de WhatsApp). También elimina `node_modules` para que la PC de destino descargue las dependencias de **su** sistema operativo al abrir `Instalar.bat`. Si vas a entregar a un equipo con el **mismo** sistema operativo y quieres evitar la descarga, usa `npm run preparar-entrega -- --confirmar --conservar-dependencias`.
 - **Para volver a cero en cualquier momento**: ejecuta `npm run reset`.
 
 > ⚠️ El sistema **nunca borra productos automáticamente al arrancar**. La limpieza de datos de prueba

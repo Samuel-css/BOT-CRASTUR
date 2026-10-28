@@ -12,7 +12,7 @@ import {
 } from '../../utils/inputSanitizers';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
-export default function ProductModal({ isOpen, onClose, onSave, editingProduct, bcvRate }) {
+export default function ProductModal({ isOpen, onClose, onSave, editingProduct, bcvRate, casheaInicialPct = 40, casheaCuotas = 3 }) {
   const [form, setForm] = useState({
     marca: '',
     modelo: '',
@@ -68,7 +68,11 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
 
   const precioUsdNum = parseFloat(form.precio_usd) || 0;
   const precioBs = precioUsdNum * bcvRate;
-  const casheaNivel1 = precioUsdNum * 0.40;
+  // [CONSISTENCIA] Usa el porcentaje configurado en Ajustes (no 40% fijo).
+  const inicialPct = Math.max(0, Math.min(100, parseFloat(casheaInicialPct) || 40)) / 100;
+  const casheaNivel1 = precioUsdNum * inicialPct;
+  const casheaCuotasNum = Math.max(1, parseInt(casheaCuotas, 10) || 3);
+  const casheaCuota = (precioUsdNum - casheaNivel1) / casheaCuotasNum;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -160,7 +164,7 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
       toast.error('Completa marca, modelo y precio para generar el texto de Instagram.');
       return;
     }
-    copyInstagramCaption(form, bcvRate);
+    copyInstagramCaption({ ...form, cashea_inicial_pct: casheaInicialPct, cashea_cuotas: casheaCuotas }, bcvRate);
   };
 
   return (
@@ -341,6 +345,7 @@ export default function ProductModal({ isOpen, onClose, onSave, editingProduct, 
                       Inicial: ${casheaNivel1.toFixed(2)} USD
                     </p>
                     <span className="text-[10px] text-slate-400 font-mono">Bs. {formatBs(casheaNivel1 * bcvRate)} (En tienda física)</span>
+                    <span className="text-[10px] text-slate-400 font-mono block">+ {casheaCuotasNum} cuota(s) de ${casheaCuota.toFixed(2)} USD</span>
                   </>
                 ) : (
                   <p className="text-[10px] text-orange-400/80 mt-1">

@@ -8,6 +8,7 @@
  */
 
 import { db, persistDB } from './engine';
+import { resolveChatJids } from './aliases';
 
 /**
  * Obtiene el mapa completo de configuración y parámetros de la tienda.
@@ -50,15 +51,31 @@ export function getEffectiveRate(): number {
  * decisión manual del operador.
  */
 export function toggleBotPause(jid: string, paused?: boolean | number): void {
-  const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
   const now = Date.now();
 
+  if (!paused) {
+    // [ALIAS] Reanudar debe liberar TODAS las identidades conocidas del contacto.
+    // Si no, el chat podía seguir pausado por el JID alterno (LID / número real).
+    // No se crea una sesión nueva si el chat no existía: solo se limpia lo que haya.
+    for (const target of resolveChatJids(jid)) {
+      db.prepare(`
+        UPDATE chat_sessions
+        SET bot_pausado = 0,
+            bot_pausado_por = NULL,
+            bot_pausado_at = NULL
+        WHERE jid = ?
+      `).run(target);
+    }
+    return;
+  }
+
+  const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
   if (!exists) {
     db.prepare(`
       INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea, bot_pausado_por, bot_pausado_at)
-      VALUES (?, 'Cliente', 'start', ?, 0, ?, 1, ?, ?)
-    `).run(jid, now, paused ? 1 : 0, paused ? 'manual' : null, paused ? now : null);
-  } else if (paused) {
+      VALUES (?, 'Cliente', 'start', ?, 0, 1, 1, 'manual', ?)
+    `).run(jid, now, now);
+  } else {
     db.prepare(`
       UPDATE chat_sessions
       SET bot_pausado = 1,
@@ -66,14 +83,6 @@ export function toggleBotPause(jid: string, paused?: boolean | number): void {
           bot_pausado_at = COALESCE(bot_pausado_at, ?)
       WHERE jid = ?
     `).run(now, jid);
-  } else {
-    db.prepare(`
-      UPDATE chat_sessions
-      SET bot_pausado = 0,
-          bot_pausado_por = NULL,
-          bot_pausado_at = NULL
-      WHERE jid = ?
-    `).run(jid);
   }
 }
 
@@ -84,17 +93,18 @@ export function toggleBotPause(jid: string, paused?: boolean | number): void {
  *
  * @returns `true` si el bot quedó pausado por esta intervención.
  */
-export function registerAdvisorActivity(jid: string): boolean {
+export function registerAdvisorActivity(jid: string, at?: number): boolean {
   const settings = getSettings();
   const autoPauseEnabled = settings.auto_pausa_asesor !== '0';
   const now = Date.now();
+  const activityAt = Number(at) > 0 ? Number(at) : now;
 
   const exists = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
   if (!exists) {
     db.prepare(`
       INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea, bot_pausado_por, bot_pausado_at, asesor_ultimo_at)
       VALUES (?, 'Cliente', 'start', ?, 1, ?, 1, ?, ?, ?)
-    `).run(jid, now, autoPauseEnabled ? 1 : 0, autoPauseEnabled ? 'asesor' : null, autoPauseEnabled ? now : null, now);
+    `).run(jid, now, autoPauseEnabled ? 1 : 0, autoPauseEnabled ? 'asesor' : null, autoPauseEnabled ? activityAt : null, activityAt);
     return autoPauseEnabled;
   }
 
@@ -104,21 +114,32 @@ export function registerAdvisorActivity(jid: string): boolean {
     db.prepare(`
       UPDATE chat_sessions
       SET bot_pausado = 1,
-          bot_pausado_por = 'asesor',
+          bot_pausado_por = CASE
+            WHEN bot_pausado = 1 AND bot_pausado_por = 'manual' THEN 'manual'
+            ELSE 'asesor'
+          END,
           bot_pausado_at = COALESCE(bot_pausado_at, ?),
-          asesor_ultimo_at = ?,
+          asesor_ultimo_at = CASE
+            WHEN asesor_ultimo_at IS NULL OR asesor_ultimo_at < ? THEN ?
+            ELSE asesor_ultimo_at
+          END,
           seguimiento_enviado = 1,
           fallos_consecutivos = 0
       WHERE jid = ?
-    `).run(now, now, jid);
+    `).run(activityAt, activityAt, activityAt, jid);
     return true;
   }
 
   db.prepare(`
     UPDATE chat_sessions
-    SET asesor_ultimo_at = ?, seguimiento_enviado = 1, fallos_consecutivos = 0
+    SET asesor_ultimo_at = CASE
+          WHEN asesor_ultimo_at IS NULL OR asesor_ultimo_at < ? THEN ?
+          ELSE asesor_ultimo_at
+        END,
+        seguimiento_enviado = 1,
+        fallos_consecutivos = 0
     WHERE jid = ?
-  `).run(now, jid);
+  `).run(activityAt, activityAt, jid);
   return false;
 }
 
@@ -130,34 +151,53 @@ export function registerAdvisorActivity(jid: string): boolean {
  * @returns `true` si el bot quedó habilitado para responder este mensaje.
  */
 export function shouldReactivateBotForClient(jid: string): boolean {
-  const row = db.prepare('SELECT bot_pausado, bot_pausado_por, asesor_ultimo_at FROM chat_sessions WHERE jid = ?').get(jid);
-  if (!row) return true;
-  if (parseInt(row.bot_pausado) !== 1) return true;
-  // Una pausa manual del operador jamás se revierte sola.
-  if (row.bot_pausado_por !== 'asesor') return false;
+  // [ALIAS] Se revisa el grupo completo de identificadores del mismo contacto.
+  const targets = resolveChatJids(jid);
+  let pausedByAdvisor = false;
+  let lastAdvisorAt = 0;
+
+  for (const target of targets) {
+    const row = db.prepare('SELECT bot_pausado, bot_pausado_por, asesor_ultimo_at FROM chat_sessions WHERE jid = ?').get(target);
+    if (!row || parseInt(row.bot_pausado) !== 1) continue;
+
+    // Una pausa manual del operador jamás se revierte sola.
+    if (row.bot_pausado_por === 'manual') return false;
+    if (row.bot_pausado_por !== 'asesor') return false;
+
+    pausedByAdvisor = true;
+    const at = Number(row.asesor_ultimo_at) || 0;
+    if (at > lastAdvisorAt) lastAdvisorAt = at;
+  }
+
+  if (!pausedByAdvisor) return true;
+  if (!lastAdvisorAt) return false;
 
   const settings = getSettings();
   const minutos = parseInt(settings.reactivar_bot_minutos ?? '180', 10);
   if (isNaN(minutos) || minutos <= 0) return false;
-
-  const lastAdvisorAt = Number(row.asesor_ultimo_at) || 0;
-  if (!lastAdvisorAt) return false;
   if (Date.now() - lastAdvisorAt < minutos * 60 * 1000) return false;
 
-  db.prepare(`
-    UPDATE chat_sessions
-    SET bot_pausado = 0, bot_pausado_por = NULL, bot_pausado_at = NULL
-    WHERE jid = ?
-  `).run(jid);
+  for (const target of targets) {
+    db.prepare(`
+      UPDATE chat_sessions
+      SET bot_pausado = 0, bot_pausado_por = NULL, bot_pausado_at = NULL
+      WHERE jid = ? AND bot_pausado_por = 'asesor'
+    `).run(target);
+  }
   return true;
 }
 
 /**
  * Verifica si el bot se encuentra pausado localmente para una conversación individual.
+ * [ALIAS] Revisa también el identificador alterno (LID / número real) del mismo contacto.
  */
 export function isBotPaused(jid: string): boolean {
-  const session = db.prepare('SELECT bot_pausado FROM chat_sessions WHERE jid = ?').get(jid);
-  return session ? parseInt(session.bot_pausado) === 1 : false;
+  const targets = resolveChatJids(jid);
+  for (const target of targets) {
+    const session = db.prepare('SELECT bot_pausado FROM chat_sessions WHERE jid = ?').get(target);
+    if (session && parseInt(session.bot_pausado) === 1) return true;
+  }
+  return false;
 }
 
 /**

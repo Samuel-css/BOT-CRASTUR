@@ -16,7 +16,8 @@ import {
   getSettings,
   recordMetric,
   getReservationsNeeding22hReminder,
-  markReservation22hReminderSent
+  markReservation22hReminderSent,
+  isBotGloballyPaused
 } from '../../database';
 import { isWithinBusinessHours } from '../services/businessRules';
 import { normalizeText } from '../utils/textUtils';
@@ -39,6 +40,13 @@ async function checkPendingFollowUps(
   sendWhatsAppMessageCallback: (targetJid: string, messageText: string) => Promise<void> | void
 ): Promise<void> {
   if (typeof sendWhatsAppMessageCallback !== 'function') return;
+
+  // [PAUSA GLOBAL] Si el panel silenció el bot para toda la tienda, tampoco se envían
+  // recordatorios proactivos: la pausa global debe detener TODA intervención automática.
+  if (isBotGloballyPaused()) {
+    console.log('[Seguimiento] Pausa global activa — no se envían recordatorios proactivos.');
+    return;
+  }
 
   const settings = getSettings();
   if (settings.insistencia_activa !== '1') return;
@@ -196,6 +204,12 @@ async function check22hReservationReminders(
   sendWhatsAppMessageCallback: (targetJid: string, messageText: string) => Promise<void> | void
 ): Promise<void> {
   if (typeof sendWhatsAppMessageCallback !== 'function') return;
+
+  // [PAUSA GLOBAL] Los avisos de apartado también respetan el interruptor global.
+  if (isBotGloballyPaused()) {
+    console.log('[Apartados 22h] Pausa global activa — avisos de rescate pospuestos.');
+    return;
+  }
 
   // [ANTI-BANEO META 2025] No enviar avisos fuera de horario comercial
   const settings = getSettings();

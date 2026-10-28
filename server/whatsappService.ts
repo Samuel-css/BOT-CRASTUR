@@ -32,6 +32,12 @@ export {
 export { enqueueOutboundMessage } from './whatsapp/outboundQueue';
 
 export {
+  registerHumanTakeover,
+  cancelPendingBotResponsesFor,
+  canBotSend
+} from './whatsapp/takeover';
+
+export {
   startWhatsApp,
   stopWhatsApp,
   logoutWhatsApp,

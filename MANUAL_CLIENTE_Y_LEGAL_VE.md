@@ -98,9 +98,13 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 El cliente **no necesita entrar a carpetas técnicas ni ver código**. Todo el flujo está pensado para funcionar directamente con **1 solo acceso directo en el Escritorio de Windows**:
 
 #### 1. Configuración Inicial (Solo la Primera Vez):
+- **Requisito:** Windows 10/11 de 64 bits y **Node.js 22 LTS** (mínimo 20.19+). La librería de WhatsApp y el panel visual no funcionan correctamente con Node 18.
+- **Internet durante la primera instalación** para descargar las dependencias.
 - En la carpeta de la aplicación, haz doble clic en **`Crastur.bat`**.
 - El asistente comprobará el sistema, inicializará la base de datos y **creará automáticamente 1 único acceso directo oficial en el Escritorio de Windows**:
   - 🛞 **`Crastur`**: Con el icono oficial naranja de la tienda.
+- Si al abrir el acceso directo faltara Node o algún componente, el sistema **abrirá el instalador de forma visible** (ya no se queda colgado en silencio).
+- En el **Panel de Instalación** también puedes activar **“Inicio automático al encender la PC”** para que el bot vuelva solo después de un corte de luz.
 - A partir de este momento, el operador **solo usará ese acceso directo de su Escritorio**.
 
 ---
@@ -150,13 +154,13 @@ Al terminar el turno o cerrar la tienda, el apagado se realiza de forma elegante
 ### A. Inventario Limpio para Producción (Opción A)
 Para su despliegue comercial oficial, el sistema se entrega con **`0 productos`**, permitiendo cargar el catálogo real directamente desde:
 - **Catálogo ➔ Nuevo Repuesto**: Registro manual con marca, modelo, categoría, precio USD y stock.
-- **Importación**: Carga rápida de inventario.
+- **Catálogo ➔ Importar**: Carga masiva desde un archivo **CSV** (Excel guardado como CSV) o **JSON**. Usa el botón de descarga de plantilla para ver el formato: `marca, modelo, categoria, precio_usd, descripcion, stock, imagen_url`. Los productos existentes se actualizan por marca + modelo (no se duplican).
 - **Restablecimiento Limpio de Fábrica**: En caso de requerir volver a dejar la base de datos 100% limpia en el futuro, ejecuta en la terminal:
   ```bash
   npm run reset
   ```
 
-> **Entrega a otra PC:** si vas a **descargar el sistema desde Git** (clonado o archivo RAR/ZIP del repositorio), arranca limpio de forma automática, ya que la base de datos, los respaldos y la sesión de WhatsApp no forman parte del repositorio. Si en cambio **copias la carpeta a mano** (USB o red), ejecuta primero `npm run preparar-entrega -- --confirmar`: respalda tus datos fuera del proyecto y deja la instalación en 0 productos, sin chats, sin respaldos y sin la sesión de WhatsApp del equipo anterior.
+> **Entrega a otra PC:** si vas a **descargar el sistema desde Git** (clonado o archivo RAR/ZIP del repositorio), arranca limpio de forma automática, ya que la base de datos, los respaldos y la sesión de WhatsApp no forman parte del repositorio. Si en cambio **copias la carpeta a mano** (USB o red), ejecuta primero `npm run preparar-entrega -- --confirmar`: respalda tus datos fuera del proyecto, deja la instalación en 0 productos, sin chats, sin respaldos y sin la sesión de WhatsApp del equipo anterior, y **elimina `node_modules`** para que la PC de destino descargue las dependencias de su propio sistema operativo. Si el equipo destino usa el **mismo** sistema operativo y quieres evitar la descarga, añade `--conservar-dependencias`.
 
 ### B. Gestión de Horarios: Lunes a Sábado vs. Cierre Temprano Dominical
 Crastur opera de lunes a sábado en horario corrido y los domingos con horario reducido:
@@ -190,6 +194,8 @@ El panel incluye la sección **Live Inbox**, donde el personal de ventas puede s
    - **Reactivación con respeto:** si el cliente vuelve a escribir después de **3 horas** sin respuesta del vendedor, el bot retoma la conversación. El tiempo es configurable (1 hora / 3 horas / 6 horas / nunca) en **Ajustes ➔ 2. Asistente Virtual ➔ 3. Recordatorio**.
    - **Manual:** si prefieres silenciar el bot tú mismo, abre el chat y presiona **"Pausar Bot (Atender Yo)"** (insignia ámbar **P**). Esa pausa **solo la quita un humano** con **"Reanudar Bot"**.
    - **Respuestas a tiempo:** si el bot estaba redactando una respuesta y el vendedor contesta antes de que salga, **la respuesta se descarta**: nunca llega tarde ni "atropella" a la persona.
+   - **Detección tras reconexión:** si el vendedor contestó mientras la PC estaba sin internet, al reconectar el bot revisa el historial, detecta la intervención humana y se mantiene en silencio. La pausa aplica aunque WhatsApp identifique al mismo cliente con dos identificadores distintos.
+   - **Diagnóstico en la cabecera del chat:** verás **“✋ Asesor: hace X minutos”** con la hora de la última respuesta humana. Si aparece, la PC está recibiendo los mensajes que el vendedor envía desde el teléfono de la tienda.
 2. **Banco de Atajos Comerciales Profesionales (9 Plantillas Oficiales):**  
    Dispones de botones rápidos con respuestas redactadas y verificadas de Crastur:
    - **👋 Saludo Asesor**

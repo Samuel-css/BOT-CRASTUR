@@ -60,6 +60,26 @@ function singularizeToken(token: string): string {
 }
 
 /**
+ * [FRASES DE VARIAS PALABRAS] El diccionario incluye expresiones como "parche frio",
+ * "camara de aire" o "kit de arrastre". Antes se traducían token por token y esas claves
+ * nunca coincidían. Aquí se reemplazan completas, de la frase más larga a la más corta,
+ * antes de dividir en palabras.
+ */
+const SYNONYM_PHRASES: Array<[string, string]> = Object.entries(SYNONYMS)
+  .filter(([key]) => key.includes(' '))
+  .sort((a, b) => b[0].length - a[0].length);
+
+function applySynonymPhrases(normalizedText: string): string {
+  if (!normalizedText || SYNONYM_PHRASES.length === 0) return normalizedText;
+  let out = normalizedText;
+  for (const [phrase, replacement] of SYNONYM_PHRASES) {
+    if (!out.includes(phrase)) continue;
+    out = out.split(phrase).join(` ${replacement} `);
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * [DICCIONARIO] Traduce un token del cliente usando sinónimos y, si no hay coincidencia,
  * su forma singular. El diccionario ya está normalizado (sin tildes ni ñ), por lo que
  * 'piñones' -> 'pinones' -> 'pinon' y 'puño' -> 'puno' -> 'punos'.
@@ -89,7 +109,7 @@ function getActiveProducts(): any[] {
  * @returns Array con hasta 4 productos más relevantes ordenados por puntaje
  */
 function searchProductsFuzzy(query: string): any[] {
-  const clean = normalizeText(query);
+  const clean = applySynonymPhrases(normalizeText(query));
   let rawTokens = clean.split(/\s+/).filter(t => t.length >= 1);
 
   if (rawTokens.length === 0) return [];

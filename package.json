@@ -1,6 +1,6 @@
 {
   "name": "crastur",
-  "version": "3.1.0",
+  "version": "3.3.0",
   "description": "Sistema de Ventas y Bot de WhatsApp para Crastur",
   "scripts": {
     "start": "tsx server/server.ts",
@@ -14,7 +14,7 @@
     "actualizar": "tsx scripts/actualizar.ts",
     "preparar-entrega": "tsx scripts/preparar_entrega.ts",
     "migrar": "tsx scripts/migrar_catalogo_asesores.ts",
-    "stop": "node -e \"const http=require('http'); const req=http.request('http://localhost:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",
+    "stop": "node -e \"const http=require('http'); const req=http.request('http://127.0.0.1:3333/api/system/shutdown', {method:'POST'}); req.on('error',()=>{}); req.end(); console.log('Solicitud de apagado enviada.');\"",
     "typecheck:server": "tsc -p tsconfig.server.json --noEmit",
     "build:server": "tsc -p tsconfig.server.json",
     "test": "node scripts/run_stress_and_edge_tests_isolated.js",
@@ -29,7 +29,7 @@
   "author": "Crastur",
   "license": "ISC",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",
@@ -41,6 +41,7 @@
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",
     "sql.js": "^1.14.2",
+    "tsx": "^4.23.15",
     "ws": "^8.22.0"
   },
   "devDependencies": {
@@ -51,7 +52,6 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.2",
     "puppeteer-core": "^25.12.0",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }

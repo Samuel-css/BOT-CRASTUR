@@ -57,7 +57,9 @@ router.get('/', (req: Request, res: Response) => {
       cashea_inicial_usd: inicialUsd,
       cashea_inicial_bs: inicialUsd * tasa,
       cashea_cuota_usd: cuotaUsd,
-      cashea_cuota_bs: cuotaUsd * tasa
+      cashea_cuota_bs: cuotaUsd * tasa,
+      cashea_cuotas: cuotasCashea,
+      cashea_inicial_pct: Math.round(inicialPct * 100)
     };
   });
 

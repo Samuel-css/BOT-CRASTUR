@@ -14,12 +14,16 @@
  *   --confirmar        Ejecuta la limpieza (sin este flag solo muestra el plan)
  *   --sin-respaldo     No crea copia de seguridad previa
  *   --destino <ruta>   Carpeta donde guardar el respaldo previo
+ *   --conservar-dependencias  No borra node_modules (solo si la PC destino usa el MISMO sistema operativo)
  *
  * SEGURIDAD:
  *   - Nunca borra sin `--confirmar`.
  *   - Antes de limpiar, respalda toda la carpeta `data/` FUERA del proyecto.
  *   - Al final recrea una base de datos limpia usando el propio motor del
  *     sistema (esquema + configuración por defecto, 0 productos).
+ *   - [ENTREGA ENTRE PLATAFORMAS] Por defecto elimina node_modules y
+ *     client/node_modules: contienen binarios de ESTE sistema operativo y
+ *     rompen el arranque si se copian a Windows/Mac/Linux distintos.
  * ============================================================================
  */
 
@@ -166,6 +170,37 @@ async function prepararEntrega(): Promise<void> {
   const totalMensajes = (database.db.prepare('SELECT COUNT(*) as c FROM chat_messages').get() as any)?.c || 0;
   const totalApartados = (database.db.prepare('SELECT COUNT(*) as c FROM reservations').get() as any)?.c || 0;
 
+  // 5. [ENTREGA ENTRE PLATAFORMAS] Eliminar dependencias instaladas en ESTA PC.
+  // `node_modules` contiene binarios específicos del sistema (por ejemplo, el motor de
+  // TypeScript/esbuild de macOS no funciona en Windows). Si viajan en la carpeta, el
+  // instalador de la otra PC ve "dependencias instaladas" y no reinstala, dejando el
+  // sistema roto. La otra PC las descargará con Instalar.bat (requiere internet).
+  // Usa --conservar-dependencias si vas a entregar a un equipo con el MISMO sistema operativo.
+  const conservarDeps = process.argv.includes('--conservar-dependencias');
+  if (!conservarDeps) {
+    const dirsAEliminar = [
+      path.join(projectRoot, 'node_modules'),
+      path.join(projectRoot, 'client', 'node_modules'),
+      path.join(projectRoot, 'dist')
+    ];
+    for (const dir of dirsAEliminar) {
+      if (!fs.existsSync(dir)) continue;
+      try {
+        console.log(`🧹 Eliminando dependencias de esta PC: ${formatearRuta(dir)}`);
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch (e: any) {
+        console.warn(`   No se pudo eliminar ${dir}: ${e?.message || e}`);
+      }
+    }
+    console.log('   La PC de destino deberá abrir Instalar.bat (con internet) para descargar sus dependencias.');
+    console.log('   ⚠️ En ESTA PC también se eliminaron: ejecuta "npm install" si vas a seguir trabajando aquí.');
+    if (fs.existsSync(path.join(projectRoot, 'node_modules'))) {
+      console.warn('   ⚠️ No se pudo borrar node_modules por completo (puede estar en uso). Ciérralo y elimínalo manualmente antes de copiar la carpeta.');
+    }
+  } else {
+    console.log('ℹ️  Dependencias conservadas (--conservar-dependencias). Úsalas solo en un equipo con el mismo sistema operativo.');
+  }
+
   console.log('\n==============================================================');
   console.log('✅ SISTEMA LISTO PARA ENTREGA (100% LIMPIO)');
   console.log(`   • Productos:  ${totalProductos}`);
@@ -173,6 +208,7 @@ async function prepararEntrega(): Promise<void> {
   console.log(`   • Apartados:  ${totalApartados}`);
   console.log('   • Sesión WhatsApp: eliminada (la nueva PC debe escanear su QR)');
   console.log('   • Configuración: valores de fábrica de Crastur');
+  console.log(`   • Dependencias: ${conservarDeps ? 'conservadas' : 'eliminadas (se instalan en la PC de destino)'}`);
   console.log(`   • Respaldo previo: ${sinRespaldo ? 'omitido' : formatearRuta(destPath)}`);
   console.log('==============================================================\n');
 

@@ -5,7 +5,7 @@
  * Adapta la lógica histórica de whatsappService.ts sin cambiar su comportamiento.
  */
 
-import { db, getSettings, isBotGloballyPaused, isBotPaused, registerAdvisorActivity, shouldReactivateBotForClient } from '../database';
+import { db, getSettings, isBotGloballyPaused, isBotPaused, shouldReactivateBotForClient, registerChatAliases } from '../database';
 import { processIncomingMessage } from '../bot';
 import { isWithinBusinessHours } from '../bot/services/businessRules';
 import {
@@ -18,6 +18,11 @@ import {
 import { extractMessageInfo } from './messageParsing';
 import { sendTextMessage, wasSentByBot, consumeSentMessageId, trackSentMessageId } from './sending';
 import { standardizeBotMessage } from '../bot/utils/textUtils';
+import {
+  canBotSend,
+  onCancelPendingBotResponses,
+  registerHumanTakeover
+} from './takeover';
 
 // ─── Buffers y control de duplicados ────────────────────────────────────────
 const messageDebounceTimers = new Map<string, any>();
@@ -78,6 +83,68 @@ function cancelPendingBotResponses(jid: string): void {
   }
 }
 
+// [HUMAN TAKEOVER] `sending.ts` y las rutas del panel pueden cancelar respuestas pendientes
+// sin importar este módulo (evita dependencias circulares).
+onCancelPendingBotResponses(cancelPendingBotResponses);
+
+/**
+ * [ALIAS LID/NÚMERO] Registra las identidades alternas que WhatsApp entrega en la clave del
+ * mensaje. Así la pausa por asesor aplica aunque el cliente llegue con otro identificador.
+ */
+function collectAndRegisterAliases(msg: any): void {
+  try {
+    const key = msg?.key || {};
+    const candidates = [key.remoteJid, key.remoteJidAlt, key.participantAlt, key.senderPn]
+      .filter((j: any) => typeof j === 'string' && (j.endsWith('@s.whatsapp.net') || j.endsWith('@lid')));
+    if (candidates.length > 1) registerChatAliases(candidates);
+  } catch { /* el alias nunca debe romper la ingestión */ }
+}
+
+/**
+ * [NO CONFUNDIR AL BOT CON EL ASESOR] Detecta si un mensaje `fromMe` corresponde a una
+ * respuesta que el propio bot ya guardó como 'bot'. Se usa al sincronizar historial o al
+ * reconectar, donde el registro anti-eco en memoria ya expiró.
+ */
+function wasStoredAsBotMessage(jid: string, text: string, msgTime: number): boolean {
+  const content = String(text || '').trim();
+  if (!content) return false;
+  try {
+    const row = db.prepare(`
+      SELECT remitente FROM chat_messages
+      WHERE jid = ? AND ABS(timestamp - ?) < 120000
+        AND (
+          contenido = ?
+          OR (contenido LIKE '[Documento PDF:%' AND contenido LIKE ?)
+        )
+      ORDER BY ABS(timestamp - ?) ASC LIMIT 1
+    `).get(jid, msgTime, content, `%${content}%`, msgTime);
+    return !!row && row.remitente === 'bot';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * [HISTORIAL] Solo se toma como "asesor atendiendo" un mensaje enviado por una persona que
+ * sea reciente (últimas 24 h) y posterior al último mensaje del cliente. Así un historial
+ * viejo no pausa conversaciones nuevas.
+ */
+function isRecentAdvisorMessage(jid: string, msgTime: number): boolean {
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(msgTime) || Date.now() - msgTime > ONE_DAY) return false;
+  try {
+    const lastClient = db.prepare(`
+      SELECT MAX(timestamp) as ts FROM chat_messages
+      WHERE jid = ? AND remitente = 'cliente'
+    `).get(jid);
+    const clientTs = Number(lastClient?.ts) || 0;
+    if (clientTs && msgTime < clientTs) return false;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 /** Consultas recibidas durante la ventana de estabilización (20s) pendientes de responder. */
 const pendingStartupMessages: Array<{
   jid: string;
@@ -114,7 +181,7 @@ async function deliverBotResponse(
 
     // [HUMAN TAKEOVER AUTOMÁTICO] Verificación de última milla: si un asesor escribió (o el
     // panel pausó el chat) mientras el bot procesaba el mensaje, la respuesta se descarta.
-    if (response && (isBotPaused(jid) || isBotGloballyPaused())) {
+    if (response && !canBotSend(jid)) {
       console.log(`[WhatsApp Bot] ⏸️ Respuesta a ${jid} descartada: el chat fue tomado por un asesor humano.`);
       return;
     }
@@ -163,6 +230,19 @@ async function deliverBotResponse(
       const typingDelay = Math.min(4200, 900 + textoRespuesta.length * 22) + Math.floor(Math.random() * 400);
       await new Promise(res => setTimeout(res, typingDelay));
 
+      // [HUMAN TAKEOVER / ÚLTIMA MILLA] Volver a comprobar DESPUÉS del retardo de escritura.
+      // Antes la pausa se revisaba solo antes de esos ~4,6 s; si el asesor contestaba en ese
+      // lapso, el bot enviaba su respuesta igual por encima de la persona.
+      if (!canBotSend(jid)) {
+        console.log(`[WhatsApp Bot] ⏸️ Envío a ${jid} cancelado tras el retardo: un asesor tomó el chat.`);
+        try {
+          if (sock && connectionStatus === 'connected') {
+            await sock.sendPresenceUpdate('paused', jid);
+          }
+        } catch { /* la presencia es opcional */ }
+        return;
+      }
+
       console.log(`[WhatsApp Bot] 🤖 Despachando respuesta a ${jid}...`);
 
       if (typeof response === 'object' && response !== null && response.document) {
@@ -174,7 +254,7 @@ async function deliverBotResponse(
       }
 
       // [MERCADO VENEZUELA] Pin interactivo si la respuesta refiere a la ubicación de la tienda
-      if (textoRespuesta && textoRespuesta.includes('Liberalba') && textoRespuesta.includes('Google Maps')) {
+      if (textoRespuesta && textoRespuesta.includes('Liberalba') && textoRespuesta.includes('Google Maps') && canBotSend(jid)) {
         try {
           if (sock && connectionStatus === 'connected') {
             // [ANTI-BANEO] Pequeña pausa para no enviar 3 mensajes seguidos sin respiro.
@@ -211,7 +291,7 @@ async function deliverBotResponse(
         normInput.includes('mandame el contacto') ||
         normInput.includes('quiero guardarte') ||
         normInput.includes('como guardo crastur');
-      if (explicitContactRequest) {
+      if (explicitContactRequest && canBotSend(jid)) {
         try {
           if (sock && connectionStatus === 'connected') {
             const botPhone = currentUser?.phone || (sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : '584120000000');
@@ -291,12 +371,22 @@ export function registerHistoryHandler(): void {
     if (!messages || !Array.isArray(messages)) return;
     console.log(`[WhatsApp Sync] 📥 Sincronización histórica recibida: ${messages.length} mensajes.`);
 
+    // [ORDEN CRONOLÓGICO] El historial puede llegar desordenado. Se procesa del más viejo al
+    // más nuevo para que la comparación "asesor después del último mensaje del cliente" sea fiable.
+    const orderedMessages = [...messages].sort((a: any, b: any) => {
+      const ta = Number(a?.messageTimestamp || 0);
+      const tb = Number(b?.messageTimestamp || 0);
+      return ta - tb;
+    });
+
     let ingestedCount = 0;
-    for (const msg of messages) {
+    for (const msg of orderedMessages) {
       const jid = msg.key?.remoteJid || '';
       if (!jid) continue;
       if (jid.endsWith('@g.us') || jid.endsWith('@newsletter') || jid.includes('@newsletter') || jid.includes('broadcast') || jid === 'status@broadcast') continue;
       if (!jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@lid')) continue;
+
+      collectAndRegisterAliases(msg);
 
       const info = extractMessageInfo(msg);
       if (!info || (!info.text && !info.isMedia)) continue;
@@ -305,7 +395,10 @@ export function registerHistoryHandler(): void {
       const msgTime = Number(msg.messageTimestamp || Math.floor(Date.now() / 1000)) * 1000;
       const pushName = msg.pushName || 'Cliente';
       const isFromMe = !!msg.key.fromMe;
-      const senderType = isFromMe ? 'asesor' : 'cliente';
+      // [NO CONFUNDIR BOT CON ASESOR] Al reconectar, el historial incluye los mensajes
+      // que el propio bot envió antes. Se marcan como 'bot' y NO pausan la conversación.
+      const isBotCopy = isFromMe && wasStoredAsBotMessage(jid, contentText, msgTime);
+      const senderType = isFromMe ? (isBotCopy ? 'bot' : 'asesor') : 'cliente';
 
       const existing = db.prepare(`
         SELECT id FROM chat_messages
@@ -333,6 +426,13 @@ export function registerHistoryHandler(): void {
           ingestedCount++;
         } catch (e: any) { }
       }
+
+      // [HUMAN TAKEOVER EN HISTORIAL] Si el asesor respondió desde el teléfono mientras
+      // la PC estaba desconectada, este es el único momento en que nos enteramos.
+      // Solo se considera si el mensaje es reciente y posterior al último del cliente.
+      if (isFromMe && !isBotCopy && isRecentAdvisorMessage(jid, msgTime)) {
+        registerHumanTakeover(jid, msgTime, 'historial');
+      }
     }
 
     if (ingestedCount > 0) {
@@ -347,8 +447,10 @@ export function registerHistoryHandler(): void {
  */
 export function registerMessageHandler(): void {
   sock.ev.on('messages.upsert', async ({ messages, type }: any) => {
-    // Ignorar eventos 'append' (mensajes históricos sincronizados en segundo plano)
-    if (type !== 'notify') return;
+    // [HUMAN TAKEOVER] Los eventos 'append' (historial sincronizado tras reconectar) ya no se
+    // descartan por completo: los mensajes del ASESOR que llegan por esa vía también deben
+    // pausar el bot. Los mensajes de clientes por 'append' se ignoran para no responder historial.
+    const isLiveEvent = type === 'notify';
     if (!messages || !Array.isArray(messages)) return;
 
     for (const msg of messages) {
@@ -358,6 +460,9 @@ export function registerMessageHandler(): void {
       // Filtro estricto contra grupos, canales y estados broadcast
       if (jid.endsWith('@g.us') || jid.endsWith('@newsletter') || jid.includes('@newsletter') || jid.includes('broadcast') || jid === 'status@broadcast') continue;
       if (!jid.endsWith('@s.whatsapp.net') && !jid.endsWith('@lid')) continue;
+
+      // [ALIAS LID/NÚMERO] Agrupa las identidades del mismo contacto para que la pausa aplique.
+      collectAndRegisterAliases(msg);
 
       const botPhone = currentUser?.phone || (sock?.user?.id ? sock.user.id.split(':')[0].split('@')[0] : '');
       const senderPhone = jid.split(':')[0].split('@')[0];
@@ -372,9 +477,16 @@ export function registerMessageHandler(): void {
         }
 
         const info = extractMessageInfo(msg);
+        const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now();
+
+        // [NO CONFUNDIR AL BOT CON EL ASESOR] En reconexiones, WhatsApp reenvía mensajes
+        // que el propio bot ya envió. Se detectan por el registro 'bot' y no pausan nada.
+        const isBotCopy = !!(info && wasStoredAsBotMessage(jid, info.text, msgTime));
+
         if (info && (info.text || info.isMedia)) {
           const rawContent = info.text || `[${info.mediaType || 'Multimedia'}]`;
-          const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now();
+          const senderType = isBotCopy ? 'bot' : 'asesor';
+
           const recent = db.prepare(`
             SELECT id FROM chat_messages
             WHERE jid = ? AND contenido = ? AND ABS(timestamp - ?) < 6000
@@ -385,8 +497,8 @@ export function registerMessageHandler(): void {
             try {
               db.prepare(`
                 INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-                VALUES (?, 'asesor', ?, ?)
-              `).run(jid, rawContent, msgTime);
+                VALUES (?, ?, ?, ?)
+              `).run(jid, senderType, rawContent, msgTime);
 
               const session = db.prepare('SELECT jid FROM chat_sessions WHERE jid = ?').get(jid);
               if (!session) {
@@ -399,39 +511,28 @@ export function registerMessageHandler(): void {
                   .run(msgTime, jid);
               }
 
-              notifyLiveMessage({ jid, pushName: 'Asesor Humano', remitente: 'asesor', contenido: rawContent, timestamp: msgTime });
+              if (!isBotCopy) {
+                notifyLiveMessage({ jid, pushName: 'Asesor Humano', remitente: 'asesor', contenido: rawContent, timestamp: msgTime });
+              }
             } catch (e) { }
           }
+        }
 
-          // [HUMAN TAKEOVER AUTOMÁTICO] Cualquier mensaje escrito por una persona (aunque su
-          // contenido ya estuviera registrado) confirma que el asesor está atendiendo el chat:
-          // el bot se silencia, se cancelan respuestas pendientes y el panel recibe el aviso.
-          const autoPaused = registerAdvisorActivity(jid);
-          cancelPendingBotResponses(jid);
-          if (autoPaused) {
+        // [HUMAN TAKEOVER AUTOMÁTICO] Cualquier señal enviada por una persona —texto, audio,
+        // imagen, sticker o incluso una reacción— confirma que el asesor está atendiendo:
+        // el bot se silencia, se cancelan respuestas pendientes y el panel recibe el aviso.
+        if (!isBotCopy) {
+          const paused = registerHumanTakeover(jid, msgTime, 'telefono');
+          if (paused) {
             console.log(`[WhatsApp Bot] ✋ Asesor respondió en ${jid}: bot pausado automáticamente.`);
-            const aviso = '✋ El bot se pausó automáticamente porque un asesor respondió en esta conversación. Se reactivará si el cliente vuelve a escribir más tarde.';
-            let avisoId = null;
-            try {
-              const r = db.prepare(`
-                INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-                VALUES (?, 'sistema', ?, ?)
-              `).run(jid, aviso, Date.now());
-              avisoId = r?.lastInsertRowid;
-            } catch {}
-            notifyChatState({ jid, pausado: true, por: 'asesor', auto: true, origen: 'telefono' });
-            notifyLiveMessage({
-              id: avisoId,
-              jid,
-              pushName: 'Sistema',
-              remitente: 'sistema',
-              contenido: aviso,
-              timestamp: Date.now()
-            });
           }
         }
         continue;
       }
+
+      // [SOLO EN VIVO] Los mensajes de clientes que llegan como historial/append NO se
+      // responden automáticamente (evita contestar conversaciones viejas al reconectar).
+      if (!isLiveEvent) continue;
 
       // Mensaje entrante del cliente
       const messageTimestamp = msg.messageTimestamp;

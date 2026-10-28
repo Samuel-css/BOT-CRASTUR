@@ -65,6 +65,11 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
 
   const isConnected = waStatus?.status === 'connected';
   const effectiveRate = bcvRate || 849.56;
+  // [CONSISTENCIA] Número de cuotas Cashea configurado en Ajustes (por defecto 3).
+  const cuotasCashea = Math.max(1, parseInt(settings?.cashea_cuotas || '3', 10) || 3);
+  const pctCuotaN1 = (60 / cuotasCashea).toFixed(1).replace('.0', '');
+  const pctCuotaN2 = (70 / cuotasCashea).toFixed(1).replace('.0', '');
+  const pctCuotaN3 = (80 / cuotasCashea).toFixed(1).replace('.0', '');
 
   // Catálogo completo de atajos comerciales profesionales para Crastur
   const CANNED_SHORTCUTS = [
@@ -106,7 +111,7 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       categoria: 'Pagos',
       icono: Layers,
       color: 'amber',
-      texto: `💛 *Financiamiento Cashea en Crastur:*\n¡Sí! Aplica para compras y combos a partir de *$25 USD* en nuestra tienda física de San Agustín Norte:\n• *Pagas hoy solo la inicial* en caja escaneando con tu App Cashea al retirar.\n• *El monto restante* te queda en 3 cuotas quincenales a 0% de interés.\n📊 *Porcentajes según tu nivel de usuario:*\n- Nivel 1: 40% inicial + 3 cuotas quincenales del 20%\n- Nivel 2: 30% inicial + 3 cuotas quincenales del 23.3%\n- Nivel 3+: 20% inicial + 3 cuotas quincenales del 26.6%`
+      texto: `💛 *Financiamiento Cashea en Crastur:*\n¡Sí! Aplica para compras y combos a partir de *$25 USD* en nuestra tienda física de San Agustín Norte:\n• *Pagas hoy solo la inicial* en caja escaneando con tu App Cashea al retirar.\n• *El monto restante* te queda en ${cuotasCashea} cuotas quincenales a 0% de interés.\n📊 *Porcentajes según tu nivel de usuario:*\n- Nivel 1: 40% inicial + ${cuotasCashea} cuotas quincenales del ${pctCuotaN1}%\n- Nivel 2: 30% inicial + ${cuotasCashea} cuotas quincenales del ${pctCuotaN2}%\n- Nivel 3+: 20% inicial + ${cuotasCashea} cuotas quincenales del ${pctCuotaN3}%`
     },
     {
       id: 'delivery',
@@ -310,11 +315,13 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
               setActiveSession((prev) => prev ? {
                 ...prev,
                 bot_pausado: data.pausado ? 1 : 0,
-                bot_pausado_por: data.pausado ? (data.por || prev.bot_pausado_por) : null
+                bot_pausado_por: data.pausado ? (data.por || prev.bot_pausado_por) : null,
+                // [DIAGNÓSTICO] Refresca en vivo la hora del último mensaje del asesor.
+                ...(data.pausado && data.por === 'asesor' ? { asesor_ultimo_at: data.at || Date.now() } : {})
               } : null);
 
               // [HUMAN TAKEOVER AUTOMÁTICO] Avisos claros de lo que acaba de ocurrir
-              if (data.auto && data.pausado && data.origen === 'telefono') {
+              if (data.auto && data.pausado && data.origen === 'telefono' && data.notify !== false) {
                 toast.warning('Un asesor respondió en este chat: el bot se pausó automáticamente.');
               } else if (data.auto && !data.pausado) {
                 toast.success('El bot retomó este chat automáticamente.');
@@ -555,6 +562,20 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
       return horas === 1 ? '1 hora' : `${horas} horas`;
     }
     return `${min} minutos`;
+  })();
+
+  // [DIAGNÓSTICO HUMAN TAKEOVER] Hora relativa de la última respuesta del asesor.
+  // Sirve para confirmar que la PC está recibiendo lo que el asesor escribe en el teléfono.
+  const asesorUltimoTexto = (() => {
+    const ts = Number(activeSession?.asesor_ultimo_at) || 0;
+    if (!ts) return null;
+    const minutos = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+    if (minutos < 1) return 'hace menos de 1 minuto';
+    if (minutos < 60) return `hace ${minutos} minuto${minutos === 1 ? '' : 's'}`;
+    const horas = Math.floor(minutos / 60);
+    if (horas < 24) return `hace ${horas} hora${horas === 1 ? '' : 's'}`;
+    const dias = Math.floor(horas / 24);
+    return `hace ${dias} día${dias === 1 ? '' : 's'}`;
   })();
 
   return (
@@ -853,6 +874,17 @@ export default function LiveInboxView({ waStatus, onNavigate, bcvRate, onRequest
                         <span className="text-slate-600">•</span>
                         <span className="truncate text-slate-300">
                           📦 {activeSession.ultimo_producto_nombre}
+                        </span>
+                      </>
+                    )}
+                    {asesorUltimoTexto && (
+                      <>
+                        <span className="text-slate-600">•</span>
+                        <span
+                          className="truncate text-emerald-300/90"
+                          title="Última vez que un asesor respondió en este chat (confirma que la PC recibe los mensajes del teléfono)"
+                        >
+                          ✋ Asesor: {asesorUltimoTexto}
                         </span>
                       </>
                     )}
