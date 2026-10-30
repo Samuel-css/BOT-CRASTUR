@@ -7,19 +7,22 @@
  * - Edición rápida en línea del precio en USD con persistencia inmediata
  * - Copia de cotizaciones formateadas para WhatsApp e Instagram
  * - Módulo de ajuste masivo de precios por porcentaje o monto fijo en dólares
- * 
+ *
  * [MERCADO VENEZUELA]
  * - Precios calculados al vuelo en Bolívares a la tasa oficial BCV.
  * - Desglose de cuotas e inicial Cashea visible en cada tarjeta de repuesto.
  */
 
-import { useState, useRef } from 'react';
-import { Package, Plus, Search, Grid, List, Copy, Check, Edit2, Trash2, ShoppingBag, Sparkles, ChevronDown, Upload, Download } from 'lucide-react';
+import { useState } from 'react';
+import { Package, Plus, Upload, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatBs } from '../../utils/formatters';
-import { PRODUCT_CATEGORIES } from '../../constants/categories';
 import BulkPriceModal from '../modals/BulkPriceModal';
-import { copyInstagramCaption, InstagramIcon } from '../../utils/instagramFormatter';
+import useCatalogFilters from './catalog/useCatalogFilters';
+import useCatalogImport from './catalog/useCatalogImport';
+import useInlinePrice from './catalog/useInlinePrice';
+import CatalogToolbar from './catalog/CatalogToolbar';
+import ProductGrid from './catalog/ProductGrid';
+import ProductTable from './catalog/ProductTable';
 
 export default function CatalogView({
   products,
@@ -31,320 +34,54 @@ export default function CatalogView({
   copiedId,
   onReload
 }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'table'
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
-  const [editingPriceId, setEditingPriceId] = useState(null);
-  const [editingPriceVal, setEditingPriceVal] = useState('');
-  const [savingInline, setSavingInline] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const importInputRef = useRef(null);
 
-  // ─── [IMPORTACIÓN MASIVA] CSV / JSON ──────────────────────────────────────
-  // Permite cargar cientos de repuestos sin agregarlos uno por uno. Acepta el
-  // JSON que exporta el propio sistema y CSV/Excel guardado como CSV.
-  const normalizeImportKey = (value) => String(value || '')
-    .replace(/^\uFEFF/, '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '_')
-    .trim();
+  const {
+    searchTerm,
+    setSearchTerm,
+    categoryFilter,
+    setCategoryFilter,
+    viewMode,
+    setViewMode,
+    categories,
+    filtered
+  } = useCatalogFilters({ products });
 
-  const parseDelimited = (text, delimiter) => {
-    const rows = [];
-    let row = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      if (inQuotes) {
-        if (char === '"') {
-          if (text[i + 1] === '"') { current += '"'; i++; }
-          else inQuotes = false;
-        } else current += char;
-      } else if (char === '"') {
-        inQuotes = true;
-      } else if (char === delimiter) {
-        row.push(current); current = '';
-      } else if (char === '\n') {
-        row.push(current); rows.push(row); row = []; current = '';
-      } else if (char !== '\r') {
-        current += char;
-      }
-    }
-    if (current !== '' || row.length > 0) { row.push(current); rows.push(row); }
-    return rows.filter(r => r.some(c => String(c).trim() !== ''));
-  };
+  const {
+    importing,
+    importInputRef,
+    handleImportFile,
+    downloadTemplate
+  } = useCatalogImport({ toast, onReload });
 
-  const mapCsvToProducts = (text) => {
-    const clean = text.replace(/^\uFEFF/, '');
-    const firstLine = clean.split(/\r?\n/)[0] || '';
-    const delimiter = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
-    const rows = parseDelimited(clean, delimiter);
-    if (rows.length === 0) return [];
-
-    const header = rows[0].map(normalizeImportKey);
-    const hasHeader = header.some(h => ['marca', 'modelo', 'precio', 'precio_usd', 'categoria'].includes(h));
-    const dataRows = hasHeader ? rows.slice(1) : rows;
-    const columns = hasHeader ? header : ['marca', 'modelo', 'categoria', 'precio_usd', 'descripcion', 'stock', 'imagen_url'];
-
-    return dataRows.map(cols => {
-      const item = {};
-      columns.forEach((key, idx) => {
-        const value = String(cols[idx] ?? '').trim();
-        if (key === 'precio' || key === 'precio_usd' || key === 'precio_usd_') item.precio_usd = value;
-        else if (key === 'categoria' || key === 'categoría') item.categoria = value;
-        else if (key === 'descripcion' || key === 'descripción' || key === 'detalle') item.descripcion = value;
-        else if (key === 'imagen' || key === 'imagen_url' || key === 'foto') item.imagen_url = value;
-        else if (key === 'stock' || key === 'cantidad' || key === 'existencia') item.stock = value;
-        else if (key === 'marca' || key === 'fabricante') item.marca = value;
-        else if (key === 'modelo' || key === 'producto' || key === 'nombre') item.modelo = value;
-        else item[key] = value;
-      });
-      let precioRaw = String(item.precio_usd ?? '').replace(/\s/g, '').replace(/[^\d,.-]/g, '');
-      // Acepta "3.50", "3,50" y "1.234,56" (formato venezolano).
-      if (precioRaw.includes(',') && precioRaw.includes('.')) {
-        if (precioRaw.lastIndexOf(',') > precioRaw.lastIndexOf('.')) {
-          precioRaw = precioRaw.replace(/\./g, '').replace(',', '.');
-        } else {
-          precioRaw = precioRaw.replace(/,/g, '');
-        }
-      } else if (precioRaw.includes(',')) {
-        precioRaw = precioRaw.replace(',', '.');
-      }
-      item.precio_usd = parseFloat(precioRaw);
-      item.stock = item.stock !== undefined && item.stock !== '' ? parseInt(String(item.stock).replace(/[^\d-]/g, ''), 10) : 1;
-      if (!Number.isFinite(item.stock)) item.stock = 0;
-      return item;
-    }).filter(item => item.marca && item.modelo && Number.isFinite(item.precio_usd) && item.precio_usd > 0);
-  };
-
-  const handleImportFile = async (event) => {
-    const file = event.target?.files?.[0];
-    if (!file) return;
-    setImporting(true);
-    try {
-      const text = await file.text();
-      let productos = [];
-      if (file.name.toLowerCase().endsWith('.json')) {
-        const parsed = JSON.parse(text);
-        productos = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.productos) ? parsed.productos : []);
-      } else {
-        productos = mapCsvToProducts(text);
-      }
-      if (!productos.length) {
-        toast.error('No se encontraron productos válidos. Revisa la plantilla (marca, modelo, precio).');
-        return;
-      }
-      if (!window.confirm(`Se importarán ${productos.length} producto(s). Los que ya existan (misma marca + modelo) se actualizarán. ¿Continuar?`)) {
-        return;
-      }
-      const res = await fetch('/api/catalog/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productos })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Error al importar el catálogo');
-      toast.success(`Catálogo importado: ${data.inserted ?? 0} nuevos, ${data.updated ?? 0} actualizados.`);
-      if (onReload) onReload();
-    } catch (e) {
-      toast.error(`No se pudo importar: ${e?.message || e}`);
-    } finally {
-      setImporting(false);
-      if (event.target) event.target.value = '';
-    }
-  };
-
-  const downloadTemplate = () => {
-    const csv = '\uFEFFmarca;modelo;categoria;precio_usd;descripcion;stock;imagen_url\n'
-      + 'NGK;Bujía D8EA Bera 150;Repuestos Moto;3.50;Bujía japonesa de rosca larga;20;\n'
-      + 'Rema;Parches en Frío Tip Top;Insumos Cauchera;12.00;Caja de parches vulcanizados;15;\n';
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'plantilla_catalogo_crastur.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  const startInlineEdit = (p) => {
-    setEditingPriceId(p.id);
-    setEditingPriceVal(String(p.precio_usd || ''));
-  };
-
-  const handleSaveInlinePrice = async (p) => {
-    const parsed = parseFloat(editingPriceVal);
-    if (isNaN(parsed) || parsed <= 0) {
-      toast.error('Precio inválido');
-      return;
-    }
-    setSavingInline(true);
-    try {
-      const res = await fetch(`/api/products/${p.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ precio_usd: parsed })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(`Precio actualizado a $${parsed.toFixed(2)} USD`);
-        setEditingPriceId(null);
-        if (onReload) onReload();
-      } else {
-        toast.error(data.error || 'Error al actualizar precio');
-      }
-    } catch (e) {
-      toast.error('Error de conexión');
-    } finally {
-      setSavingInline(false);
-    }
-  };
-
-  const normalizeCat = (cat) => {
-    if (!cat) return '';
-    let c = String(cat).trim();
-    if (c === 'Repuestos para Moto' || c.startsWith('Repuestos para Moto')) {
-      c = c.replace('Repuestos para Moto', 'Repuestos Moto');
-    }
-    if (c === 'Insumos para Caucheras' || c.startsWith('Insumos para Caucheras')) {
-      c = c.replace('Insumos para Caucheras', 'Insumos Cauchera');
-    }
-    return c;
-  };
-
-  const categories = Array.from(new Set([
-    ...PRODUCT_CATEGORIES,
-    ...products.map(p => normalizeCat(p.categoria)).filter(Boolean)
-  ])).filter(c => c !== 'Test');
-
-  const filtered = products.filter(p => {
-    const q = searchTerm.toLowerCase();
-    const marca = (p.marca || '').toLowerCase();
-    const modelo = (p.modelo || '').toLowerCase();
-    const rawCat = p.categoria || '';
-    const normCat = normalizeCat(rawCat);
-    const categoria = normCat.toLowerCase();
-
-    const matchesSearch = marca.includes(q) || modelo.includes(q) || categoria.includes(q);
-    const matchesCat = categoryFilter === 'all' ||
-      normCat === categoryFilter ||
-      rawCat === categoryFilter ||
-      normCat.startsWith(categoryFilter + ' -') ||
-      rawCat.startsWith(categoryFilter + ' -');
-
-    return matchesSearch && matchesCat;
-  });
+  const {
+    editingPriceId,
+    editingPriceVal,
+    setEditingPriceVal,
+    savingInline,
+    startInlineEdit,
+    cancelInlineEdit,
+    handleSaveInlinePrice
+  } = useInlinePrice({ onReload });
 
   return (
     <div className="space-y-5 max-w-6xl mx-auto">
-      {/* Barra superior de controles */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#0a0f1d] p-4 rounded-3xl border border-slate-800/80 shadow-xl">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          {/* Input de Búsqueda */}
-          <div className="relative w-full sm:w-72">
-            <Search size={15} className="absolute left-3.5 top-3 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar por marca, modelo o producto..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#070b14] border border-slate-800 rounded-2xl pl-9 pr-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 transition"
-            />
-          </div>
-
-          {/* Filtro de Categoría con diseño estilizado */}
-          <div className="relative w-full sm:w-auto">
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full sm:w-auto h-10 bg-[#070b14] border border-slate-800 hover:border-slate-700 rounded-xl pl-3.5 pr-8 text-xs text-slate-300 focus:outline-none focus:border-orange-500 transition appearance-none cursor-pointer"
-            >
-              <option value="all">Todas las Categorías ({products.length})</option>
-              {categories.map((c, i) => (
-                <option key={i} value={c}>{c}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-3 text-slate-400 pointer-events-none" />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
-          {/* Botón Ajuste Masivo de Precios en 1 Clic */}
-          <button
-            type="button"
-            onClick={() => setBulkModalOpen(true)}
-            title="Ajustar precios masivamente en 1 clic (+% o monto)"
-            className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/40 text-orange-300 hover:text-orange-200 text-xs font-bold transition active:scale-95 cursor-pointer shadow-sm shadow-orange-500/10"
-          >
-            <Sparkles size={14} className="text-orange-400" />
-            <span>Ajuste Masivo</span>
-          </button>
-
-          {/* Alternador Grid / Table */}
-          <div className="flex items-center bg-[#070b14] rounded-2xl p-1 border border-slate-800">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-xl text-xs transition ${
-                viewMode === 'grid' ? 'bg-orange-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Vista en Tarjetas"
-            >
-              <Grid size={15} />
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-xl text-xs transition ${
-                viewMode === 'table' ? 'bg-orange-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Vista en Tabla"
-            >
-              <List size={15} />
-            </button>
-          </div>
-
-          {/* Botón Importar Catálogo (CSV / JSON) */}
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".csv,.json,application/json,text/csv"
-            className="hidden"
-            onChange={handleImportFile}
-          />
-          <button
-            type="button"
-            onClick={() => importInputRef.current?.click()}
-            disabled={importing}
-            title="Importar catálogo desde Excel/CSV o un respaldo JSON"
-            className="flex items-center gap-1.5 h-10 px-3.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-orange-500/50 text-slate-300 hover:text-white text-xs font-bold transition active:scale-95 cursor-pointer disabled:opacity-50"
-          >
-            <Upload size={14} className="text-orange-400" />
-            <span>{importing ? 'Importando...' : 'Importar'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={downloadTemplate}
-            title="Descargar plantilla CSV de ejemplo"
-            className="flex items-center justify-center h-10 w-10 rounded-xl bg-slate-900 border border-slate-700 hover:border-orange-500/50 text-slate-400 hover:text-orange-300 transition active:scale-95 cursor-pointer"
-          >
-            <Download size={14} />
-          </button>
-
-          {/* Botón Agregar Producto */}
-          <button
-            onClick={onOpenAddModal}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-slate-950 font-bold text-xs transition shadow-lg shadow-orange-500/25 active:scale-95"
-          >
-            <Plus size={16} />
-            <span>Agregar Producto</span>
-          </button>
-        </div>
-      </div>
+      <CatalogToolbar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        categoryFilter={categoryFilter}
+        onCategoryChange={setCategoryFilter}
+        categories={categories}
+        productsCount={products.length}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        importInputRef={importInputRef}
+        onImportFile={handleImportFile}
+        importing={importing}
+        onDownloadTemplate={downloadTemplate}
+        onOpenBulkModal={() => setBulkModalOpen(true)}
+        onOpenAddModal={onOpenAddModal}
+      />
 
       {/* Contenido del Catálogo */}
       {filtered.length === 0 ? (
@@ -384,279 +121,30 @@ export default function CatalogView({
           </div>
         </div>
       ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((p) => {
-            const precioUsd = parseFloat(p.precio_usd) || 0;
-            const precioBs = precioUsd * bcvRate;
-            // [CONSISTENCIA] El backend ya calcula la inicial según la configuración real
-            // (cashea_inicial_pct). Antes el panel mostraba siempre 40%.
-            const casheaInicial = Number(p.cashea_inicial_usd ?? (precioUsd * 0.40));
-
-            return (
-              <div
-                key={p.id}
-                className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl p-5 shadow-xl flex flex-col justify-between card-hover group"
-              >
-                <div className="space-y-3">
-                  {/* Contenedor Adaptativo de Imagen (Cualquier resolución sin recorte) */}
-                  <div className="h-48 w-full rounded-2xl overflow-hidden bg-[#060913] border border-slate-800/80 relative flex items-center justify-center p-2.5 group-hover:border-slate-700 transition">
-                    {p.imagen_url ? (
-                      <img
-                        src={p.imagen_url}
-                        alt={p.modelo}
-                        className="max-h-full max-w-full object-contain drop-shadow-md group-hover:scale-105 transition-transform duration-300 select-none"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-1.5 text-slate-600 select-none">
-                        <div className="w-11 h-11 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 group-hover:text-orange-400 group-hover:border-orange-500/30 transition-colors">
-                          {p.categoria === 'Combos & Kits' ? (
-                            <Sparkles size={20} />
-                          ) : p.categoria === 'Lubricantes & Fluidos' ? (
-                            <Package size={20} />
-                          ) : (
-                            <Package size={20} />
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-500 font-medium">
-                          {p.categoria}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-orange-400 font-mono">
-                        {p.marca}
-                      </span>
-                      <h4 className="font-bold text-sm text-white line-clamp-1">{p.modelo}</h4>
-                      <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-md bg-[#070b14] text-slate-400 border border-slate-800">
-                        {p.categoria}
-                      </span>
-                    </div>
-
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#070b14] font-mono text-slate-300 border border-slate-800 shrink-0">
-                      Stock: {p.stock}
-                    </span>
-                  </div>
-
-                  {p.descripcion && (
-                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{p.descripcion}</p>
-                  )}
-
-                  {/* Precios y Cashea */}
-                  <div className="p-3 bg-[#070b14] rounded-2xl border border-slate-800/80 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-base font-black text-white font-mono">
-                        ${precioUsd.toFixed(2)} USD
-                      </span>
-                      <span className="text-xs font-bold text-orange-400 font-mono">
-                        Bs. {formatBs(precioBs)}
-                      </span>
-                    </div>
-                    <div className="pt-1.5 border-t border-slate-900 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-400 font-medium flex items-center gap-1">
-                        <ShoppingBag size={12} className="text-orange-400" /> Cashea:
-                      </span>
-                      {precioUsd >= 25 ? (
-                        <span className="font-bold text-orange-300 font-mono" title="Inicial 40% en tienda física">
-                          Inicial ${casheaInicial.toFixed(2)} USD
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 italic" title="Aplica a partir de $25 USD en tienda física">
-                          Mín. $25 (en combo)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Acciones de la tarjeta */}
-                <div className="pt-4 mt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => onCopyQuote(p)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white transition active:scale-95"
-                    title="Copiar cotización para WhatsApp"
-                  >
-                    {copiedId === p.id ? (
-                      <>
-                        <Check size={13} className="text-emerald-400" />
-                        <span className="text-emerald-400 font-semibold">Copiado</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={13} />
-                        <span>Cotización</span>
-                      </>
-                    )}
-                  </button>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => copyInstagramCaption(p, bcvRate)}
-                      className="p-2 hover:bg-purple-950/40 rounded-xl text-purple-400 hover:text-purple-300 border border-transparent hover:border-purple-500/30 transition cursor-pointer"
-                      title="Copiar texto listo para Instagram"
-                    >
-                      <InstagramIcon size={14} />
-                    </button>
-                    <button
-                      onClick={() => onEditProduct(p)}
-                      className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition cursor-pointer"
-                      title="Editar repuesto"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      onClick={() => onDeleteProduct(p.id)}
-                      className="p-2 hover:bg-rose-950/40 rounded-xl text-rose-400 hover:text-rose-300 transition cursor-pointer"
-                      title="Eliminar del catálogo"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <ProductGrid
+          products={filtered}
+          bcvRate={bcvRate}
+          onCopyQuote={onCopyQuote}
+          copiedId={copiedId}
+          onEditProduct={onEditProduct}
+          onDeleteProduct={onDeleteProduct}
+        />
       ) : (
         /* Vista en Tabla */
-        <div className="bg-[#0a0f1d] border border-slate-800/80 rounded-3xl overflow-hidden shadow-xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#070b14] text-slate-400 border-b border-slate-800 uppercase font-semibold text-[10px] tracking-wider">
-                <tr>
-                  <th className="py-3.5 px-4">Marca & Modelo</th>
-                  <th className="py-3.5 px-4">Categoría</th>
-                  <th className="py-3.5 px-4">Stock</th>
-                  <th className="py-3.5 px-4">Precio USD</th>
-                  <th className="py-3.5 px-4">Bolívares</th>
-                  <th className="py-3.5 px-4">Inicial Cashea</th>
-                  <th className="py-3.5 px-4 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {filtered.map((p) => {
-                  const precioUsd = parseFloat(p.precio_usd) || 0;
-                  const precioBs = precioUsd * bcvRate;
-                  const casheaInicial = Number(p.cashea_inicial_usd ?? (precioUsd * 0.40));
-
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-900/40 transition">
-                      <td className="py-3 px-4 font-bold text-white">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-[#060913] border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
-                            {p.imagen_url ? (
-                              <img src={p.imagen_url} alt={p.modelo} className="max-w-full max-h-full object-contain" />
-                            ) : (
-                              <span className="text-[10px] text-slate-500 font-bold">CR</span>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-white block truncate">{p.marca ? `${p.marca} - ` : ''}{p.modelo}</span>
-                            {p.descripcion && <span className="text-[11px] text-slate-500 font-normal line-clamp-1">{p.descripcion}</span>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-300">{p.categoria}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-300">{p.stock}</td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-white">
-                        {editingPriceId === p.id ? (
-                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-orange-400 font-bold">$</span>
-                            <input
-                              type="number"
-                              step="any"
-                              autoFocus
-                              value={editingPriceVal}
-                              onChange={(e) => setEditingPriceVal(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveInlinePrice(p);
-                                if (e.key === 'Escape') setEditingPriceId(null);
-                              }}
-                              className="w-20 bg-slate-900 border border-orange-500 rounded-lg px-2 py-1 text-xs text-white font-mono focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSaveInlinePrice(p)}
-                              disabled={savingInline}
-                              className="px-1.5 py-1 rounded bg-emerald-500 text-slate-950 hover:bg-emerald-400 font-bold text-xs"
-                              title="Guardar (Enter)"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingPriceId(null)}
-                              className="px-1.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white text-xs"
-                              title="Cancelar (Esc)"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startInlineEdit(p)}
-                            title="Haz clic para editar precio al instante (Enter para guardar)"
-                            className="group/price flex items-center gap-1.5 hover:text-orange-300 px-2 py-1 -mx-2 rounded-lg hover:bg-slate-800/80 transition cursor-pointer"
-                          >
-                            <span>${precioUsd.toFixed(2)}</span>
-                            <Edit2 size={11} className="opacity-0 group-hover/price:opacity-100 text-slate-400" />
-                          </button>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-orange-400">Bs. {formatBs(precioBs)}</td>
-                      <td className="py-3.5 px-4 font-mono text-orange-300 font-semibold">
-                        {precioUsd >= 25 ? (
-                          `$${casheaInicial.toFixed(2)}`
-                        ) : (
-                          <span className="text-[10px] text-slate-500 font-normal italic" title="Aplica en compras mayores a $25 en tienda">Mín. $25</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => copyInstagramCaption(p, bcvRate)}
-                            className="p-1.5 hover:bg-purple-950/40 rounded-lg text-purple-400 hover:text-purple-300 transition cursor-pointer"
-                            title="Copiar texto para Instagram"
-                          >
-                            <InstagramIcon size={13} />
-                          </button>
-                          <button
-                            onClick={() => onCopyQuote(p)}
-                            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-                            title="Copiar cotización"
-                          >
-                            <Copy size={13} />
-                          </button>
-                          <button
-                            onClick={() => onEditProduct(p)}
-                            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition"
-                            title="Editar"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => onDeleteProduct(p.id)}
-                            className="p-1.5 hover:bg-rose-950/40 rounded-lg text-rose-400 transition"
-                            title="Eliminar"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ProductTable
+          products={filtered}
+          bcvRate={bcvRate}
+          onCopyQuote={onCopyQuote}
+          onEditProduct={onEditProduct}
+          onDeleteProduct={onDeleteProduct}
+          editingPriceId={editingPriceId}
+          editingPriceVal={editingPriceVal}
+          onEditingPriceChange={setEditingPriceVal}
+          savingInline={savingInline}
+          startInlineEdit={startInlineEdit}
+          cancelInlineEdit={cancelInlineEdit}
+          handleSaveInlinePrice={handleSaveInlinePrice}
+        />
       )}
       {/* Modal de Ajuste Masivo de Precios */}
       <BulkPriceModal

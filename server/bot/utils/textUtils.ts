@@ -77,7 +77,10 @@ export function isFuzzyMatch(userToken: string, targetWord: string): boolean {
   if (userToken.length >= 4 && targetWord.includes(userToken)) return true;
   if (userToken.length === 3 && targetWord.startsWith(userToken)) return true;
 
-  const maxDist = userToken.length > 5 ? 2 : 1;
+  // [PRECISIÓN] Dos ediciones solo se permiten en palabras largas. Antes, palabras de
+  // 6 letras como "caucho" coincidían con "casco" (distancia 2) y el bot cotizaba un
+  // casco cuando el cliente pedía un caucho. En palabras cortas/medias se exige 1 edición.
+  const maxDist = userToken.length >= 8 ? 2 : 1;
   const dist = levenshteinDistance(userToken, targetWord);
   return dist <= maxDist;
 }

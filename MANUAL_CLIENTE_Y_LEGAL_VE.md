@@ -192,7 +192,8 @@ El panel incluye la sección **Live Inbox**, donde el personal de ventas puede s
 1. **Pausa del Bot por Human Takeover (Automática y Manual):**  
    - **Automática (viene activada):** apenas un vendedor responde en un chat —desde el teléfono o desde el panel— el bot **se queda en silencio en esa conversación** para no interrumpir a la persona. En el Live Inbox verás la insignia verde **A** sobre el avatar del chat y un banner de estado en la conversación.
    - **Reactivación con respeto:** si el cliente vuelve a escribir después de **3 horas** sin respuesta del vendedor, el bot retoma la conversación. El tiempo es configurable (1 hora / 3 horas / 6 horas / nunca) en **Ajustes ➔ 2. Asistente Virtual ➔ 3. Recordatorio**.
-   - **Manual:** si prefieres silenciar el bot tú mismo, abre el chat y presiona **"Pausar Bot (Atender Yo)"** (insignia ámbar **P**). Esa pausa **solo la quita un humano** con **"Reanudar Bot"**.
+   - **Manual:** si prefieres silenciar el bot tú mismo, abre el chat y presiona **"Atender yo"** (insignia ámbar **P**). Esa pausa **solo la quita un humano** con **"Reanudar Bot"**.
+   - **Solicitud de asesor con plazo (SLA):** cuando el cliente escribe **VENDEDOR**, el bot le indica que un asesor le responderá **por ese mismo chat en un máximo de 1 hora** y pausa el bot en esa conversación. En el Live Inbox queda un aviso con el **nombre, teléfono e interés** del cliente y la hora límite. Si el asesor responde antes, el plazo se marca como cumplido; si no, al vencer el bot retoma la conversación y aparece una **alerta roja de SLA vencido**. El cliente puede escribir **MENU** para que el asistente lo atienda antes.
    - **Respuestas a tiempo:** si el bot estaba redactando una respuesta y el vendedor contesta antes de que salga, **la respuesta se descarta**: nunca llega tarde ni "atropella" a la persona.
    - **Detección tras reconexión:** si el vendedor contestó mientras la PC estaba sin internet, al reconectar el bot revisa el historial, detecta la intervención humana y se mantiene en silencio. La pausa aplica aunque WhatsApp identifique al mismo cliente con dos identificadores distintos.
    - **Diagnóstico en la cabecera del chat:** verás **“✋ Asesor: hace X minutos”** con la hora de la última respuesta humana. Si aparece, la PC está recibiendo los mensajes que el vendedor envía desde el teléfono de la tienda.
@@ -247,7 +248,7 @@ También disponibles por terminal:
 - **`npm run typecheck:server` / `build:server`**: Verificación de tipos y compilación del backend.
 
 ### B. Suite de Pruebas de Estrés y Validación Extrema (`npm test`)
-El sistema cuenta con una batería de **242 pruebas automatizadas** que validan:
+El sistema cuenta con una batería de **343 pruebas automatizadas** que validan:
 - **Alta Concurrencia:** 100 y 200 peticiones simultáneas procesadas en pocos milisegundos (> 1.000 req/s).
 - **35 Perfiles de Clientes y Casos Extremos:** Modismos venezolanos (*"epale mano"*, *"chamo tienes..."*), errores ortográficos (*"pastiya"*, *"bujya"*), notas de voz, fotos, y de-escalación respetuosa ante insultos o quejas.
 - **Ciberseguridad:** Protección contra inyecciones SQL (`' OR '1'='1`, `DROP TABLE`), payloads masivos y anti-spam automático (ráfaga de flood masivo, sin silenciar conversaciones humanas normales).

@@ -182,11 +182,10 @@ async function checkPendingFollowUps(
         WHERE jid = ?
       `).run(session.jid);
 
-      db.prepare(`
-        INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-        VALUES (?, 'bot', ?, ?)
-      `).run(session.jid, followUpText, Date.now());
-
+      // [SIN DUPLICADOS] El mensaje NO se registra aquí: `sendTextMessage` lo inserta en
+      // chat_messages cuando realmente sale por WhatsApp. Antes se insertaba al encolarlo
+      // y otra vez al enviarlo, dejando dos filas iguales en el Live Inbox (y una fila
+      // "fantasma" si no había conexión).
       recordMetric('seguimiento_enviado', prodName, session.jid);
     } catch (err: any) {
       console.warn(`[Seguimiento] No se pudo enviar recordatorio a ${session.jid} (${err?.message || err})`);
@@ -241,11 +240,8 @@ async function check22hReservationReminders(
       await sendWhatsAppMessageCallback(jid, reminderMsg);
       markReservation22hReminderSent(res.id);
 
-      db.prepare(`
-        INSERT INTO chat_messages (jid, remitente, contenido, timestamp)
-        VALUES (?, 'bot', ?, ?)
-      `).run(jid, reminderMsg, Date.now());
-
+      // [SIN DUPLICADOS] Igual que en los seguimientos: el registro en chat_messages lo
+      // hace `sendTextMessage` al despachar de verdad, no al encolar.
       recordMetric('aviso_apartado_22h', prodName, jid);
     } catch (err: any) {
       console.warn(`[Apartados 22h] Error enviando aviso a ${jid}:`, err?.message || err);

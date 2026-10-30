@@ -24,6 +24,7 @@ import {
   notifyStatusChange
 } from './socketState';
 import { enqueueOutboundMessage } from './outboundQueue';
+import { checkHandoffSla } from '../bot/services/handoffService';
 import { registerHistoryHandler, registerMessageHandler, flushPendingStartupMessages, bindBotReady, resetIngestState } from './ingest';
 
 /** Ruta del sistema de archivos donde se almacenan las llaves de sesión criptográficas.
@@ -35,6 +36,18 @@ let followUpInterval: any = null;
 let connectingTimeout: any = null;
 let botReady = { value: false };
 let botReadyTimer: any = null;
+
+/**
+ * Ejecuta la verificación de handoffs vencidos. El mensaje al cliente se encola con
+ * los mismos retardos y reglas anti-baneo que los recordatorios.
+ */
+function runHandoffSlaCheck(): void {
+  checkHandoffSla((targetJid: string, messageText: string) => {
+    enqueueOutboundMessage(targetJid, messageText);
+  }).catch((err: any) => {
+    console.error('[Handoff] Error verificando SLA:', err?.message || err);
+  });
+}
 
 // [CONTROL DE RECONEXIÓN] Contador de intentos consecutivos de reconexión y bandera
 // de pausa. [ESTABILIDAD] Con una sesión vinculada la reconexión nunca se pausa: el
@@ -304,6 +317,10 @@ export async function startWhatsApp(): Promise<void> {
           await flushPendingStartupMessages();
         }, 20000);
 
+        // [HANDOFF] Revisar handoffs que vencieron mientras la PC estaba apagada.
+        const handoffBootTimer = setTimeout(runHandoffSlaCheck, 5000);
+        if (handoffBootTimer.unref) handoffBootTimer.unref();
+
         // Tarea programada cada 60s: limpieza de apartados vencidos y chequeo de seguimientos
         if (!followUpInterval) {
           followUpInterval = setInterval(() => {
@@ -322,6 +339,7 @@ export async function startWhatsApp(): Promise<void> {
               checkPendingFollowUps((targetJid: string, messageText: string) => {
                 enqueueOutboundMessage(targetJid, messageText);
               });
+              runHandoffSlaCheck();
             }
           }, 60 * 1000);
         }

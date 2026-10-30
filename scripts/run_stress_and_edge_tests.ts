@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import db, { masterSnapshotPath, registerChatAliases } from '../server/database';
 import { registerHumanTakeover, canBotSend, onCancelPendingBotResponses } from '../server/whatsapp/takeover';
+import { checkHandoffSla, getHandoffInfo } from '../server/bot/services/handoffService';
 import { processIncomingMessage } from '../server/bot';
 import { resetSpam } from '../server/bot/utils/antiSpam';
 import { extractVenezuelanPhones } from '../server/bot/utils/formatters';
@@ -489,7 +490,8 @@ async function runAllTests() {
     assert(res5 && res5.includes('Cashea'), 'Opción 5 brinda financiamiento Cashea');
 
     const res6 = processIncomingMessage(jidBase + '6@s.whatsapp.net', '6', 'Navegador');
-    assert(res6 && (res6.includes('asesor') || res6.includes('Asesor') || res6.includes('vendedor')), 'Opción 6 ofrece atención de vendedor humano');
+    const res6Text = typeof res6 === 'string' ? res6 : (res6 && (res6.text || res6.caption)) || '';
+    assert(res6Text && /asesor|vendedor/i.test(res6Text), 'Opción 6 ofrece atención de vendedor humano');
 
     const resMenu = processIncomingMessage(jidBase + 'menu@s.whatsapp.net', 'menu', 'Navegador');
     assert(resMenu && resMenu.includes('1️⃣') && resMenu.includes('6️⃣'), 'Comando "menu" despliega menú numérico completo');
@@ -1738,6 +1740,180 @@ async function runAllTests() {
   assert(!!sesCas && Number(sesCas.nivel_cashea) === 3, 'El nivel de Cashea indicado por el cliente se recuerda en su sesión');
   db.db.prepare('DELETE FROM chat_sessions WHERE jid = ?').run(jidCas);
   db.db.prepare('DELETE FROM chat_messages WHERE jid = ?').run(jidCas);
+
+  // -------------------------------------------------------------
+  // PUNTO 7: DETECCIÓN AMPLIADA, CONTEXTO Y SEGUIMIENTOS
+  // -------------------------------------------------------------
+  console.log('\n🔎 [PUNTO 7] Detección ampliada, contexto con vigencia y seguimientos');
+  console.log('-----------------------------------------------------------------');
+
+  let detSeq = 0;
+  const askDet = (query: string, jidFijo?: string) => {
+    const jid = jidFijo || `5841777${String(detSeq++).padStart(3, '0')}@s.whatsapp.net`;
+    return { jid, res: processIncomingMessage(jid, query, 'Cliente Deteccion') };
+  };
+  const asText = (r: any) => (typeof r === 'string' ? r : (r && (r.text || r.caption)) || '');
+
+  const tasa1 = asText(askDet('cuanto esta el dolar').res);
+  assert(/tasa|bcv/i.test(tasa1), '"cuanto esta el dolar" responde la tasa BCV');
+
+  const tasa2 = asText(askDet('a cuanto esta el dolar hoy').res);
+  assert(/tasa|bcv/i.test(tasa2), '"a cuanto esta el dolar hoy" responde la tasa BCV');
+
+  const ubic = asText(askDet('estan en caracas').res);
+  assert(/ubicaci[oó]n|liberalba/i.test(ubic), '"estan en caracas" responde la ubicación');
+
+  const dondeBujia = asText(askDet('donde esta la bujia').res);
+  assert(/buj[ií]a/i.test(dondeBujia) && !/ubicaci[oó]n/i.test(dondeBujia), '"donde esta la bujia" cotiza el producto y no la tienda');
+
+  const traenBujia = asText(askDet('me traen bujias').res);
+  assert(/buj[ií]a/i.test(traenBujia), '"me traen bujias" cotiza el producto (no secuestra delivery)');
+
+  const calidad = asText(askDet('tienen pastillas de buena calidad').res);
+  assert(/pastillas/i.test(calidad), '"tienen pastillas de buena calidad" cotiza las pastillas');
+
+  const insta = asText(askDet('tienen instagram').res);
+  assert(/instagram|redes/i.test(insta) && !/precio promoci[oó]n/i.test(insta), '"tienen instagram" responde redes y no un combo aleatorio');
+
+  const abiertos = asText(askDet('siguen abiertos?').res);
+  assert(/horario/i.test(abiertos), '"siguen abiertos?" responde el horario');
+
+  const apartas = asText(askDet('me lo apartas?').res);
+  assert(/apartado|nombre/i.test(apartas), '"me lo apartas?" inicia el flujo de apartado');
+
+  const envioPetare = asText(askDet('me lo envian a petare').res);
+  assert(/delivery/i.test(envioPetare), '"me lo envian a petare" responde delivery');
+
+  const bsPrecio = asText(askDet('cuanto es en bolivares').res);
+  assert(/tasa|bs\./i.test(bsPrecio), '"cuanto es en bolivares" responde tasa/precio en Bs');
+
+  const bsPago = asText(askDet('pago en bolivares').res);
+  assert(/formas de pago|pago m[oó]vil/i.test(bsPago), '"pago en bolivares" sigue respondiendo métodos de pago');
+
+  const puntos = asText(askDet('aceptan puntos').res);
+  assert(/formas de pago|punto de venta/i.test(puntos), '"aceptan puntos" responde los métodos de pago');
+
+  // [FALSO POSITIVO] Un casco no debe aparecer al buscar cauchos por similitud.
+  db.db.prepare("INSERT INTO products (marca, modelo, categoria, precio_usd, stock, descripcion, activo) VALUES (?,?,?,?,?,?,1)")
+    .run('TestCasco', 'Casco Integral de Prueba', 'Accesorios Moto', 40, 5, 'Casco certificado');
+  invalidateProductCache();
+  const cauchos = searchProductsFuzzy('venden cauchos');
+  assert(!cauchos.some((p: any) => /casco/i.test(String(p.modelo))), 'Buscar "cauchos" no devuelve un casco por error de fuzzy');
+  db.db.prepare("DELETE FROM products WHERE marca = 'TestCasco'").run();
+  invalidateProductCache();
+
+  // [CONTEXTO] Después de cotizar, "y cuanto sale" repite la ficha del producto.
+  const ctxRes = askDet('bujia bera mi pana');
+  const ctxJid = ctxRes.jid;
+  const followUp = asText(processIncomingMessage(ctxJid, 'y cuanto sale?', 'Cliente Deteccion'));
+  assert(/buj[ií]a/i.test(followUp) && /3\.50/.test(followUp), '"y cuanto sale?" repite la ficha del producto cotizado');
+
+  // [TTL] Un contexto viejo no debe secuestrar el menú numérico.
+  db.db.prepare('UPDATE chat_sessions SET contexto_at = ? WHERE jid = ?').run(Date.now() - 50 * 60 * 1000, ctxJid);
+  const menuViejo = asText(processIncomingMessage(ctxJid, '1', 'Cliente Deteccion'));
+  assert(!/buj[ií]a/i.test(menuViejo) && /insumos/i.test(menuViejo), 'Un contexto viejo no secuestra el "1" del menú');
+
+  // [SEGUIMIENTO] Encolar no debe escribir una fila fantasma en chat_messages.
+  const jidSeg = '584177700099@s.whatsapp.net';
+  const prevHorario = db.getSettings().horario_atencion;
+  const prevFueraHorario = db.getSettings().fuera_horario_activo;
+  db.updateSetting('insistencia_activa', '1');
+  db.updateSetting('insistencia_minutos', '60');
+  db.updateSetting('fuera_horario_activo', '0');
+  db.updateSetting('horario_atencion', 'Todos los días de 12:00 AM a 11:59 PM');
+  db.db.prepare(`INSERT INTO chat_sessions (jid, push_name, step, ultimo_mensaje_at, seguimiento_enviado, bot_pausado, nivel_cashea, ultimo_producto_nombre)
+    VALUES (?, 'Cliente Seguimiento', 'start', ?, 0, 0, 1, 'Bujia NGK')`).run(jidSeg, Date.now() - 2 * 60 * 60 * 1000);
+  db.db.prepare("INSERT INTO chat_messages (jid, remitente, contenido, timestamp) VALUES (?, 'cliente', 'cuanto cuesta la bujia', ?)")
+    .run(jidSeg, Date.now() - 2 * 60 * 60 * 1000);
+  await checkPendingFollowUps(() => {});
+  const filasSeg = db.db.prepare("SELECT COUNT(*) as c FROM chat_messages WHERE jid = ? AND remitente = 'bot'").get(jidSeg) as any;
+  assert(Number(filasSeg?.c || 0) === 0, 'El seguimiento encolado no inserta una fila fantasma en el Live Inbox');
+  db.updateSetting('horario_atencion', prevHorario);
+  db.updateSetting('fuera_horario_activo', prevFueraHorario);
+
+  db.db.prepare("DELETE FROM chat_messages WHERE jid LIKE '5841777%'").run();
+  db.db.prepare("DELETE FROM chat_sessions WHERE jid LIKE '5841777%'").run();
+
+  // -------------------------------------------------------------
+  // PUNTO 8: HANDOFF DE ASESOR CON SLA
+  // -------------------------------------------------------------
+  console.log('\n🤝 [PUNTO 8] Handoff de asesor con SLA de 60 minutos');
+  console.log('-----------------------------------------------------------------');
+
+  const prevAutoPausa = db.getSettings().auto_pausa_asesor;
+  const prevHorarioH = db.getSettings().horario_atencion;
+  const prevFueraH = db.getSettings().fuera_horario_activo;
+  db.updateSetting('auto_pausa_asesor', '1');
+  db.updateSetting('handoff_sla_minutos', '60');
+  db.updateSetting('fuera_horario_activo', '0');
+  db.updateSetting('horario_atencion', 'Todos los días de 12:00 AM a 11:59 PM');
+
+  let hSeq = 0;
+  const nuevoJidHandoff = () => `5841778${String(hSeq++).padStart(3, '0')}@s.whatsapp.net`;
+  const textoHandoff = (r: any) => (typeof r === 'string' ? r : (r && (r.text || r.caption)) || '');
+
+  // 8.1 Solicitud: mensaje al cliente, aviso al vendedor y pausa del bot
+  const jidH1 = nuevoJidHandoff();
+  const rH1 = textoHandoff(processIncomingMessage(jidH1, 'vendedor', 'Cliente Handoff'));
+  assert(/asesor/i.test(rH1) && /(1 hora|60 minutos)/i.test(rH1) && /MENU/.test(rH1), 'La solicitud de asesor promete el plazo de 1 hora y la salida MENU');
+  const infoH1: any = getHandoffInfo(jidH1);
+  assert(infoH1?.handoff_estado === 'pendiente', 'El handoff queda en estado pendiente');
+  assert(Number(infoH1?.bot_pausado) === 1 && infoH1?.bot_pausado_por === 'handoff', 'El bot queda pausado solo por el handoff');
+  const avisoH1: any = db.db.prepare("SELECT contenido FROM chat_messages WHERE jid = ? AND remitente = 'sistema' ORDER BY id DESC LIMIT 1").get(jidH1);
+  assert(/Solicitud de asesor/i.test(avisoH1?.contenido || '') && /Cliente Handoff/.test(avisoH1?.contenido || ''), 'El vendedor recibe el aviso con el nombre del cliente en el mismo chat');
+
+  // 8.2 El vendedor responde → SLA cumplido
+  registerHumanTakeover(jidH1, Date.now(), 'panel');
+  const infoH1b: any = getHandoffInfo(jidH1);
+  assert(infoH1b?.handoff_estado === 'atendido', 'La respuesta del vendedor marca el handoff como atendido');
+  assert(infoH1b?.bot_pausado_por === 'asesor', 'Tras la respuesta humana la pausa pasa a modo asesor');
+
+  // 8.3 Vencimiento sin respuesta → aviso único y el bot retoma
+  const jidH2 = nuevoJidHandoff();
+  processIncomingMessage(jidH2, 'vendedor', 'Cliente Vencido');
+  db.db.prepare('UPDATE chat_sessions SET handoff_solicitado_at = ?, handoff_vence_at = ? WHERE jid = ?')
+    .run(Date.now() - 120000, Date.now() - 60000, jidH2);
+  const enviadosH: Array<{ jid: string; mensaje: string }> = [];
+  await checkHandoffSla((targetJid: string, mensaje: string) => {
+    enviadosH.push({ jid: targetJid, mensaje });
+  });
+  const infoH2: any = getHandoffInfo(jidH2);
+  assert(infoH2?.handoff_estado === 'vencido', 'Al vencer el plazo el handoff queda como vencido');
+  assert(Number(infoH2?.bot_pausado) === 0, 'Al vencer, el bot se reactiva en ese chat');
+  assert(enviadosH.length === 1 && /asesor/i.test(enviadosH[0].mensaje) && /retomo|esperando/i.test(enviadosH[0].mensaje), 'Se envía un solo aviso de vencimiento al cliente');
+  const avisoH2: any = db.db.prepare("SELECT contenido FROM chat_messages WHERE jid = ? AND remitente = 'sistema' ORDER BY id DESC LIMIT 1").get(jidH2);
+  assert(/SLA vencido/i.test(avisoH2?.contenido || ''), 'El panel recibe la alerta de SLA vencido');
+  await checkHandoffSla((targetJid: string, mensaje: string) => {
+    enviadosH.push({ jid: targetJid, mensaje });
+  });
+  assert(enviadosH.length === 1, 'El aviso de vencimiento no se repite');
+
+  // Si el vendedor responde tarde, el SLA vencido se cierra igual.
+  registerHumanTakeover(jidH2, Date.now(), 'panel');
+  const infoH2b: any = getHandoffInfo(jidH2);
+  assert(infoH2b?.handoff_estado === 'atendido', 'Una respuesta tardía del vendedor cierra el SLA vencido');
+
+  // 8.4 MENU durante la espera → el cliente recupera al bot
+  const jidH3 = nuevoJidHandoff();
+  processIncomingMessage(jidH3, 'vendedor', 'Cliente Menu');
+  const menuH3 = textoHandoff(processIncomingMessage(jidH3, 'MENU', 'Cliente Menu'));
+  assert(/1️⃣/.test(menuH3) && /6️⃣/.test(menuH3), 'Escribir MENU durante el handoff devuelve el menú del bot');
+  const infoH3: any = getHandoffInfo(jidH3);
+  assert(infoH3?.handoff_estado === 'cancelado' && Number(infoH3?.bot_pausado) === 0, 'El MENU cancela el handoff y reanuda el bot');
+
+  // 8.5 Fuera de horario → se informa y el bot sigue atendiendo
+  db.updateSetting('fuera_horario_activo', '1');
+  const jidH4 = nuevoJidHandoff();
+  const rH4 = textoHandoff(processIncomingMessage(jidH4, 'vendedor', 'Cliente Noche'));
+  assert(/fuera de horario/i.test(rH4) && /MENU/.test(rH4), 'Fuera de horario se informa al cliente y se le ofrece el asistente');
+  const infoH4: any = getHandoffInfo(jidH4);
+  assert(infoH4?.handoff_estado === 'fuera_horario' && Number(infoH4?.bot_pausado) === 0, 'Fuera de horario el bot no se pausa');
+
+  db.updateSetting('auto_pausa_asesor', prevAutoPausa);
+  db.updateSetting('horario_atencion', prevHorarioH);
+  db.updateSetting('fuera_horario_activo', prevFueraH);
+  db.db.prepare("DELETE FROM chat_messages WHERE jid LIKE '5841778%'").run();
+  db.db.prepare("DELETE FROM chat_sessions WHERE jid LIKE '5841778%'").run();
 
   resetSpam();
 

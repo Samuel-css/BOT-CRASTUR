@@ -27,6 +27,7 @@ import {
   notifyChatState,
   cancelPendingBotResponsesFor
 } from '../whatsappService';
+import { cancelHandoff, markHandoffAttended } from '../bot/services/handoffService';
 import { broadcast } from '../websocket';
 
 /**
@@ -177,6 +178,11 @@ router.post('/chat/pause', (req: Request, res: Response) => {
   // respuesta del bot que estuviera esperando salir (retardo de "escribiendo..." incluido).
   if (pausado) {
     try { cancelPendingBotResponsesFor(jid); } catch {}
+    // Si había una solicitud de asesor pendiente, el operador la está atendiendo.
+    try { markHandoffAttended(jid, Date.now(), 'operador'); } catch {}
+  } else {
+    // Reanudar manualmente también cierra cualquier handoff pendiente.
+    try { cancelHandoff(jid, 'operador'); } catch {}
   }
 
   let botPausadoPor = null;
@@ -187,7 +193,7 @@ router.post('/chat/pause', (req: Request, res: Response) => {
     botPausadoAt = session?.bot_pausado_at || null;
   } catch {}
 
-  notifyChatState({ jid, pausado: !!pausado, por: botPausadoPor, at: botPausadoAt, auto: false });
+  notifyChatState({ jid, pausado: !!pausado, por: botPausadoPor, at: botPausadoAt, auto: false, handoffEstado: pausado ? 'atendido' : 'cancelado' });
   res.json({ success: true, jid, pausado: !!pausado, por: botPausadoPor });
 });
 

@@ -42,7 +42,7 @@ const RAW_PRODUCT_TYPES: string[] = [
 
   // 🏍️ Neumáticos y cauchos
   'caucho', 'cauchos', 'llanta', 'llantas', 'neumatico', 'neumaticos',
-  'sellomatic', 'goma', 'gomas',
+  'sellomatic', 'goma', 'gomas', 'cubierta', 'cubiertas',
 
   // 🎽 Cascos y seguridad (productos de la web)
   'casco', 'cascos', 'coraza', 'corazas', 'guante', 'guantes',

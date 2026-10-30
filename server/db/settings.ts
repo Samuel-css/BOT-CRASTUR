@@ -79,7 +79,7 @@ export function toggleBotPause(jid: string, paused?: boolean | number): void {
     db.prepare(`
       UPDATE chat_sessions
       SET bot_pausado = 1,
-          bot_pausado_por = COALESCE(bot_pausado_por, 'manual'),
+          bot_pausado_por = 'manual',
           bot_pausado_at = COALESCE(bot_pausado_at, ?)
       WHERE jid = ?
     `).run(now, jid);

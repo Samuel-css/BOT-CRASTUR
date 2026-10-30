@@ -22,6 +22,7 @@ import {
 } from '../database';
 import { resolveChatJids } from '../db/aliases';
 import { notifyChatState, notifyLiveMessage } from './socketState';
+import { markHandoffAttended } from '../bot/services/handoffService';
 
 export type TakeoverOrigin = 'telefono' | 'panel' | 'historial';
 
@@ -81,9 +82,38 @@ export function registerHumanTakeover(jid: string, at?: number, origin: Takeover
   const alreadyPaused = isBotPaused(jid);
   const paused = registerAdvisorActivity(jid, at);
 
+  // [HANDOFF] Si había una solicitud de asesor pendiente, este mensaje humano la cumple.
+  // Se registra antes de cualquier salida temprana para que también cuente cuando la
+  // pausa automática está desactivada en Ajustes.
+  try {
+    markHandoffAttended(jid, Number(at) > 0 ? Number(at) : Date.now(), origin);
+  } catch { /* el handoff nunca debe impedir el takeover */ }
+
   if (!paused) {
     // La pausa automática está desactivada en Ajustes: se respeta la configuración,
     // pero igual queda registrada la hora del asesor para la reactivación/follow-ups.
+    // [HANDOFF] Si el bot estaba pausado por una solicitud de asesor, se libera: con la
+    // pausa automática apagada el bot debe seguir respondiendo.
+    try {
+      const row = db.prepare('SELECT bot_pausado_por FROM chat_sessions WHERE jid = ?').get(jid) as any;
+      if (row?.bot_pausado_por === 'handoff') {
+        db.prepare(`
+          UPDATE chat_sessions
+          SET bot_pausado = 0, bot_pausado_por = NULL, bot_pausado_at = NULL
+          WHERE jid = ?
+        `).run(jid);
+      }
+    } catch {}
+    notifyChatState({
+      jid,
+      pausado: false,
+      por: null,
+      auto: true,
+      origen: origin,
+      at: Number(at) > 0 ? Number(at) : Date.now(),
+      handoffEstado: 'atendido',
+      notify: false
+    });
     return false;
   }
 
@@ -123,6 +153,7 @@ export function registerHumanTakeover(jid: string, at?: number, origin: Takeover
     auto: true,
     origen: origin,
     at: activityAt,
+    handoffEstado: 'atendido',
     notify: !alreadyPaused
   });
 

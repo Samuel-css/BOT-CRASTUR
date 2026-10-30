@@ -42,22 +42,36 @@ export function includesWordAny(norm: string, phrases: readonly string[]): boole
 export const KEYWORDS = {
   binance: ['binance', 'usdt', 'binance pay', 'cripto', 'crypto', 'bitcoin', 'btc', 'criptomoneda', 'criptomonedas'],
 
-  combos: ['combo', 'combos', 'instagram', 'promo', 'promos', 'promocion', 'promociones', 'vi en ig', 'vi en instagram', 'publicacion'],
+  // [PRECISIÓN] 'instagram' ya NO está aquí: "tienen instagram" abría un combo
+  // aleatorio del catálogo. Solo se trata como combo si además se menciona
+  // combo/promo/publicación. Las consultas de redes se atienden en `social`.
+  combos: ['combo', 'combos', 'promo', 'promos', 'promocion', 'promociones', 'vi en ig', 'vi en instagram', 'vi en insta', 'vi esta publicacion', 'publicacion', 'publicaron', 'publican', 'publicaron en instagram', 'publican en instagram'],
   combosKits: ['kits'],
+
+  social: ['instagram', 'redes sociales', 'redes', 'facebook', 'tiktok', 'cuenta de instagram', 'perfil de instagram'],
 
   catalog: ['catalogo', 'catalogos', 'lista de precios', 'listado de precios', 'en pdf', 'el pdf'],
   catalogEquals: ['pdf', 'en pdf', 'el pdf'],
 
   nonAcceptedPayments: [
-    'zelle', 'banesco panama', 'punto de venta', 'tienen punto',
+    'zelle', 'banesco panama', 'punto de venta', 'tienen punto', 'aceptan punto', 'aceptan puntos',
+    'pago con punto', 'pago por punto', 'pagan con punto', 'se puede con punto',
     'tarjeta de debito', 'tarjeta de credito', 'tarjeta',
     'zinli', 'paypal', 'wally', 'wally tech', 'airtm', 'uphold',
     'wise', 'payoneer', 'skrill', 'neteller', 'western union',
     'moneygram', 'venmo', 'cash app', 'efectivo digital', 'monedero digital'
   ],
 
-  rate: ['a que tasa', 'cual es la tasa', 'que tasa', 'tasa bcv', 'tasa de hoy', 'tasa del dia', 'a como esta el dolar', 'a como reciben', 'precio del dolar'],
-  rateEquals: ['tasa', 'dolar', 'dolares'],
+  rate: [
+    'a que tasa', 'cual es la tasa', 'que tasa', 'tasa bcv', 'tasa de hoy', 'tasa del dia',
+    'a como esta el dolar', 'a como reciben', 'precio del dolar',
+    // [DETECCIÓN AMPLIADA] Formas muy comunes en Venezuela para preguntar la tasa.
+    'cuanto esta el dolar', 'a cuanto esta el dolar', 'como esta el dolar', 'cuanto vale el dolar',
+    'valor del dolar', 'dolar hoy', 'tasa del dolar', 'precio del dolar hoy',
+    'cuanto esta el bcv', 'a cuanto esta el bcv', 'como esta el bcv', 'cuanto esta hoy el dolar',
+    'a como esta el dolar hoy', 'a cuanto esta hoy el dolar', 'cuanto esta el dolar hoy'
+  ],
+  rateEquals: ['tasa', 'dolar', 'dolares', 'bcv'],
 
   nationalShipping: ['nacional', 'al interior', 'interior del pais', 'otra ciudad', 'otro estado', 'tealca', 'zoom', 'mrw', 'domesa', 'valencia', 'maracay', 'barquisimeto', 'maracaibo', 'puerto la cruz', 'maturin', 'merida', 'san cristobal'],
 
@@ -78,11 +92,31 @@ export const KEYWORDS = {
   paymentMethods: ['como pagar', 'como pago', 'formas de pago', 'metodos de pago', 'pago movil', 'que metodo', 'aceptan dolares', 'aceptan divisas', 'como reciben el pago', 'como se realiza el pago', 'transferencia', 'se puede pagar', 'puedo pagar', 'pagar al llegar', 'pago al llegar', 'pagar en persona', 'pago en persona', 'pagar al recibir', 'pago al recibir', 'pago contra entrega', 'pagar al recibir el pedido', 'aceptan efectivo', 'pago en efectivo', 'efectivo', 'bolivares', 'en bolivares'],
   paymentMethodsEquals: ['como se paga', 'formas de pago', 'metodos de pago'],
 
-  apartado: ['apartar', 'reservar', 'aparta', 'reserva', 'guardamelo', 'guardamela', 'guardalo', 'guardala', 'lo quiero apartar', 'quiero apartar', 'lo paso a buscar', 'lo voy a buscar', 'apartame', 'reservame', 'apartalo', 'apartala', 'apartalos', 'apartalas'],
+  apartado: [
+    'apartar', 'reservar', 'aparta', 'apartas', 'apartan', 'apartamos', 'reserva', 'reservas', 'reservan',
+    'guardamelo', 'guardamela', 'guardalo', 'guardala', 'guardas', 'guardan',
+    'lo quiero apartar', 'quiero apartar', 'lo paso a buscar', 'lo voy a buscar',
+    'apartame', 'reservame', 'apartalo', 'apartala', 'apartalos', 'apartalas',
+    'me lo apartas', 'me la apartas', 'me lo reservas', 'me lo guardas', 'lo aparto', 'la aparto'
+  ],
 
-  delivery: ['delivery', 'envio', 'envios', 'hacen delivery', 'ponen delivery', 'traen', 'llevan', 'motorizado', 'mandan', 'flete', 'a domicilio', 'a toda caracas', 'a todas caracas'],
+  delivery: [
+    'delivery', 'envio', 'envios', 'hacen delivery', 'ponen delivery', 'motorizado', 'flete',
+    'a domicilio', 'a toda caracas', 'a todas caracas', 'hacen envios', 'hacen envio', 'reparten',
+    // [PRECISIÓN] Antes 'traen', 'llevan' y 'mandan' solos secuestraban consultas de producto
+    // ("me traen bujías" respondía delivery y nunca cotizaba). Ahora se exige objeto directo.
+    'me lo traen', 'me lo llevan', 'me lo mandan', 'me lo envian', 'me lo envias', 'me lo mandas',
+    'lo mandan a', 'lo llevan a', 'lo envian a', 'me lo llevan a', 'me lo mandan a', 'me lo envian a',
+    'envian a', 'mandan a', 'llevan a', 'envian para', 'mandan para', 'llevan para'
+  ],
 
-  storeHours: ['horario', 'abren', 'cierran', 'estan abiertos', 'que hora abren', 'a que hora', 'hasta que hora', 'atienden hoy', 'atienden el', 'trabajan los domingos', 'trabajan domingos', 'trabajan el domingo', 'atienden el domingo', 'abren los domingos', 'abren domingo', 'feriado', 'feriados', 'dia feriado'],
+  storeHours: [
+    'horario', 'abren', 'cierran', 'estan abiertos', 'estan abierto', 'siguen abiertos', 'siguen abierto',
+    'que hora abren', 'a que hora', 'hasta que hora', 'hasta cuando atienden', 'hasta que hora atienden',
+    'atienden hoy', 'atienden el', 'atienden ahora', 'abren hoy', 'abren ahora', 'abren los domingos',
+    'abren domingo', 'trabajan los domingos', 'trabajan domingos', 'trabajan el domingo',
+    'atienden el domingo', 'feriado', 'feriados', 'dia feriado', 'ya cerraron', 'estan cerrados'
+  ],
 
   warranty: ['garantia', 'devolucion', 'defectuoso', 'si no le sirve', 'si no le queda', 'no le funciono', 'vino malo', 'vino defectuoso', 'viene malo', 'sale malo', 'salio malo', 'no funciona', 'dejo de funcionar'],
 
@@ -91,7 +125,13 @@ export const KEYWORDS = {
 
   cashea: ['cashea', 'financiamiento', 'financiado', 'financiar', 'financiera', 'a credito', 'credito', 'cuotas', 'cuota', 'inicial', 'nivel', 'pagar por partes', 'pago por partes'],
 
-  location: ['ubicacion', 'mapa', 'maps', 'donde estan', 'donde queda', 'donde quedan', 'donde es', 'que parte', 'q parte', 'por donde', 'se ubican', 'se encuentran', 'sucursal', 'sucursales'],
+  location: [
+    'ubicacion', 'mapa', 'maps', 'ubicados', 'donde estan', 'donde queda', 'donde quedan', 'donde es',
+    'que parte', 'q parte', 'por donde', 'se ubican', 'se encuentran', 'sucursal', 'sucursales',
+    'estan en caracas', 'son de caracas', 'estan ubicados', 'donde los encuentro', 'donde las encuentro',
+    'donde puedo retirar', 'donde queda la tienda', 'direccion de la tienda', 'en que parte de caracas',
+    'como llego a la tienda', 'donde es la tienda'
+  ],
 
   howToBuy: ['como compro', 'como comprar', 'como hago para comprar', 'como puedo comprar', 'como se compra', 'como hago un pedido', 'como pido', 'como hago el pedido', 'como hacer el pedido', 'quiero comprar', 'quiero hacer un pedido', 'como se hace la compra'],
 
@@ -101,7 +141,7 @@ export const KEYWORDS = {
   cauchera: ['cauchera', 'caucho', 'llanta', 'llantas', 'goma', 'gomas', 'valvula', 'parche', 'nitrogeno', 'inflado', 'camara de aire', 'neumatico'],
 
   greetingParts: ['buenos dias', 'buen dia', 'buenas tardes', 'buenas noches', 'epale', 'que mas', 'que tal', 'saludos', 'mi pana'],
-  greetingEquals: ['hola', 'hola!', 'ola', 'buenas', 'menu', 'inicio', 'ayuda', 'info', 'informacion', 'que tienen', 'que venden', 'que manejan', 'que tienen disponible', 'que ofrecen', 'que productos tienen', 'que productos venden', 'que venden aqui', 'que tienes', 'tienen catalogo', 'que hay', 'chamo', 'pana', 'todo', 'todo el catalogo', 'ver todo'],
+  greetingEquals: ['hola', 'hola!', 'ola', 'buenas', 'menu', 'inicio', 'ayuda', 'info', 'informacion', 'bot', 'asistente', 'volver', 'que tienen', 'que venden', 'que manejan', 'que tienen disponible', 'que ofrecen', 'que productos tienen', 'que productos venden', 'que venden aqui', 'que tienes', 'tienen catalogo', 'que hay', 'chamo', 'pana', 'todo', 'todo el catalogo', 'ver todo'],
 
   // [VENTA AL MAYOR] Consultas de compra por volumen
   wholesale: ['al mayor', 'mayorista', 'por mayor', 'precio al mayor', 'ventas al mayor', 'compra por volumen'],
@@ -110,7 +150,10 @@ export const KEYWORDS = {
   barePriceEquals: [
     'cuanto vale', 'cuanto cuesta', 'cuanto sale', 'cuanto es', 'cuanto seria',
     'vale', 'cuesta', 'precio', 'precios', 'que precio', 'a como', 'a cuanto',
-    'cuanto valen', 'cuanto cuestan', 'cuanto esta', 'cuanto estan', 'cotizame'
+    'cuanto valen', 'cuanto cuestan', 'cuanto esta', 'cuanto estan', 'cotizame',
+    // [DETECCIÓN AMPLIADA] Seguimientos muy comunes después de una cotización.
+    'cuanto', 'y cuanto', 'a como esta', 'a como lo tienen', 'a como sale',
+    'cuanto me sale', 'cuanto me queda', 'cuanto seria en total'
   ],
 
   carGeneric: ['carro', 'auto', 'vehiculo', 'camioneta', 'sedan', '4x4']

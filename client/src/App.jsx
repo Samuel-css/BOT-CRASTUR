@@ -42,8 +42,11 @@ import ConfirmModal from './components/modals/ConfirmModal';
 import QuickPriceModal from './components/modals/QuickPriceModal';
 import ToastContainer, { useToast } from './components/ui/Toast';
 import { Toaster } from 'sonner';
-
-import { formatBs, formatRate } from './utils/formatters';
+import useAppData from './app/useAppData';
+import useSystemActions from './app/useSystemActions';
+import useCatalogActions from './app/useCatalogActions';
+import useReservationActions from './app/useReservationActions';
+import useSellerActions from './app/useSellerActions';
 
 /**
  * Indicador visual mostrado mientras una vista lazy se descarga por primera vez.
@@ -59,23 +62,13 @@ function ViewLoadingFallback() {
 }
 
 export default function App() {
-  // Pestaña activa del dashboard y colecciones de datos primarias
+  // Pestaña activa, notificaciones y estado de interfaz.
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [products, setProducts] = useState([]);
-  const [reservations, setReservations] = useState([]);
-  const [sellers, setSellers] = useState([]);
-  const [settings, setSettings] = useState({});
-  const [bcvData, setBcvData] = useState({ tasa_efectiva: null, tasa_bcv: null, fecha_tasa: '' });
-  const [waStatus, setWaStatus] = useState({ status: 'disconnected', qr: null, user: null });
-  const [waReconexionPausada, setWaReconexionPausada] = useState(false);
-  const [botPausedGlobal, setBotPausedGlobal] = useState(false);
-  const [metrics, setMetrics] = useState({ consultas_hoy: 0, total_mensajes: 0, total_clientes: 0, top_busquedas: [] });
-  const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toasts, toast, removeToast } = useToast();
 
-  // Estados de control de apertura para modales interactivos
+  // Estados de control de apertura para modales interactivos.
   const [productModal, setProductModal] = useState({ isOpen: false, editing: null });
   const [sellerModal, setSellerModal] = useState({ isOpen: false, editing: null });
   const [reservationModal, setReservationModal] = useState({ isOpen: false, data: null });
@@ -92,8 +85,87 @@ export default function App() {
     }
   });
 
+  // Datos, carga inicial, WebSocket, polling y tasa BCV.
+  const {
+    products,
+    reservations,
+    sellers,
+    settings,
+    setSettings,
+    bcvData,
+    waStatus,
+    waReconexionPausada,
+    botPausedGlobal,
+    setBotPausedGlobal,
+    metrics,
+    loading,
+    setLoading,
+    setWaStatus,
+    loadProducts,
+    loadReservations,
+    loadSellers,
+    refreshBCV,
+    toggleStoreStatus: handleToggleStoreStatus
+  } = useAppData(toast);
+
+  // Acciones de ciclo de vida (WhatsApp, pausa global, apagado).
+  const {
+    handleStartWhatsApp,
+    handleResetWhatsApp,
+    handleOpenLogoutConfirm,
+    handleToggleGlobalBotPause,
+    handleShutdownSystem
+  } = useSystemActions({
+    setLoading,
+    setWaStatus,
+    setConfirmModal,
+    setIsSystemShutdown,
+    botPausedGlobal,
+    setBotPausedGlobal,
+    toast
+  });
+
+  // Acciones del catálogo y cotizaciones.
+  const {
+    handleSaveProduct,
+    handleDeleteProduct,
+    copyWhatsAppQuote,
+    copyManualQuote
+  } = useCatalogActions({
+    products,
+    reservations,
+    productModal,
+    setProductModal,
+    setConfirmModal,
+    loadProducts,
+    toast,
+    bcvData,
+    settings,
+    setCopiedId
+  });
+
+  // Acciones de apartados.
+  const { handleMarkDelivered, handleCancelReservation } = useReservationActions({
+    reservations,
+    setConfirmModal,
+    setReservationModal,
+    loadReservations,
+    loadProducts,
+    toast
+  });
+
+  // Acciones de asesores.
+  const { handleSaveSeller, handleDeleteSeller } = useSellerActions({
+    sellers,
+    sellerModal,
+    setSellerModal,
+    setConfirmModal,
+    loadSellers,
+    toast
+  });
+
   /**
-   * Alterna la barra lateral entre modo expandido y colapsado (con persistencia en localStorage).
+   * Alterna la barra lateral entre modo expandido y colapsado (con persistencia).
    */
   const handleToggleSidebar = () => {
     setSidebarCollapsed(prev => {
@@ -103,7 +175,7 @@ export default function App() {
     });
   };
 
-  // Atajos globales de teclado: F2 (Calculadora rápida) y Ctrl+B (Plegar/Desplegar navegación)
+  // Atajos globales de teclado: F2 (Calculadora rápida) y Ctrl+B (Plegar navegación).
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'F2') {
@@ -119,7 +191,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Adaptación de interfaz responsiva ante cambios en la resolución de pantalla
+  // Adaptación de interfaz responsiva ante cambios de resolución.
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 1100) {
@@ -129,517 +201,6 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  /**
-   * Modifica el indicador de apertura física de la tienda (Horario de atención / Fuera de horario).
-   */
-  const handleToggleStoreStatus = () => {
-    const isClosed = settings.fuera_horario_activo === '1';
-    const newStatus = isClosed ? '0' : '1';
-    fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fuera_horario_activo: newStatus })
-    })
-      .then(r => r.json())
-      .then(data => {
-        setSettings(data.settings || {});
-        if (newStatus === '1') {
-          toast.warning('Tienda marcada como CERRADA temporalmente');
-        } else {
-          toast.success('Tienda marcada como ABIERTA (Atendiendo normal)');
-        }
-      })
-      .catch(() => toast.error('Error al cambiar estado de la tienda'));
-  };
-
-  const loadProducts = () => {
-    fetch('/api/products')
-      .then(r => r.json())
-      .then(data => setProducts(data.products || []))
-      .catch(() => {});
-  };
-
-  const loadReservations = () => {
-    fetch('/api/reservations?active=false')
-      .then(r => r.json())
-      .then(data => setReservations(data.reservations || []))
-      .catch(() => {});
-  };
-
-  const loadSellers = () => {
-    fetch('/api/sellers')
-      .then(r => r.json())
-      .then(data => setSellers(data.sellers || []))
-      .catch(() => {});
-  };
-
-  const loadBCV = () => {
-    fetch('/api/bcv')
-      .then(r => r.json())
-      .then(data => setBcvData(data))
-      .catch(() => {});
-  };
-
-  const loadSettings = () => {
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => setSettings(data))
-      .catch(() => {});
-  };
-
-  const loadMetrics = () => {
-    fetch('/api/metrics')
-      .then(r => r.json())
-      .then(data => setMetrics(data))
-      .catch(() => {});
-  };
-
-  const loadAllData = () => {
-    loadProducts();
-    loadReservations();
-    loadSellers();
-    loadBCV();
-    loadSettings();
-    loadMetrics();
-  };
-
-  // Carga inicial y suscripción a eventos en tiempo real vía WebSocket (con reconexión estocástica)
-  useEffect(() => {
-    loadAllData();
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    let ws;
-    let wsReconnectDelay = 2000;
-    // [RENDIMIENTO] Agrupa las recargas disparadas por mensajes en vivo para no recargar
-    // todo el catálogo/métricas en cada mensaje (con mucho tráfico el panel se saturaba).
-    let liveReloadTimer = null;
-
-    function connectWS() {
-      try {
-        ws = new WebSocket(wsUrl);
-        ws.onopen = () => {
-          wsReconnectDelay = 2000; // Restablecer retardo base tras reconexión exitosa
-        };
-        ws.onmessage = (event) => {
-          try {
-            const { type, data } = JSON.parse(event.data);
-            if (type === 'whatsapp_status') {
-              setWaStatus(data || { status: 'disconnected', qr: null, user: null });
-            } else if (type === 'bot_global_pause_changed') {
-              if (data && data.bot_pausado_global !== undefined) {
-                setBotPausedGlobal(data.bot_pausado_global);
-              }
-            } else if (type === 'bcv_updated') {
-              loadBCV();
-              loadProducts();
-              loadReservations();
-            } else if (type === 'reservations_updated') {
-              loadReservations();
-              loadProducts();
-            } else if (type === 'products_updated') {
-              loadProducts();
-            } else if (type === 'live_chat_message') {
-              if (liveReloadTimer) clearTimeout(liveReloadTimer);
-              liveReloadTimer = setTimeout(() => {
-                liveReloadTimer = null;
-                loadMetrics();
-                loadReservations();
-                loadProducts();
-              }, 1200);
-            }
-          } catch (err) {
-            console.error('[WS] Error procesando evento:', err);
-          }
-        };
-        ws.onclose = () => {
-          // Reintentar conexión con backoff exponencial (límite máximo 30 segundos)
-          setTimeout(() => {
-            connectWS();
-            wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000);
-          }, wsReconnectDelay);
-        };
-        ws.onerror = () => {
-          ws.close();
-        };
-      } catch {
-        console.log('[WS] Conexión omitida');
-      }
-    }
-    connectWS();
-
-    // Polling de respaldo cada 10 segundos como red de seguridad ante caídas de WebSocket
-    const interval = setInterval(() => {
-      fetch('/api/status')
-        .then(r => r.json())
-        .then(data => {
-          if (data && data.whatsapp) {
-            setWaStatus(data.whatsapp);
-          } else {
-            setWaStatus({ status: 'disconnected', qr: null, user: null });
-          }
-          if (data && data.bot_pausado_global !== undefined) setBotPausedGlobal(data.bot_pausado_global);
-          if (data && data.reconexion_pausada !== undefined) setWaReconexionPausada(!!data.reconexion_pausada);
-        })
-        .catch(() => {});
-      loadMetrics();
-      loadReservations();
-    }, 10000);
-
-    return () => {
-      clearInterval(interval);
-      if (liveReloadTimer) clearTimeout(liveReloadTimer);
-      if (ws) ws.close();
-    };
-  }, []);
-
-  /**
-   * Fuerza una consulta manual de la tasa BCV oficial y actualiza el estado.
-   */
-  const refreshBCV = () => {
-    setLoading(true);
-    fetch('/api/bcv/refresh', { method: 'POST' })
-      .then(async (r) => {
-        const data = await r.json().catch(() => ({}));
-        setLoading(false);
-        loadBCV();
-        loadProducts();
-        if (data && data.success === false) {
-          // [VERACIDAD] La consulta falló y se mantiene la última tasa guardada.
-          toast.warning(`No se pudo consultar el BCV ahora. Se mantiene la última tasa guardada${data?.tasa ? ` (Bs. ${Number(data.tasa).toFixed(2)})` : ''}.`);
-        } else {
-          toast.success('¡Tasa BCV actualizada exitosamente!');
-        }
-      })
-      .catch(() => {
-        setLoading(false);
-        toast.error('Error al consultar la tasa BCV');
-      });
-  };
-
-  /**
-   * Inicia el proceso de conexión de WhatsApp Baileys.
-   */
-  const handleStartWhatsApp = () => {
-    setLoading(true);
-    fetch('/api/whatsapp/start', { method: 'POST' })
-      .then(r => r.json())
-      .then(() => {
-        setLoading(false);
-        setWaStatus(prev => ({ ...prev, status: 'connecting' }));
-        toast.info('Conectando con WhatsApp...');
-      })
-      .catch(() => {
-        setLoading(false);
-        toast.error('Error al conectar con WhatsApp');
-      });
-  };
-
-  /**
-   * Restablece las credenciales de WhatsApp en disco y genera un nuevo código QR limpio.
-   */
-  const handleResetWhatsApp = () => {
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Restablecer conexión de WhatsApp?',
-      message: 'Esta acción limpiará las credenciales y sesiones guardadas de WhatsApp y generará un nuevo código QR desde cero. Deberás volver a escanearlo con el teléfono.',
-      confirmText: 'Sí, Generar Nuevo QR',
-      cancelText: 'Cancelar',
-      isDanger: true,
-      onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        setLoading(true);
-        toast.info('Restableciendo sesión y generando nuevo código QR...');
-        fetch('/api/whatsapp/reset', { method: 'POST' })
-          .then(r => r.json())
-          .then(() => {
-            setLoading(false);
-            setWaStatus({ status: 'connecting', qr: null, user: null });
-            toast.success('Sesión limpia. Generando código QR...');
-          })
-          .catch((err) => {
-            setLoading(false);
-            toast.error('Error al reiniciar WhatsApp: ' + err.message);
-          });
-      }
-    });
-  };
-
-  /**
-   * Cierra la sesión activa de WhatsApp con opción de vaciado de chats por privacidad.
-   */
-  const handleOpenLogoutConfirm = () => {
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Cerrar sesión de WhatsApp?',
-      message: 'El bot dejará de responder mensajes automáticos y apartados hasta que vuelvas a escanear el código QR con tu teléfono.',
-      confirmText: 'Cerrar Sesión',
-      checkboxLabel: 'Vaciar también el historial de chats del Live Inbox (Privacidad)',
-      checkboxChecked: false,
-      isDanger: true,
-      onConfirm: (clearChats) => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        fetch('/api/whatsapp/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clearHistory: !!clearChats })
-        })
-          .then(r => r.json())
-          .then((res) => {
-            setWaStatus({ status: 'disconnected', qr: null, user: null });
-            if (res.cleared) {
-              toast.info('Sesión de WhatsApp cerrada y chats eliminados');
-            } else {
-              toast.info('Sesión de WhatsApp cerrada');
-            }
-          })
-          .catch(() => {});
-      }
-    });
-  };
-
-  /**
-   * [ANTI-BANEO META 2025] Alterna la pausa global del bot para toda la tienda física.
-   */
-  const handleToggleGlobalBotPause = () => {
-    const nextState = !botPausedGlobal;
-    fetch('/api/bot/pause-global', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paused: nextState })
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.bot_pausado_global !== undefined) {
-          setBotPausedGlobal(data.bot_pausado_global);
-          if (data.bot_pausado_global) {
-            toast.warning('Bot PAUSADO globalmente. No responderá automáticamente a ningún chat.');
-          } else {
-            toast.success('Bot REANUDADO globalmente. Está atendiendo mensajes.');
-          }
-        }
-      })
-      .catch(() => {
-        toast.error('Error al cambiar el estado del bot');
-      });
-  };
-
-  /**
-   * Guarda o actualiza un producto en el inventario de la tienda.
-   */
-  const handleSaveProduct = async (formData) => {
-    try {
-      if (productModal.editing) {
-        const r = await fetch(`/api/products/${productModal.editing.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-        const data = await r.json();
-        if (data.success) {
-          setProductModal({ isOpen: false, editing: null });
-          loadProducts();
-          toast.success('Repuesto actualizado correctamente ✅');
-        } else {
-          toast.error(data.error || 'Error al actualizar el repuesto');
-        }
-      } else {
-        const r = await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-        const data = await r.json();
-        if (data.success) {
-          setProductModal({ isOpen: false, editing: null });
-          loadProducts();
-          toast.success('Repuesto agregado al catálogo ✅');
-        } else {
-          toast.error(data.error || 'Error al agregar el repuesto');
-        }
-      }
-    } catch {
-      toast.error('Error de conexión al guardar el repuesto');
-    }
-  };
-
-  /**
-   * Elimina un producto tras verificar si existen apartados activos comprometidos.
-   */
-  const handleDeleteProduct = (productId) => {
-    const prod = products.find(p => p.id === productId);
-    const prodName = prod ? `"${prod.marca} - ${prod.modelo}"` : 'este repuesto';
-    const hasActiveReservation = reservations.some(r => r.producto_id === productId && r.estado === 'activo');
-
-    let warningMsg = `¿Estás seguro de eliminar definitivamente ${prodName} del inventario? Esta pieza se removerá de tu catálogo y el bot ya no la ofrecerá a los clientes en WhatsApp.`;
-    if (hasActiveReservation) {
-      warningMsg += `\n\n⚠️ ¡ADVERTENCIA DE SEGURIDAD!: Este repuesto tiene un apartado activo por 24 horas registrado por un cliente. Si lo eliminas, la reserva no podrá ser canjeada en el mostrador.`;
-    }
-
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Eliminar repuesto definitivamente?',
-      message: warningMsg,
-      confirmText: 'Sí, Eliminar Definitivamente',
-      cancelText: 'Cancelar',
-      isDanger: true,
-      onConfirm: async () => {
-        try {
-          const res = await fetch(`/api/products/${productId}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (data.success) {
-            toast.success(`Repuesto ${prodName} eliminado del catálogo`);
-            loadProducts();
-          } else {
-            toast.error(data.error || 'Error al eliminar el repuesto');
-          }
-        } catch {
-          toast.error('Error de red al intentar eliminar el repuesto');
-        } finally {
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        }
-      }
-    });
-  };
-
-  /**
-   * Marca un apartado como retirado en mostrador y lo archiva en el historial.
-   */
-  const handleMarkDelivered = (reservationId) => {
-    const resItem = reservations.find(r => r.id === reservationId);
-    const clientName = resItem?.nombre ? ` de ${resItem.nombre}` : '';
-
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Marcar apartado como retirado?',
-      message: `¿Confirmas que el cliente ya pagó y retiró su repuesto${clientName} en la tienda física? Esta acción archivará el apartado en el historial.`,
-      confirmText: 'Sí, Marcar Retirado',
-      cancelText: 'Cancelar',
-      isDanger: false,
-      onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        fetch(`/api/reservations/${reservationId}/status`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          // [INTEGRIDAD] El estado oficial del backend es 'entregado' (no 'retirado').
-          body: JSON.stringify({ estado: 'entregado' })
-        })
-          .then(async (r) => {
-            const data = await r.json().catch(() => ({}));
-            if (!r.ok || data.success === false) {
-              throw new Error(data.error || 'No se pudo actualizar el apartado');
-            }
-            setReservationModal({ isOpen: false, data: null });
-            loadReservations();
-            loadProducts();
-            toast.success('Apartado marcado como retirado ✅');
-          })
-          .catch((err) => toast.error(err.message || 'Error al actualizar el apartado'));
-      }
-    });
-  };
-
-  /**
-   * Cancela una reserva y reintegra la unidad física al stock de la tienda.
-   */
-  const handleCancelReservation = (reservationId) => {
-    const resItem = reservations.find(r => r.id === reservationId);
-    const prodName = resItem?.producto_nombre ? ` (${resItem.producto_nombre})` : '';
-
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Liberar apartado por 24h?',
-      message: `El apartado${prodName} será cancelado y el repuesto quedará inmediatamente disponible para la venta en mostrador y WhatsApp.`,
-      confirmText: 'Liberar Apartado',
-      cancelText: 'Cancelar',
-      isDanger: true,
-      onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        fetch(`/api/reservations/${reservationId}`, { method: 'DELETE' })
-          .then(r => r.json())
-          .then(() => {
-            setReservationModal({ isOpen: false, data: null });
-            loadReservations();
-            loadProducts();
-            toast.info('Apartado liberado. El repuesto está disponible nuevamente.');
-          })
-          .catch(() => toast.error('Error al liberar el apartado'));
-      }
-    });
-  };
-
-  /**
-   * Guarda o actualiza un asesor comercial.
-   */
-  const handleSaveSeller = async (formData) => {
-    try {
-      if (sellerModal.editing) {
-        const r = await fetch(`/api/sellers/${sellerModal.editing.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-        const data = await r.json();
-        if (data.success) {
-          setSellerModal({ isOpen: false, editing: null });
-          loadSellers();
-          toast.success('Datos del asesor actualizados ✅');
-        } else {
-          toast.error(data.error || 'Error al actualizar el asesor');
-        }
-      } else {
-        const r = await fetch('/api/sellers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-        const data = await r.json();
-        if (data.success) {
-          setSellerModal({ isOpen: false, editing: null });
-          loadSellers();
-          toast.success('Asesor registrado correctamente ✅');
-        } else {
-          toast.error(data.error || 'Error al registrar el asesor');
-        }
-      }
-    } catch {
-      toast.error('Error de conexión al guardar el asesor');
-    }
-  };
-
-  /**
-   * Elimina un asesor del equipo de ventas.
-   */
-  const handleDeleteSeller = (sellerId) => {
-    const seller = sellers.find(s => s.id === sellerId);
-    const sellerName = seller ? `"${seller.nombre}"` : 'este asesor';
-
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Eliminar asesor de ventas?',
-      message: `¿Estás seguro de eliminar a ${sellerName}? El bot ya no derivará clientes ni entregará este contacto en WhatsApp cuando pidan hablar con un vendedor.`,
-      confirmText: 'Sí, Eliminar Asesor',
-      cancelText: 'Cancelar',
-      isDanger: true,
-      onConfirm: async () => {
-        try {
-          const res = await fetch(`/api/sellers/${sellerId}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (data.success) {
-            toast.success(`Asesor ${sellerName} eliminado`);
-            loadSellers();
-          } else {
-            toast.error(data.error || 'Error al eliminar el asesor');
-          }
-        } catch {
-          toast.error('Error al eliminar el asesor');
-        } finally {
-          setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        }
-      }
-    });
-  };
 
   /**
    * Guarda parámetros de configuración operativa.
@@ -656,76 +217,6 @@ export default function App() {
         toast.success('Configuración guardada correctamente ✅');
       })
       .catch(() => toast.error('Error al guardar la configuración'));
-  };
-
-  /**
-   * Copia una cotización de producto con formato enriquecido para WhatsApp.
-   */
-  const copyWhatsAppQuote = (product) => {
-    const tasa = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;
-    const precioUsd = parseFloat(product.precio_usd) || 0;
-    const precioBs = precioUsd * tasa;
-    // [CONSISTENCIA] Usa el plan real de Ajustes y los valores ya calculados por el backend.
-    const cuotasCashea = Math.max(1, parseInt(product.cashea_cuotas ?? settings.cashea_cuotas ?? 3, 10) || 3);
-    const inicialPct = Number(product.cashea_inicial_pct ?? parseFloat(settings.cashea_inicial_pct || '40'));
-    const n1 = Number(product.cashea_inicial_usd ?? (precioUsd * (inicialPct / 100)));
-    const cuota = Number(product.cashea_cuota_usd ?? ((precioUsd - n1) / cuotasCashea));
-
-    const casheaLine = precioUsd >= 25
-      ? `💛 *Cashea (En tienda física):* Inicial de *$${n1.toFixed(2)}* (Bs. ${formatBs(n1 * tasa)}) + ${cuotasCashea} cuotas quincenales de *$${cuota.toFixed(2)}* (Pago en caja escaneando con tu App Cashea)`
-      : `💛 *Cashea:* Disponible para compras a partir de $25 USD en tienda física`;
-
-    const quote = `🏍️ *${product.marca} - ${product.modelo}* 🛞\n💵 Precio: *$${precioUsd.toFixed(2)} USD*\n🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}* (Tasa BCV: ${formatRate(tasa)})\n${casheaLine}\n📦 *Disponibilidad:* Retiro inmediato en tienda física Crastur (Caracas).\n\n📍 *Ubicación:*\nEdificio Liberalba, Av. Sur 9, San Agustín, Caracas\nhttps://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`;
-    navigator.clipboard.writeText(quote);
-    setCopiedId(product.id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  /**
-   * Copia una cotización libre o calculada desde la herramienta de Cashea.
-   */
-  const copyManualQuote = (usdAmount, nivel, inicialUsd, inicialBs, cuotaUsd, _cuotaBs) => {
-    const tasa = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;
-    const precioBs = usdAmount * tasa;
-    const cuotasCashea = Math.max(1, parseInt(settings.cashea_cuotas || '3', 10) || 3);
-
-    const casheaLine = usdAmount >= 25
-      ? `💛 *Cashea (Nivel ${nivel} - En tienda física):* Inicial hoy de *$${inicialUsd.toFixed(2)}* (Bs. ${formatBs(inicialBs)}) + ${cuotasCashea} cuotas quincenales de *$${cuotaUsd.toFixed(2)}* (Escaneas en caja al retirar)`
-      : `💛 *Cashea:* Disponible para compras a partir de $25 USD en tienda física`;
-
-    const quote = `🏍️ *Cotización de Repuesto / Accesorio - Crastur* 🛞\n💵 Monto: *$${usdAmount.toFixed(2)} USD*\n🇻🇪 En Bolívares: *Bs. ${formatBs(precioBs)}* (Tasa BCV: ${formatRate(tasa)})\n${casheaLine}\n\n🏢 *Tienda Física:* Edificio Liberalba, Av. Sur 9, San Agustín, Caracas.\nhttps://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA`;
-    navigator.clipboard.writeText(quote);
-    setCopiedId('manual');
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  /**
-   * [PERSISTENCIA ATÓMICA] Apagado controlado de la plataforma tras guardar estado en disco.
-   */
-  const handleShutdownSystem = () => {
-    setConfirmModal({
-      isOpen: true,
-      title: '¿Deseas apagar el sistema?',
-      subtitle: 'Cierre de turno o jornada',
-      message: 'Se guardarán todas las ventas, apartados y cambios del día de forma segura.\n\nEl asistente de WhatsApp se pondrá en pausa hasta que vuelvas a abrir el sistema con el acceso directo Crastur de tu Escritorio.',
-      confirmText: 'Sí, Apagar Sistema',
-      cancelText: 'Seguir Trabajando',
-      isDanger: true,
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-        toast.info('Guardando información y cerrando el sistema...');
-        try {
-          await fetch('/api/system/shutdown', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason: 'user_requested_ui' })
-          });
-        } catch {
-          // El servidor se apaga inmediatamente tras recibir la orden
-        }
-        setIsSystemShutdown(true);
-      }
-    });
   };
 
   const currentRate = typeof bcvData.tasa_efectiva === 'number' ? bcvData.tasa_efectiva : 849.56;

@@ -1,0 +1,411 @@
+/**
+ * @file layout.ts
+ * @description Dibujo de encabezados, fichas de producto y pie de página del PDF.
+ */
+
+import fs from 'fs';
+import { formatBs, formatRate } from '../../utils/formatters';
+import { logoPath } from './config';
+
+export function drawHeader(doc, margin, contentWidth, categoryInfo, rate, todayStr, totalCount) {
+  const topY = 22;
+
+  // Barra de acento superior naranja automotriz
+  doc.rect(margin, topY, contentWidth, 3.5)
+     .fill('#EA580C');
+
+  // Contenedor del Encabezado Corporativo (Y=30 a Y=92)
+  const headerY = topY + 8;
+  const headerH = 62;
+  const logoSize = 46;
+
+  // Fondo suave para el bloque de marca
+  doc.roundedRect(margin, headerY, contentWidth, headerH, 6)
+     .fillAndStroke('#FFFFFF', '#E2E8F0');
+
+  // Logo en marco limpio dentro de su contenedor
+  const logoBoxX = margin + 8;
+  const logoBoxY = headerY + 8;
+  if (fs.existsSync(logoPath)) {
+    try {
+      doc.image(logoPath, logoBoxX, logoBoxY, { width: logoSize, height: logoSize });
+    } catch (e) {}
+  }
+
+  // Textos de Marca Crastur
+  const brandX = logoBoxX + logoSize + 12;
+  doc.fillColor('#0F172A')
+     .font('Helvetica-Bold')
+     .fontSize(16)
+     .text('CRASTUR', brandX, headerY + 10, { lineBreak: false });
+
+  doc.fillColor('#EA580C')
+     .font('Helvetica-Bold')
+     .fontSize(7.5)
+     .text('REPUESTOS PARA MOTO & INSUMOS PARA CAUCHERAS', brandX, headerY + 28, { lineBreak: false });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica')
+     .fontSize(7.2)
+     .text('Tienda Física: Edif. Liberalba, Av. Sur 9, San Agustín Norte, Caracas', brandX, headerY + 41, { lineBreak: false });
+
+  // Widget BCV y Fecha (Lado derecho del contenedor de cabecera)
+  const bcvBoxW = 185;
+  const bcvBoxX = margin + contentWidth - bcvBoxW - 8;
+  const bcvBoxY = headerY + 8;
+  const bcvBoxH = headerH - 16;
+
+  doc.roundedRect(bcvBoxX, bcvBoxY, bcvBoxW, bcvBoxH, 4)
+     .fillAndStroke('#F8FAFC', '#CBD5E1');
+
+  doc.fillColor('#0F172A')
+     .font('Helvetica-Bold')
+     .fontSize(9.5)
+     .text(`Tasa Oficial BCV: Bs. ${formatRate(rate)}`, bcvBoxX + 8, bcvBoxY + 7, {
+       width: bcvBoxW - 16,
+       align: 'right',
+       lineBreak: false
+     });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica')
+     .fontSize(7.2)
+     .text(`Fecha de Emisión: ${todayStr}`, bcvBoxX + 8, bcvBoxY + 20, {
+       width: bcvBoxW - 16,
+       align: 'right',
+       lineBreak: false
+     });
+
+  doc.fillColor('#94A3B8')
+     .font('Helvetica')
+     .fontSize(6.5)
+     .text('Precios en Bolívares según BCV oficial', bcvBoxX + 8, bcvBoxY + 31, {
+       width: bcvBoxW - 16,
+       align: 'right',
+       lineBreak: false
+     });
+
+  // Banner Oficial de la Categoría (Totalmente separado, Y=104 a Y=132)
+  const bannerY = headerY + headerH + 12; // 30 + 62 + 12 = 104
+  const bannerHeight = 28;
+
+  // Banner con fondo azul oscuro
+  doc.roundedRect(margin, bannerY, contentWidth, bannerHeight, 5)
+     .fill('#0F172A');
+
+  // Acento lateral naranja automotriz
+  doc.roundedRect(margin, bannerY, 4, bannerHeight, 2)
+     .fill('#EA580C');
+
+  doc.fillColor('#FFFFFF')
+     .font('Helvetica-Bold')
+     .fontSize(10)
+     .text(`CATÁLOGO OFICIAL: ${categoryInfo.title.toUpperCase()}`, margin + 14, bannerY + 8.5, { lineBreak: false });
+
+  doc.fillColor('#F59E0B')
+     .font('Helvetica-Bold')
+     .fontSize(8.5)
+     .text(`${totalCount} ${totalCount === 1 ? 'PRODUCTO DISPONIBLE' : 'PRODUCTOS DISPONIBLES'}`, margin + contentWidth - 190, bannerY + 9.5, {
+       width: 180,
+       align: 'right',
+       lineBreak: false
+     });
+}
+
+/**
+ * Dibuja un icono vectorial limpio cuando no hay foto de producto cargada
+ */
+export function drawVectorPlaceholder(doc, x, y, w, h, marca) {
+  const cx = x + w / 2;
+  const cy = y + h / 2 - 12;
+
+  // Cuerpo de cámara / producto
+  doc.roundedRect(cx - 20, cy - 14, 40, 28, 4).fill('#E2E8F0');
+  doc.circle(cx, cy, 8).fill('#CBD5E1');
+  doc.circle(cx, cy, 6).fill('#FFFFFF');
+  doc.circle(cx + 11, cy - 8, 2).fill('#94A3B8');
+
+  doc.fillColor('#0F172A')
+     .font('Helvetica-Bold')
+     .fontSize(8)
+     .text(marca || 'CRASTUR', x, y + h - 28, { width: w, align: 'center', lineBreak: false });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica')
+     .fontSize(7)
+     .text('FOTO OFICIAL', x, y + h - 16, { width: w, align: 'center', lineBreak: false });
+}
+
+/**
+ * Dibuja una tarjeta amplia, con tipografía grande, respiro y lenguaje comercial formal
+ */
+export function drawSpaciousProductRow(doc, prod, x, y, width, height, rate, settings) {
+  const precioUsd = parseFloat(prod.precio_usd) || 0;
+  const precioBs = precioUsd * rate;
+  const cuotasCashea = parseInt(settings.cashea_cuotas || '3', 10);
+  const inicialPct = parseFloat(settings.cashea_inicial_pct || '40') / 100;
+  const inicialUsd = precioUsd * inicialPct;
+  const cuotaUsd = (precioUsd - inicialUsd) / cuotasCashea;
+
+  // Contenedor principal de la tarjeta con borde definido
+  doc.roundedRect(x, y, width, height, 8)
+     .fillAndStroke('#FFFFFF', '#CBD5E1');
+
+  // 1. COLUMNA IZQUIERDA: Miniatura / Fotografía (110 pt ancho x 140 pt alto)
+  const thumbX = x + 14;
+  const thumbY = y + 14;
+  const thumbW = 110;
+  const thumbH = height - 28;
+
+  doc.roundedRect(thumbX, thumbY, thumbW, thumbH, 6)
+     .fillAndStroke('#F8FAFC', '#E2E8F0');
+
+  let imageLoaded = false;
+  if (prod.imagen_url && typeof prod.imagen_url === 'string') {
+    try {
+      if (prod.imagen_url.startsWith('data:image/')) {
+        const base64Data = prod.imagen_url.replace(/^data:image\/\w+;base64,/, '');
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(imgBuffer, thumbX + 6, thumbY + 8, {
+          fit: [thumbW - 12, thumbH - 16],
+          align: 'center',
+          valign: 'center'
+        });
+        imageLoaded = true;
+      } else if (fs.existsSync(prod.imagen_url)) {
+        doc.image(prod.imagen_url, thumbX + 6, thumbY + 8, {
+          fit: [thumbW - 12, thumbH - 16],
+          align: 'center',
+          valign: 'center'
+        });
+        imageLoaded = true;
+      }
+    } catch (e) {
+      imageLoaded = false;
+    }
+  }
+
+  if (!imageLoaded) {
+    drawVectorPlaceholder(doc, thumbX, thumbY, thumbW, thumbH, prod.marca);
+  }
+
+  // 2. COLUMNA CENTRAL: Información del Producto (235 pt ancho)
+  const infoX = thumbX + thumbW + 16;
+  const infoW = width - (thumbW + 16 + 155 + 42); // 225 pt libres
+
+  // Badge de Marca (Elegante en azul oscuro con letras blancas)
+  const marcaText = (prod.marca || 'GENÉRICO').toUpperCase();
+  const marcaW = 12 + marcaText.length * 6;
+  doc.roundedRect(infoX, y + 14, marcaW, 16, 3)
+     .fill('#0F172A');
+
+  doc.fillColor('#FFFFFF')
+     .font('Helvetica-Bold')
+     .fontSize(8)
+     .text(marcaText, infoX + 6, y + 17.5, { lineBreak: false });
+
+  // Categoría secundaria al lado de la marca (se muestra el grupo principal,
+  // limpiando subcategorías largas como "Repuestos Moto - Tripas y Cauchos").
+  if (prod.categoria) {
+    const categoriaCorta = String(prod.categoria).split(' - ')[0].trim();
+    doc.fillColor('#64748B')
+       .font('Helvetica-Bold')
+       .fontSize(8)
+       .text(`•  ${categoriaCorta}`, infoX + marcaW + 8, y + 17.5, { lineBreak: false, width: infoW - marcaW - 8, ellipsis: true });
+  }
+
+  // Título / Modelo del Producto (Grande 13 pt para excelente lectura móvil)
+  doc.fillColor('#0F172A')
+     .font('Helvetica-Bold')
+     .fontSize(13)
+     .text(prod.modelo || 'Producto', infoX, y + 37, {
+       width: infoW,
+       height: 34,
+       lineGap: 1.5,
+       ellipsis: true
+     });
+
+  // Descripción técnica con espacio cómodo
+  let descText = prod.descripcion || 'Artículo garantizado con disponibilidad para entrega inmediata.';
+  if (descText.length > 95) {
+    descText = descText.substring(0, 92) + '...';
+  }
+  doc.fillColor('#334155')
+     .font('Helvetica')
+     .fontSize(8.2)
+     .text(descText, infoX, y + 74, {
+       width: infoW,
+       height: 36,
+       lineGap: 2.5
+     });
+
+  // Fila de Características Rápidas (Garantía y Entrega)
+  const specY = y + 114;
+  doc.fillColor('#475569')
+     .font('Helvetica-Bold')
+     .fontSize(7.2)
+     .text('• Garantía Crastur', infoX, specY, { lineBreak: false });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica')
+     .fontSize(7.2)
+     .text('• Retiro en Tienda Física o Delivery Caracas', infoX + 78, specY, { lineBreak: false });
+
+  // Insignia de Stock y Entrega Inmediata (Clara y formal)
+  const inStock = prod.stock > 0;
+  const stockY = y + 128;
+  doc.roundedRect(infoX, stockY, 220, 22, 4)
+     .fill(inStock ? '#DCFCE7' : '#FEE2E2');
+
+  doc.circle(infoX + 11, stockY + 11, 3.5)
+     .fill(inStock ? '#16A34A' : '#DC2626');
+
+  doc.fillColor(inStock ? '#166534' : '#991B1B')
+     .font('Helvetica-Bold')
+     .fontSize(7.5)
+     .text(inStock ? 'STOCK DISPONIBLE EN TIENDA FÍSICA' : 'CONSULTAR DISPONIBILIDAD CON ASESOR', infoX + 20, stockY + 7, { lineBreak: false });
+
+  // 3. COLUMNA DERECHA: Caja de Precios y Cashea (150 pt ancho)
+  const priceBoxW = 150;
+  const priceBoxX = x + width - priceBoxW - 14;
+  const priceBoxY = y + 14;
+  const priceBoxH = height - 28;
+
+  doc.roundedRect(priceBoxX, priceBoxY, priceBoxW, priceBoxH, 6)
+     .fillAndStroke('#F8FAFC', '#CBD5E1');
+
+  // Encabezado Divisas
+  doc.fillColor('#64748B')
+     .font('Helvetica-Bold')
+     .fontSize(6.8)
+     .text('PRECIO EN DIVISAS', priceBoxX + 10, priceBoxY + 8, { lineBreak: false });
+
+  // Precio en Divisas ($ USD) Grande y Llamativo
+  const usdText = `$${precioUsd.toFixed(2)}`;
+  doc.fillColor('#EA580C')
+     .font('Helvetica-Bold')
+     .fontSize(16)
+     .text(usdText, priceBoxX + 10, priceBoxY + 20, { lineBreak: false });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica-Bold')
+     .fontSize(8)
+     .text('USD', priceBoxX + 12 + (usdText.length * 9), priceBoxY + 25, { lineBreak: false });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica')
+     .fontSize(6.8)
+     .text('Efectivo $ • Binance Pay (USDT) • Pago Móvil BCV', priceBoxX + 10, priceBoxY + 40, { lineBreak: false });
+
+  // Separador interior suave
+  doc.rect(priceBoxX + 10, priceBoxY + 50, priceBoxW - 20, 0.6)
+     .fill('#E2E8F0');
+
+  // Bolívares a tasa oficial BCV
+  doc.fillColor('#64748B')
+     .font('Helvetica-Bold')
+     .fontSize(6.8)
+     .text('EN BOLÍVARES (TASA BCV)', priceBoxX + 10, priceBoxY + 55, { lineBreak: false });
+
+  doc.fillColor('#0F172A')
+     .font('Helvetica-Bold')
+     .fontSize(10.5)
+     .text(`Bs. ${formatBs(precioBs)}`, priceBoxX + 10, priceBoxY + 67, { lineBreak: false });
+
+  // Insignia de Financiamiento Cashea (Cuidando el vocabulario comercial estricto)
+  const casheaBoxY = priceBoxY + 86;
+  const casheaBoxH = 44;
+
+  if (precioUsd >= 25) {
+    doc.roundedRect(priceBoxX + 8, casheaBoxY, priceBoxW - 16, casheaBoxH, 4)
+       .fillAndStroke('#FEF3C7', '#F59E0B');
+
+    doc.fillColor('#92400E')
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text('FINANCIAMIENTO CASHEA', priceBoxX + 12, casheaBoxY + 6, { lineBreak: false });
+
+    doc.fillColor('#78350F')
+       .font('Helvetica-Bold')
+       .fontSize(7.5)
+       .text(`Inicial: $${inicialUsd.toFixed(2)} USD (${Math.round(inicialPct*100)}%)`, priceBoxX + 12, casheaBoxY + 18, { lineBreak: false });
+
+    doc.fillColor('#78350F')
+       .font('Helvetica')
+       .fontSize(7)
+       .text(`+ ${cuotasCashea} cuotas de $${cuotaUsd.toFixed(2)} quincenal`, priceBoxX + 12, casheaBoxY + 30, { lineBreak: false });
+  } else {
+    doc.roundedRect(priceBoxX + 8, casheaBoxY, priceBoxW - 16, casheaBoxH, 4)
+       .fillAndStroke('#F1F5F9', '#CBD5E1');
+
+    doc.fillColor('#334155')
+       .font('Helvetica-Bold')
+       .fontSize(7)
+       .text('FINANCIAMIENTO CASHEA', priceBoxX + 12, casheaBoxY + 6, { lineBreak: false });
+
+    doc.fillColor('#475569')
+       .font('Helvetica-Bold')
+       .fontSize(7.2)
+       .text('Compras a partir de $25 USD', priceBoxX + 12, casheaBoxY + 18, { lineBreak: false });
+
+    doc.fillColor('#64748B')
+       .font('Helvetica')
+       .fontSize(6.8)
+       .text('Disponible en tienda física', priceBoxX + 12, casheaBoxY + 30, { lineBreak: false });
+  }
+}
+
+/**
+ * Dibuja el pie de página fijo con QR de ubicación, dirección y paginación
+ */
+export function drawFooter(doc, margin, contentWidth, pageHeight, pageNum, totalPages, qrBuffer, settings) {
+  const footerY = pageHeight - 56;
+
+  // Línea divisoria suave
+  doc.strokeColor('#CBD5E1')
+     .lineWidth(0.8)
+     .moveTo(margin, footerY)
+     .lineTo(margin + contentWidth, footerY)
+     .stroke();
+
+  // QR Code de Google Maps en el lateral derecho
+  if (qrBuffer) {
+    const qrSize = 42;
+    const qrX = margin + contentWidth - qrSize;
+    const qrY = footerY + 5;
+    try {
+      doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
+      doc.fillColor('#64748B')
+         .font('Helvetica')
+         .fontSize(5.5)
+         .text('Escanea el QR para', qrX - 68, qrY + 12, { width: 64, align: 'right', lineBreak: false });
+      doc.fillColor('#0F172A')
+         .font('Helvetica-Bold')
+         .fontSize(5.5)
+         .text('Ubicación Tienda', qrX - 68, qrY + 20, { width: 64, align: 'right', lineBreak: false });
+    } catch (e) {}
+  }
+
+  // Información de Tienda Física y Políticas
+  const infoX = margin;
+  const infoY = footerY + 7;
+
+  doc.fillColor('#0F172A')
+     .font('Helvetica-Bold')
+     .fontSize(7.5)
+     .text('Tienda Física Crastur: Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas.', infoX, infoY, { lineBreak: false });
+
+  doc.fillColor('#475569')
+     .font('Helvetica')
+     .fontSize(6.8)
+     .text('Horario: Lunes a Sábado de 8:00 AM a 8:00 PM • Delivery en Caracas (moto el mismo día). NO realizamos envíos por agencias nacionales.', infoX, infoY + 11, { lineBreak: false });
+
+  doc.fillColor('#64748B')
+     .font('Helvetica')
+     .fontSize(6.2)
+     .text(`Página ${pageNum} de ${totalPages} • Precios en Bs. calculados a la tasa oficial del BCV del día • Reservas válidas por 24 horas.`, infoX, infoY + 23, { lineBreak: false });
+}
+
+/**
+ * Invalida todos los archivos en caché de catálogos
+ */

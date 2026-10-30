@@ -150,6 +150,9 @@ export function applySchemaAndMigrations(): void {
   addColumnIfMissing('chat_sessions', 'bot_pausado', 'INTEGER DEFAULT 0');
   addColumnIfMissing('chat_sessions', 'nivel_cashea', 'INTEGER DEFAULT 1');
   addColumnIfMissing('chat_sessions', 'contexto_productos', 'TEXT');
+  // [CONTEXTO CON VIGENCIA] Momento en que se guardó la última lista/ficha de productos.
+  // Evita que un "1" escrito al día siguiente seleccione un producto viejo en vez del menú.
+  addColumnIfMissing('chat_sessions', 'contexto_at', 'INTEGER');
   addColumnIfMissing('chat_sessions', 'apartado_metadata', 'TEXT');
   addColumnIfMissing('chat_sessions', 'telefono_contacto', 'TEXT');
   // [ANTI-BANEO META 2025] Bandera de no molestar para excluir clientes que expresen rechazo comercial
@@ -174,6 +177,18 @@ export function applySchemaAndMigrations(): void {
   addColumnIfMissing('chat_sessions', 'bot_pausado_por', 'TEXT');
   addColumnIfMissing('chat_sessions', 'bot_pausado_at', 'INTEGER');
   addColumnIfMissing('chat_sessions', 'asesor_ultimo_at', 'INTEGER');
+
+  // [HANDOFF CON SLA] Cesión explícita del chat a un asesor humano.
+  //   - handoff_solicitado_at: cuándo el cliente pidió un asesor.
+  //   - handoff_vence_at: límite de respuesta (por defecto 60 min).
+  //   - handoff_estado: pendiente | atendido | vencido | cancelado | fuera_horario.
+  //   - handoff_aviso_enviado: evita repetir el aviso de vencimiento.
+  addColumnIfMissing('chat_sessions', 'handoff_solicitado_at', 'INTEGER');
+  addColumnIfMissing('chat_sessions', 'handoff_vence_at', 'INTEGER');
+  addColumnIfMissing('chat_sessions', 'handoff_estado', 'TEXT');
+  addColumnIfMissing('chat_sessions', 'handoff_aviso_enviado', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('chat_sessions', 'handoff_atendido_at', 'INTEGER');
+  addColumnIfMissing('chat_sessions', 'handoff_origen', 'TEXT');
 
   // [SALUDAR UNA SOLA VEZ] Marca si el cliente ya recibió el menú de bienvenida. Si vuelve a
   // saludar sin pedir nada, recibe un saludo corto en lugar del menú completo.
@@ -249,6 +264,9 @@ export function applySchemaAndMigrations(): void {
     'tasa_personalizada': '849.56',
     'direccion_tienda': 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas, Venezuela',
     'google_maps_url': 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA',
+    // [REDES] Enlace público de Instagram. Si está vacío, el bot deriva a un asesor
+    // en lugar de inventar un usuario. Se puede configurar desde la API/BD.
+    'instagram_url': '',
     'cashea_inicial_pct': '40',
     'cashea_cuotas': '3',
     'cashea_info': '¡En Crastur contamos con Cashea! Llévate hoy tus repuestos y accesorios para moto e insumos pagando solo una inicial y el resto en 3 cuotas quincenales sin interés.',
@@ -261,6 +279,9 @@ export function applySchemaAndMigrations(): void {
     // que el asesor responda. 0 = no reactivar nunca de forma automática.
     'auto_pausa_asesor': '1',
     'reactivar_bot_minutos': '180',
+    // [HANDOFF SLA] Tiempo máximo que el bot espera a que un asesor responda
+    // cuando el cliente pide hablar con una persona. 0 = desactivado.
+    'handoff_sla_minutos': '60',
     // [ANTI-BANEO] Tope diario de mensajes proactivos (seguimientos). 0 = desactivados.
     'proactivos_max_dia': '30',
     'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM',

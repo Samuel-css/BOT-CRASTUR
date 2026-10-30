@@ -32,7 +32,7 @@ export function handleSellersResponse(pushName: string): string {
     return msg;
   }
 
-  msg += `Aquí tienes la lista de nuestros asesores de ventas en *Crastur* con sus números directos disponibles para llamar o escribir con un toque:\n\n`;
+  msg += `Estos son nuestros asesores de ventas de *Crastur*, con su número directo para llamar o escribir:\n\n`;
 
   sellers.forEach(s => {
     let digits = String(s.telefono || '').replace(/\D/g, '');
@@ -43,12 +43,12 @@ export function handleSellersResponse(pushName: string): string {
     }
     const waLink = `https://wa.me/${digits}`;
 
-    msg += `👤 *${s.nombre}* (${s.departamento || 'Ventas'})\n`;
-    msg += `📞 Número directo: ${s.telefono}\n`;
-    msg += `💬 Enlace directo de WhatsApp:\n${waLink}\n\n`;
+    msg += `👤 *${s.nombre}* · ${s.departamento || 'Ventas'}\n`;
+    msg += `📞 ${s.telefono}\n`;
+    msg += `💬 WhatsApp: ${waLink}\n\n`;
   });
 
-  msg += `¡Nuestros asesores están a la orden para verificar el repuesto de tu moto, insumos para tu cauchera o apartar tus productos con Cashea! 🛞🏍️✨`;
+  msg += `También puedes seguir escribiendo por este chat y un asesor te atiende. ¡Estamos a la orden para ayudarte con tu moto, tu cauchera o tus compras con Cashea! 🛞🏍️✨`;
   return msg;
 }
 

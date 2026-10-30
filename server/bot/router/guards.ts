@@ -7,8 +7,10 @@
  * silenciar sin responder, o null para dejar continuar el enrutamiento.
  */
 
-import { db, isBotGloballyPaused, isBotPaused } from '../../database';
+import { db, isBotGloballyPaused, isBotPaused, resolveChatJids } from '../../database';
 import { isSpamming } from '../utils/antiSpam';
+import { normalizeText } from '../utils/textUtils';
+import { cancelHandoff } from '../services/handoffService';
 import { handleMediaResponse } from '../handlers/mediaHandlers';
 import type { BotMediaInfo } from '../../types/bot';
 
@@ -35,8 +37,31 @@ export function runGuards(
 
   // [SECCIÓN 1] Pausa Manual por Asesor Humano en esta Conversación
   if (isBotPaused(jid)) {
-    console.log(`[Bot] Chat ${jid} pausado manualmente por un asesor humano. Sin auto-respuesta.`);
-    return SILENCE;
+    // [HANDOFF] El cliente puede recuperar al asistente escribiendo MENU/BOT. La pausa
+    // manual del operador y la de un asesor real no se tocan.
+    const comandoEscape = ['menu', 'bot', 'asistente', 'volver', 'inicio', 'cancelar', 'salir'];
+    const norm = normalizeText(text);
+    if (comandoEscape.includes(norm)) {
+      let pausadoPorHandoff = false;
+      for (const target of resolveChatJids(jid)) {
+        const row = db.prepare('SELECT bot_pausado_por, handoff_estado FROM chat_sessions WHERE jid = ?').get(target) as any;
+        if (row && row.bot_pausado_por === 'handoff' && ['pendiente', 'fuera_horario'].includes(String(row.handoff_estado || ''))) {
+          pausadoPorHandoff = true;
+          break;
+        }
+      }
+      if (pausadoPorHandoff) {
+        cancelHandoff(jid, 'cliente');
+        console.log(`[Handoff] ↩️ ${jid} canceló la espera de asesor con "${norm}". El bot retoma.`);
+        // Deja continuar el mensaje: MENU abre el menú, CANCELAR sale del flujo.
+      } else {
+        console.log(`[Bot] Chat ${jid} pausado manualmente por un asesor humano. Sin auto-respuesta.`);
+        return SILENCE;
+      }
+    } else {
+      console.log(`[Bot] Chat ${jid} pausado manualmente por un asesor humano. Sin auto-respuesta.`);
+      return SILENCE;
+    }
   }
 
   // [SECCIÓN 2] [ANTI-BANEO META 2025] Límite de Frecuencia Anti-Spam

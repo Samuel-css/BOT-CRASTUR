@@ -205,6 +205,8 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 ### 4. 🛒 Búsqueda Difusa (*Fuzzy Search*) y Venezolanismos
 - Si el cliente escribe con faltas de ortografía o modismos (*"chamo tienes pastiyas y bujya?"*), el motor identifica los repuestos exactos sin mezclar categorías ajenas.
 - Soporta múltiples productos en un solo mensaje (*"bujía y más aceite motul"*), incluyendo la conjunción con tilde.
+- **Detección ampliada:** entiende variantes como *"cuanto está el dólar"*, *"están en Caracas"*, *"siguen abiertos"*, *"me lo apartas"*, *"me lo envían a Petare"* y *"y cuánto sale"* sin caer en respuestas genéricas.
+- **Precisión:** si el mensaje nombra un producto, la ficha del repuesto gana sobre respuestas genéricas de ubicación, calidad o delivery. El contexto de una cotización caduca a los 45 minutos para que un *"1"* viejo no secuestre el menú.
 
 ### 5. ⏱️ Flujo de Apartado por 24 Horas sin Costo
 - Los clientes pueden reservar repuestos para retirar en tienda física en San Agustín Norte:
@@ -239,7 +241,12 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
 - **Reactivación con respeto:** si el cliente vuelve a escribir después de **3 horas** sin respuesta del
   vendedor, el bot retoma el chat. Es configurable en **Ajustes → Asistente Virtual → Recordatorio**
   (1 hora / 3 horas / 6 horas / nunca).
-- **Pausa manual:** el vendedor también puede silenciar el bot con el botón **"Pausar Bot (Atender Yo)"**
+- **Solicitud de asesor con SLA:** cuando el cliente escribe **VENDEDOR**, el bot le promete una respuesta
+  por ese mismo chat en un máximo de **1 hora** (configurable en 30/60/120 minutos), pausa el bot en ese
+  chat y deja en el Live Inbox un aviso con el nombre, teléfono e interés del cliente. Si nadie responde
+  al vencer, el bot retoma la conversación y el panel muestra una **alerta roja de SLA vencido**. El
+  cliente puede escribir **MENU** para recuperar al asistente antes de la hora.
+- **Pausa manual:** el vendedor también puede silenciar el bot con el botón **"Atender yo"**
   del Live Inbox. Esa pausa **solo la quita el humano** (botón "Reanudar Bot").
 - **Todo se ve en el panel:** insignia verde **A** (Asesor atendiendo) o ámbar **P** (Manual) sobre el
   avatar del chat, banner de estado y avisos del sistema dentro de la conversación.
@@ -349,23 +356,27 @@ crastur/
 │   ├── preparar_entrega.ts     # Limpieza total para copiar a otra PC / entregar
 │   ├── clean_data.ts           # Limpieza operacional a cero
 │   ├── migrar_catalogo_asesores.ts # Respaldo/restauración de catálogo y asesores
-│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 242 pruebas del bot
+│   ├── run_stress_and_edge_tests.ts # Batería de estrés y 343 pruebas del bot
 │   ├── run_stress_and_edge_tests_isolated.js # Runner que ejecuta las pruebas en BD temporal
 │   └── run_ui_e2e_tests.ts      # Pruebas E2E de la interfaz web (Chrome headless)
 │
 ├── client/                     # Panel web administrativo (React + Vite + TailwindCSS)
-│   ├── src/                    # Código fuente de vistas responsivas y modales
+│   ├── src/
+│   │   ├── app/                # Hooks de datos y acciones (App.jsx delgado)
+│   │   └── components/         # layout, modales y vistas
+│   │       └── views/          # dashboard/, inbox/, settings/, catalog/, cashea/
 │   └── dist/                   # Bundle de producción optimizado (versionado)
 │
 ├── server/                     # Backend modular en Node.js + TypeScript
 │   ├── bot/                    # MOTOR MODULAR DEL BOT DE WHATSAPP
-│   │   ├── index.ts            # Enrutador principal de mensajes y menú 1..6
+│   │   ├── index.ts            # Enrutador principal y máquina de estados
 │   │   ├── config/             # Sinónimos, stop-words y agrupación canónica de categorías
-│   │   ├── router/             # Guardas de seguridad y comandos transversales
-│   │   ├── apartado/           # Flujo y validaciones de reserva por 24h
+│   │   ├── router/             # Guardas, comandos transversales y secciones extraídas
+│   │   │   └── sections/       # Cortesía, pagos, logística, políticas, productos/menú, fallback
+│   │   ├── apartado/           # Flujo de reserva 24h (interrupciones, pasos y ticket)
 │   │   ├── followUp/           # Seguimiento inteligente sin spam
-│   │   ├── handlers/           # Manejadores de intención (categorías, cashea, info, etc.)
-│   │   ├── services/           # Búsqueda difusa, reglas comerciales y PDF del catálogo
+│   │   ├── handlers/           # Intenciones: info/ (pagos, logística, tienda, soporte) y product/ (ficha, carrito, combos)
+│   │   ├── services/           # Búsqueda difusa, reglas comerciales y catalogPdf/ (datos, layout, PDF)
 │   │   └── utils/              # Formateadores BCV, delivery de Caracas y anti-spam
 │   ├── db/                     # Módulos de acceso a datos (catálogo, reservas, respaldos...)
 │   │   ├── engine.ts           # Singleton SQL.js, persistencia atómica y whenReady
@@ -373,6 +384,8 @@ crastur/
 │   │   ├── reservations.ts     # Apartados 24h con transacciones y control de stock
 │   │   └── ...
 │   ├── whatsapp/               # Conexión Baileys modular (conexión, envío, ingesta...)
+│   │   ├── ingest/             # state, deliver, history y live
+│   │   └── ...
 │   ├── routes/                 # API REST modular (productos, apartados, ajustes...)
 │   ├── database.ts             # Barril del subsistema de base de datos SQLite (sql.js)
 │   ├── whatsappService.ts      # Fachada de la conexión WhatsApp (Baileys)
