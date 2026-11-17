@@ -72,7 +72,7 @@ export function runGuards(
 
   // Validaciones de Mensajes Vacíos o de Confusión Extrema
   if (/^[\?¿\s\.]+$/.test(text)) {
-    return `¡Hola! 👋 Veo tus signos de interrogación y entiendo que puede estar confundido/a. Le atiendo con toda la *paciencia* del mundo 🙌\n\nSoy el *asistente virtual* de la tienda física de *Crastur* en Caracas. Con gusto le ayudo a encontrar su repuesto:\n\n👉 Escriba el nombre de la pieza o el modelo de la moto, con sus propias palabras (ej: *"bujía"*, *"aceite"*, *"pastillas"*).\n👉 Si prefiere hablar con una *persona real*, escriba *ASESOR* o *HUMANO* y le comunicamos con el mostrador.\n👉 Escriba *MENU* para ver todas las opciones.`;
+    return `Te entiendo, con paciencia 😊\nSoy el asistente virtual de Crastur.\nDime el nombre de la pieza con tus palabras (ej: *bujía*, *pastillas*, *aceite*).\nSi prefieres una persona, escribe *ASESOR* o *HUMANO*.`;
   }
 
   if (!text && (!mediaInfo || !mediaInfo.isMedia)) {

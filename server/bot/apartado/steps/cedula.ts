@@ -3,11 +3,9 @@
  * @description Paso del flujo de apartados 24h extraído de apartadoFlow.ts.
  */
 
-import { db, createReservation, recordMetric } from '../../../database';
-import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../../services/searchService';
-import { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } from '../../utils/formatters';
+import { db } from '../../../database';
+import { formatVenezuelanPhone } from '../../utils/formatters';
 import { normalizeText } from '../../utils/textUtils';
-import { detectCaracasZone } from '../../utils/caracasDelivery';
 import { detectInterruption, handleInterruptionResponse } from '../interruptions';
 /**
  * Valida la Cédula de Identidad venezolana (o RIF comercial) del cliente.
@@ -36,7 +34,7 @@ export function handleApartadoCedula(
     metadata = {};
   }
 
-  const promptMsg = `Indícanos tu número de *Cédula de Identidad* (ejemplo: *V-18456789* o *28123456*):\n_(Escribe *cancelar* para salir)_`;
+  const promptMsg = `Dime tu *Cédula de Identidad* (ej: *V-18456789*).\n_(Escribe *cancelar* para salir)_`;
 
   const interruption = detectInterruption(text, norm);
   if (interruption) {
@@ -60,16 +58,16 @@ export function handleApartadoCedula(
       WHERE jid = ?
     `).run(JSON.stringify(metadata), jid);
     const isLid = jid.endsWith('@lid');
-    let msg = `¡Perfecto! RIF/Cédula *${cedula}* registrado. 📞\n\n`;
+    let msg = `¡Perfecto! RIF/Cédula *${cedula}* registrado. 📞\n`;
     if (isLid) {
-      msg += `Indícanos tu *Número de Teléfono* (ejemplo: *0412 123 4567*):\n_(Escribe *cancelar* si deseas salir)_`;
+      msg += 'Dime tu *Número de Teléfono* (ej: *0412 123 4567*).\n';
     } else {
       const rawPhone = jid.split('@')[0];
       const phoneFormatted = formatVenezuelanPhone(rawPhone) || `+${rawPhone}`;
-      msg += `¿Deseas registrar este mismo número de WhatsApp (*${phoneFormatted}*) como teléfono de contacto?\n\n`;
-      msg += `👉 Responde *SÍ* para usar este número.\n`;
-      msg += `👉 O escribe tu número de teléfono (ejemplo: *0412 123 4567*):`;
+      msg += `¿Registro este mismo WhatsApp (*${phoneFormatted}*) como teléfono de contacto?\n`;
+      msg += 'Responde *SÍ* o escribe tu número (ej: *0412 123 4567*).\n';
     }
+    msg += '_(Escribe *cancelar* para salir)_';
     return msg;
   }
 
@@ -91,16 +89,16 @@ export function handleApartadoCedula(
   `).run(JSON.stringify(metadata), jid);
 
   const isLid = jid.endsWith('@lid');
-  let msg = `¡Perfecto! Cédula *${cedula}* registrada. 📞\n\n`;
+  let msg = `¡Perfecto! Cédula *${cedula}* registrada. 📞\n`;
 
   if (isLid) {
-    msg += `Para avisarte cuando tu apartado esté listo para retirar en tienda, indícanos tu *Número de Teléfono* (ejemplo: *0412 123 4567*):\n_(Escribe *cancelar* si deseas salir)_`;
+    msg += 'Dime tu *Número de Teléfono* (ej: *0412 123 4567*).\n';
   } else {
     const rawPhone = jid.split('@')[0];
     const phoneFormatted = formatVenezuelanPhone(rawPhone) || `+${rawPhone}`;
-    msg += `¿Deseas registrar este mismo número de WhatsApp (*${phoneFormatted}*) como teléfono de contacto para el retiro en tienda?\n\n`;
-    msg += `👉 Responde *SÍ* para usar este número.\n`;
-    msg += `👉 O escribe tu número de teléfono (ejemplo: *0412 123 4567*):`;
+    msg += `¿Registro este mismo WhatsApp (*${phoneFormatted}*) como teléfono de contacto?\n`;
+    msg += 'Responde *SÍ* o escribe tu número (ej: *0412 123 4567*).\n';
   }
+  msg += '_(Escribe *cancelar* para salir)_';
   return msg;
 }

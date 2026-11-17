@@ -4,11 +4,10 @@
  */
 
 import { db, createReservation, recordMetric } from '../../../database';
-import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../../services/searchService';
-import { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } from '../../utils/formatters';
+import { formatVenezuelanPhone, extractVenezuelanPhones } from '../../utils/formatters';
 import { normalizeText } from '../../utils/textUtils';
-import { detectCaracasZone } from '../../utils/caracasDelivery';
 import { detectInterruption, handleInterruptionResponse } from '../interruptions';
+import { buildTicket } from '../../copy/messages';
 /**
  * Valida el Teléfono de contacto, registra la reserva en base de datos SQLite y
  * emite el Ticket Comprobante Oficial de Apartado por 24 Horas.
@@ -137,8 +136,8 @@ export function handleApartadoTelefono(
     db.prepare("UPDATE chat_sessions SET step = 'start', apartado_metadata = NULL WHERE jid = ?").run(jid);
     const errMsg = (err && typeof err.message === 'string' && err.message.trim())
       ? err.message.trim()
-      : 'No fue posible registrar el apartado en este momento. Intenta de nuevo en unos minutos.';
-    return `⚠️ ${errMsg}\n\nPuedes escribir *VENDEDOR* si deseas consultar alternativas con nuestro personal de tienda física o escribir qué otro repuesto buscas.`;
+      : 'No pude registrar el apartado en este momento.';
+    return `⚠️ ${errMsg}\nSi quieres, escribe *VENDEDOR* y lo resolvemos con una persona.`;
   }
 
   // Restablecer el estado de la sesión y sincronizar teléfono con el Live Inbox
@@ -152,42 +151,16 @@ export function handleApartadoTelefono(
 
   recordMetric('apartado_creado', prodNombre, jid);
 
-  // Calcular hora límite exacta de expiración (24 horas continuas)
-  const expiraDate = new Date(reservation.expira_en);
-  const expiraHora = expiraDate.toLocaleTimeString('es-VE', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
+  return buildTicket({
+    reservation,
+    nombre,
+    telefono,
+    cedula,
+    productName: prodNombre,
+    priceUsd: precioUsd,
+    tasa,
+    settings,
+    items: metadata.items,
+    expiraEn: reservation.expira_en
   });
-
-  let ticket = `✅ *¡APARTADO CONFIRMADO CON ÉXITO!* 🎟️🛞🏍️\n\n`;
-  ticket += `Estimado/a *${nombre}*, tu apartado ha sido guardado exclusivamente para ti:\n\n`;
-  ticket += `🎟️ *Código Oficial de Ticket:* *#CRA-${String(reservation.id).padStart(4, '0')}*\n`;
-  ticket += `📦 *Producto:* ${prodNombre}\n`;
-
-  if (metadata.items && Array.isArray(metadata.items) && metadata.items.length > 1) {
-    ticket += `📋 *Detalle del Combo:*\n`;
-    metadata.items.forEach((it: any, idx: number) => {
-      ticket += `   ${idx + 1}️⃣ ${it.nombre} ($${parseFloat(it.precio_usd).toFixed(2)})\n`;
-    });
-  }
-
-  ticket += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD*\n`;
-  ticket += `🇻🇪 *En Bolívares:* *Bs. ${formatBs(precioBs)}* _(Tasa oficial BCV: ${formatRate(tasa)})_\n`;
-  ticket += `🪪 *Cédula:* ${cedula}\n`;
-  ticket += `📞 *Teléfono:* ${telefono}\n`;
-  ticket += `⏳ *Tiempo de Reserva:* 24 HORAS continuas\n`;
-  ticket += `⚠️ *Límite para retirar:* Hasta mañana a las *${expiraHora}*\n`;
-  ticket += `_(Si no se retira en 24 horas, el sistema liberará el stock automáticamente)_\n\n`;
-  ticket += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  ticket += `🏢 *Punto de Retiro en Tienda Física:*\n`;
-  ticket += `${settings.direccion_tienda || 'Edificio Liberalba, Avenida Sur 9, San Agustín Norte, Caracas.'}\n\n`;
-  ticket += `🗺️ *Google Maps:* ${settings.google_maps_url || 'https://maps.app.goo.gl/wvaqXJ1W6LjGRcxNA'}\n\n`;
-  ticket += `🕒 *Horario:* ${settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM'}.\n`;
-  ticket += `🛵 *¿Prefieres delivery en Caracas?* Escribe *DELIVERY* o *VENDEDOR* para coordinar el motorizado.\n\n`;
-  ticket += `🔒 *Protección de Datos (Venezuela):*\n`;
-  ticket += `Tus datos personales se registran confidencialmente de forma exclusiva para la validación y canje de este apartado en tienda física conforme al Art. 28 de la CRBV y la Ley Especial contra los Delitos Informáticos.\n\n`;
-  ticket += `Presenta tu cédula en caja al llegar y ¡listo! ¡Te esperamos en Crastur! 🛞🏍️✨`;
-
-  return ticket;
 }

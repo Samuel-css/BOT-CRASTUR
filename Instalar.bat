@@ -34,14 +34,12 @@ where node >nul 2>nul
 if %errorlevel% equ 0 goto check_node_version
 
 :check_node_version
-rem Crastur requiere Node.js 20.19+ (o 22.12+) por Baileys 7 y Vite 8.
+rem Crastur requiere Node.js 22.12+ (recomendado 24 LTS) por Baileys 7 y Vite 8.
 for /f "tokens=1,2 delims=." %%v in ('node -p "process.versions.node"') do (
     set "NODE_MAJOR=%%v"
     set "NODE_MINOR=%%w"
 )
-if %NODE_MAJOR% lss 20 goto error_old_node
-if %NODE_MAJOR% equ 20 if %NODE_MINOR% lss 19 goto error_old_node
-if %NODE_MAJOR% equ 21 goto error_old_node
+if %NODE_MAJOR% lss 22 goto error_old_node
 if %NODE_MAJOR% equ 22 if %NODE_MINOR% lss 12 goto error_old_node
 goto start_installer
 
@@ -52,11 +50,9 @@ echo ==============================================================
 echo  [ERROR] Tu version de Node.js es incompatible.
 echo ==============================================================
 echo.
-echo  Crastur necesita Node.js 20.19+ o 22.12+.
-echo  Recomendado: Node.js 22 LTS.
+echo  Crastur necesita Node.js 22.12+. Recomendado: Node.js 24 LTS.
 echo.
-echo  (La libreria de WhatsApp requiere Node 20+ y el panel visual
-echo   requiere Node 20.19+ o 22.12+).
+echo  (La libreria de WhatsApp y el panel visual requieren Node 22.12+).
 echo.
 echo  Descarga la version LTS mas reciente en: https://nodejs.org
 echo.
@@ -66,6 +62,17 @@ pause
 exit /b 1
 
 :error_no_node
+rem [FACIL] Intentar instalar Node.js LTS automaticamente con winget (Windows 10/11)
+where winget >nul 2>nul
+if %errorlevel% neq 0 goto no_node_manual
+echo  Node.js no esta instalado. Instalandolo automaticamente (1-3 minutos)...
+echo  Si Windows pide permiso, pulsa "Si".
+winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
+if exist "C:\Program Files\nodejs\node.exe" (
+    set "PATH=%PATH%;C:\Program Files\nodejs"
+    goto check_again
+)
+:no_node_manual
 color 0C
 echo.
 echo ==============================================================

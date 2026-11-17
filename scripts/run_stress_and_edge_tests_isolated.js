@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
  * ============================================================================
- * RUNNER AISLADO DE LA SUITE DE ESTRÉS DEL BOT (scripts/run_stress_and_edge_tests)
+ * RUNNER AISLADO DE LA SUITE DE CRASTUR
  * ============================================================================
- * Ejecuta las 200+ pruebas del bot sobre una base de datos TEMPORAL, de modo que
- * la suite NUNCA inserte productos de prueba ni sesiones en la base de datos de
- * producción (`data/crastur.db`) ni ensucie el snapshot maestro.
+ * Ejecuta la suite de estrés y la prueba de longitud de mensajes sobre una base
+ * de datos TEMPORAL, de modo que nunca se tocan los datos de producción.
  *
  * Uso: npm test
  * ============================================================================
@@ -26,11 +25,16 @@ const env = {
   CRASTUR_DATA_DIR: TEST_DATA_DIR
 };
 
-const result = spawnSync(
-  process.execPath,
-  ['--import', 'tsx', path.join(__dirname, 'run_stress_and_edge_tests.ts')],
-  { cwd: ROOT, stdio: 'inherit', env }
-);
+function runScript(script) {
+  return spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.join(__dirname, script)],
+    { cwd: ROOT, stdio: 'inherit', env }
+  );
+}
+
+const stress = runScript('run_stress_and_edge_tests.ts');
+const copy = stress.status === 0 ? runScript('run_copy_budget_tests.ts') : { status: 1 };
 
 // Limpieza de la carpeta temporal (no afecta datos reales)
 try {
@@ -40,4 +44,5 @@ try {
   console.warn('[Test Aislado] No se pudo eliminar la carpeta temporal:', e?.message || e);
 }
 
-process.exit(result.status === null ? 1 : result.status);
+const status = stress.status === 0 && copy.status === 0 ? 0 : 1;
+process.exit(status);

@@ -39,8 +39,9 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 * **Artículo 117 (Derechos del Consumidor):** Garantía de información veraz sobre bienes, precios, garantías y condiciones de entrega.
 * **Cumplimiento en Crastur:**
   - El bot recopila Nombre, Cédula de Identidad y Teléfono únicamente en el momento voluntario en que el cliente decide formalizar un apartado por 24 horas.
-  - El comprobante digital emitido incluye la leyenda legal obligatoria:  
-    *«🔒 Protección de Datos (Venezuela): Tus datos personales se registran confidencialmente de forma exclusiva para la validación y canje de este apartado en tienda física conforme al Art. 28 de la CRBV y la Ley Especial contra los Delitos Informáticos.»*
+  - El comprobante digital incluye una nota breve y legible:
+    *«Tus datos se usan solo para validar el apartado.»*
+  - El aviso legal completo (Art. 28 de la CRBV y Ley Especial contra los Delitos Informáticos) se mantiene en este manual y en la política de privacidad de la tienda. El ticket ya no carga un párrafo legal largo para no saturar al cliente.
 
 ### D. Ley Especial contra los Delitos Informáticos (G.O. N° 37.313)
 * **Artículos 20, 21 y 22:** Sancionan penalmente la violación de la privacidad de la data personal, interceptación indebida de comunicaciones y la revelación o cesión no autorizada de datos de clientes.
@@ -98,7 +99,7 @@ El sistema Crastur ha sido diseñado respetando estrictamente el marco jurídico
 El cliente **no necesita entrar a carpetas técnicas ni ver código**. Todo el flujo está pensado para funcionar directamente con **1 solo acceso directo en el Escritorio de Windows**:
 
 #### 1. Configuración Inicial (Solo la Primera Vez):
-- **Requisito:** Windows 10/11 de 64 bits y **Node.js 22 LTS** (mínimo 20.19+). La librería de WhatsApp y el panel visual no funcionan correctamente con Node 18.
+- **Requisito:** Windows 10/11 de 64 bits y **Node.js 24 LTS** (mínimo 22.12+). La librería de WhatsApp y el panel visual no funcionan correctamente con Node 20 o anterior.
 - **Internet durante la primera instalación** para descargar las dependencias.
 - En la carpeta de la aplicación, haz doble clic en **`Crastur.bat`**.
 - El asistente comprobará el sistema, inicializará la base de datos y **creará automáticamente 1 único acceso directo oficial en el Escritorio de Windows**:

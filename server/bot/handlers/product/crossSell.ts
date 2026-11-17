@@ -4,12 +4,7 @@
  */
 
 import { db } from '../../../database';
-import { formatBs, formatRate } from '../../utils/formatters';
-import { detectCaracasZone } from '../../utils/caracasDelivery';
 import { normalizeText } from '../../utils/textUtils';
-import { resolveCasheaPlan } from '../../utils/cashea';
-import { stockLabel } from '../../utils/stock';
-import type { BotResponse } from '../../../types/bot';
 export function reglasDeComplemento(p: any): { buscar: string[]; evitar: string[]; frase: string } | null {
   const cat = (p.categoria || '').toLowerCase();
   const mod = (p.modelo || '').toLowerCase();

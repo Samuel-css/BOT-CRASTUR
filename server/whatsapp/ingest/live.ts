@@ -22,7 +22,7 @@ import {
 import { extractMessageInfo } from '../messageParsing';
 import { wasSentByBot, consumeSentMessageId } from '../sending';
 import { registerHumanTakeover } from '../takeover';
-import { collectAndRegisterAliases, wasStoredAsBotMessage, isRecentAdvisorMessage } from './history';
+import { collectAndRegisterAliases, wasStoredAsBotMessage } from './history';
 import { deliverBotResponse } from './deliver';
 import { ingestState, CATCHUP_MAX_AGE_MS } from './state';
 

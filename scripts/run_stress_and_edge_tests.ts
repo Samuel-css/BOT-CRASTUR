@@ -36,6 +36,13 @@ function assert(condition, testName, detail = '') {
   }
 }
 
+/** Extrae el texto de una respuesta que puede ser string u objeto { text, caption }. */
+function asText(value: any): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return value.text || value.caption || '';
+  return '';
+}
+
 async function runAllTests() {
   console.log('================================================================');
   console.log('🚀 SUITE DE PRUEBAS DE ESTRÉS Y VALIDACIÓN EXTREMA DEL BOT CRASTUR (200+ CASOS)');
@@ -523,7 +530,7 @@ async function runAllTests() {
 
     const step4 = processIncomingMessage(jid, '04121234567', 'Juan Apartado');
     assert(step4 && step4.includes('CRA-') && step4.includes('24 HORAS'), 'Paso 4: Genera ticket oficial con código CRA-');
-    assert(step4 && step4.includes('Art. 28'), 'Incluye aviso legal de protección de datos CRBV Art 28');
+    assert(step4 && !step4.includes('Art. 28') && /datos/i.test(step4), 'El ticket deja fuera el párrafo legal largo y conserva una nota breve de datos');
 
     // Verificar guardado en BD
     const reserva = db.db.prepare('SELECT * FROM reservations WHERE cedula = ?').get('V-18765432');
@@ -1140,8 +1147,11 @@ async function runAllTests() {
   console.log('-----------------------------------------------------------------');
   {
     const heavyClients = Array.from({ length: 30 }, (_, i) => `58412888${String(i).padStart(4, '0')}@s.whatsapp.net`);
+    // [HANDOFF] Se excluye "6" (asesor) de esta prueba de concurrencia: ese comando
+    // pausa el bot en el chat y las consultas siguientes devuelven null por diseño.
+    // El handoff tiene sus propias pruebas más abajo.
     const heavyQueries = [
-      'hola', '1', '2', '3', '4', '5', '6',
+      'hola', '1', '2', '3', '4', '5',
       'precio de pastillas', 'kit de arrastre bera', 'aceite motul',
       'tasa', 'donde quedan', 'cashea', 'delivery catia', 'gracias',
       'tripa aro 18', 'valvula tr412', 'parches rema', 'horario de atencion'
@@ -1331,7 +1341,7 @@ async function runAllTests() {
 
     // "precio" suelto pide el producto (no la tasa)
     limpiarDic();
-    const respPrecio = String(processIncomingMessage(jidDic, 'precio', 'Cliente Dic') || '');
+    const respPrecio = asText(processIncomingMessage(jidDic, 'precio', 'Cliente Dic'));
     assert(/precio|repuesto|pieza/i.test(respPrecio) && !respPrecio.includes('Tasa Oficial BCV Hoy'), '"precio" pide el producto y no la tasa BCV');
 
     // "apartamento" no arranca el flujo de apartado
@@ -1342,27 +1352,27 @@ async function runAllTests() {
 
     // "quiero comprar una bujía" cotiza la bujía
     limpiarDic();
-    const respCompra = String(processIncomingMessage(jidDic, 'quiero comprar una bujia', 'Cliente Dic') || '');
+    const respCompra = asText(processIncomingMessage(jidDic, 'quiero comprar una bujia', 'Cliente Dic'));
     assert(/buj[ií]a/i.test(respCompra) && !/C[oó]mo Comprar/i.test(respCompra), '"quiero comprar una bujía" cotiza el producto (no la guía genérica)');
 
     // "al detal" no se confunde con mayoreo
     limpiarDic();
-    const respDetal = String(processIncomingMessage(jidDic, 'busco precios al detal', 'Cliente Dic') || '');
+    const respDetal = asText(processIncomingMessage(jidDic, 'busco precios al detal', 'Cliente Dic'));
     assert(!respDetal.includes('Compras para Negocios'), '"al detal" no se confunde con venta al mayor');
 
     // "automático" no activa la respuesta de carros
     limpiarDic();
-    const respAuto = String(processIncomingMessage(jidDic, 'tienen cambio automatico', 'Cliente Dic') || '');
+    const respAuto = asText(processIncomingMessage(jidDic, 'tienen cambio automatico', 'Cliente Dic'));
     assert(!respAuto.includes('No vendemos piezas internas pesadas'), '"automático" no se confunde con un carro');
 
     // Nuevas formas de pedir un humano
     limpiarDic();
-    const respHumano = String(processIncomingMessage(jidDic, 'necesito un humano', 'Cliente Dic') || '');
+    const respHumano = asText(processIncomingMessage(jidDic, 'necesito un humano', 'Cliente Dic'));
     assert(/asesor|vendedor|mostrador|equipo de ventas/i.test(respHumano), '"necesito un humano" deriva a un asesor');
 
     // Saludo sin tilde explícita
     limpiarDic();
-    const respBuenDia = String(processIncomingMessage(jidDic, 'buen dia', 'Cliente Dic') || '');
+    const respBuenDia = asText(processIncomingMessage(jidDic, 'buen dia', 'Cliente Dic'));
     assert(/men[uú]|1️⃣|repuesto|bienvenid/i.test(respBuenDia), '"buen día" recibe el menú de bienvenida');
 
     limpiarDic();
@@ -1606,7 +1616,7 @@ async function runAllTests() {
 
   // 8) Horarios dinámicos desde la configuración (no hardcodeados)
   const horarioConfig = db.getSettings().horario_atencion || '';
-  const ubicResp = String(processIncomingMessage('584141009998@s.whatsapp.net', 'donde estan ubicados?', 'RegTest') as string);
+  const ubicResp = asText(processIncomingMessage('584141009998@s.whatsapp.net', 'donde estan ubicados?', 'RegTest'));
   if (horarioConfig) {
     assert(ubicResp.includes(horarioConfig), 'La ubicación muestra el horario configurado en el panel');
   }
@@ -1614,7 +1624,7 @@ async function runAllTests() {
   // 9) Menú del segundo fallback coherente con el menú real (1 = Insumos)
   const jidMenu = '584141009997@s.whatsapp.net';
   processIncomingMessage(jidMenu, 'asdkjhasd qweqwe', 'RegTest');
-  const segundoFallback = String(processIncomingMessage(jidMenu, 'zxcvbnm asdfgh', 'RegTest') as string);
+  const segundoFallback = asText(processIncomingMessage(jidMenu, 'zxcvbnm asdfgh', 'RegTest'));
   assert(/1️⃣\s*Insumos/i.test(segundoFallback), 'El segundo fallback lista 1️⃣ Insumos (coherente con el menú real)');
   assert(!/1️⃣\s*Repuestos/i.test(segundoFallback), 'El segundo fallback ya no invierte Insumos y Repuestos');
 
@@ -1660,7 +1670,7 @@ async function runAllTests() {
   const jidEsc = '584141010002@s.whatsapp.net';
   processIncomingMessage(jidEsc, 'apartar', 'Cliente');
   db.db.prepare("UPDATE chat_sessions SET step = 'apartado_pidiendo_nombre' WHERE jid = ?").run(jidEsc);
-  const rEsc = String(processIncomingMessage(jidEsc, 'MENU', 'Cliente'));
+  const rEsc = asText(processIncomingMessage(jidEsc, 'MENU', 'Cliente'));
   const stepAfter = db.db.prepare('SELECT step FROM chat_sessions WHERE jid = ?').get(jidEsc);
   assert(!!stepAfter && stepAfter.step === 'start', 'Escribir MENU durante el apartado reinicia el flujo');
   assert(!/nombre y apellido/i.test(rEsc), 'Escribir MENU durante el apartado no repite la petición de nombre');
@@ -1752,7 +1762,6 @@ async function runAllTests() {
     const jid = jidFijo || `5841777${String(detSeq++).padStart(3, '0')}@s.whatsapp.net`;
     return { jid, res: processIncomingMessage(jid, query, 'Cliente Deteccion') };
   };
-  const asText = (r: any) => (typeof r === 'string' ? r : (r && (r.text || r.caption)) || '');
 
   const tasa1 = asText(askDet('cuanto esta el dolar').res);
   assert(/tasa|bcv/i.test(tasa1), '"cuanto esta el dolar" responde la tasa BCV');

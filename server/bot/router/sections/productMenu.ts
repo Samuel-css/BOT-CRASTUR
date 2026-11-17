@@ -6,8 +6,8 @@
 
 import type { RouterContext } from './context';
 import { db, recordMetric } from '../../../database';
-import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../../services/searchService';
-import { KEYWORDS, includesAny, equalsAny, includesWordAny } from '../keywords';
+import { searchMultipleProducts, extractLeadingQuantity } from '../../services/searchService';
+import { KEYWORDS, includesAny, equalsAny } from '../keywords';
 import {
   handleProductResults,
   handleSingleProductDetail,
@@ -29,6 +29,22 @@ export function runProductMenuSections(ctx: RouterContext): any | null {
   const contextResult = handleContextualSelection(norm, session, tasa, settings);
   if (contextResult) {
     return contextResult;
+  }
+
+  // [DETALLE] El cliente puede pedir más información sin repetir el nombre del producto.
+  // Se muestra la ficha del primer producto del contexto (lista o búsqueda anterior).
+  const pideDetalle = /^(detalle|detalles|ficha|mas informacion|más información|info|ver mas|ver más)$/.test(norm);
+  if (pideDetalle) {
+    let contextItems: any[] = [];
+    try { contextItems = JSON.parse(session?.contexto_productos || '[]'); } catch {}
+    if (Array.isArray(contextItems) && contextItems.length > 0) {
+      const full = db.prepare('SELECT * FROM products WHERE id = ?').get(contextItems[0].id);
+      if (full) {
+        recordMetric('consulta_detalle', text, jid);
+        return handleSingleProductDetail(full, tasa, settings, session);
+      }
+    }
+    return 'Dime qué producto quieres ver y te paso la ficha completa.';
   }
 
   // ============================================================================

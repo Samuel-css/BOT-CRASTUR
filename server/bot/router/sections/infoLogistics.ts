@@ -5,7 +5,7 @@
  */
 
 import type { RouterContext } from './context';
-import { db, recordMetric } from '../../../database';
+import { recordMetric } from '../../../database';
 import { KEYWORDS, includesAny } from '../keywords';
 import {
   handleNationalShippingResponse,

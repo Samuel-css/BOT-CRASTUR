@@ -23,7 +23,7 @@
  * - Soporte para métodos de pago venezolanos: Pago Móvil BCV, Cashea (Niveles 1-3), Efectivo USD y Binance Pay.
  */
 
-import type { BotMediaInfo, BotResponse } from '../types/bot';
+import type { BotMediaInfo } from '../types/bot';
 
 import {
   db,
@@ -35,9 +35,8 @@ import {
 // Utilidades y Reglas de Negocio
 import { normalizeText } from './utils/textUtils';
 import { handleOutOfHoursTransactionResponse } from './services/businessRules';
-import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from './services/searchService';
+import { searchProductsFuzzy, searchMultipleProducts } from './services/searchService';
 import { extractVenezuelanPhones } from './utils/formatters';
-import { detectCaracasZone } from './utils/caracasDelivery';
 
 // Handlers de Respuestas Especializados
 import {
@@ -73,7 +72,7 @@ import {
   handleWholesaleResponse,
   handleSocialResponse
 } from './handlers/infoHandlers';
-import { handleCasheaSmart, handleCasheaResponse } from './handlers/casheaHandlers';
+import { handleCasheaResponse } from './handlers/casheaHandlers';
 import {
   handleProductResults,
   handleSingleProductDetail,
@@ -82,7 +81,7 @@ import {
   handleInstagramCombosResponse
 } from './handlers/productHandlers';
 import { handleSellersResponse } from './handlers/advisoryHandlers';
-import { handleDefaultFallback, handleSecondFallback, esRespuestaFallback } from './handlers/fallbackHandlers';
+import { handleDefaultFallback, esRespuestaFallback } from './handlers/fallbackHandlers';
 import { runWebIntents } from './handlers/webIntentHandlers';
 import {
   handleCatalogMenuResponse,
@@ -102,7 +101,7 @@ import { checkPendingFollowUps, check22hReservationReminders } from './followUp/
 // Módulos de enrutamiento extraídos (guards y comandos de flujo)
 import { runGuards, SILENCE } from './router/guards';
 import { runFlowCommands } from './router/flowCommands';
-import { KEYWORDS, includesAny, equalsAny, includesWordAny } from './router/keywords';
+import { KEYWORDS, includesWordAny } from './router/keywords';
 import { runInfoLogisticsSections } from './router/sections/infoLogistics';
 import { runDeliveryPoliciesSections } from './router/sections/deliveryPolicies';
 import { runProductMenuSections } from './router/sections/productMenu';
@@ -113,7 +112,6 @@ import { runPaymentsSections } from './router/sections/payments';
 import { runPaymentsLateSections } from './router/sections/paymentsLate';
 
 // [AVISO AL PANEL] Notificación en vivo al Live Inbox cuando el bot necesita ayuda humana
-import { notifyLiveMessage } from '../whatsapp/socketState';
 
 /**
  * Procesa un mensaje entrante de WhatsApp y genera la respuesta automática correspondiente.

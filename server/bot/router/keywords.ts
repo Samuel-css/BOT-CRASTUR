@@ -118,7 +118,7 @@ export const KEYWORDS = {
     'atienden el domingo', 'feriado', 'feriados', 'dia feriado', 'ya cerraron', 'estan cerrados'
   ],
 
-  warranty: ['garantia', 'devolucion', 'defectuoso', 'si no le sirve', 'si no le queda', 'no le funciono', 'vino malo', 'vino defectuoso', 'viene malo', 'sale malo', 'salio malo', 'no funciona', 'dejo de funcionar'],
+  warranty: ['garantia', 'devolucion', 'defectuoso', 'si no le sirve', 'si no le queda', 'no le funciono', 'vino malo', 'vino defectuoso', 'viene malo', 'sale malo', 'salio malo', 'no funciona', 'dejo de funcionar', 'me la cambian', 'me lo cambian', 'me la cambias', 'me lo cambias', 'cambian'],
 
   availability: ['hay disponible en tienda', 'entrega inmediata', 'tienes en stock', 'disponible', 'disponibilidad'],
   availabilityEquals: ['disponibilidad', 'disponible', 'hay disponible', 'tienen en tienda', 'entrega inmediata'],

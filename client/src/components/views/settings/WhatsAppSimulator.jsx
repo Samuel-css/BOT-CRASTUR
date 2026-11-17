@@ -7,12 +7,12 @@ import { Check, CheckCircle2 } from 'lucide-react';
 
 export default function WhatsAppSimulator({ form, subTabMensajes }) {
   let previewTitle = '👋 Saludo Inicial';
-  let previewText = form.mensaje_bienvenida || 'Te damos la bienvenida a Crastur...';
+  let previewText = form.mensaje_bienvenida || 'Te ayudo con precios y disponibilidad al instante.';
   let badgeColor = 'bg-orange-500/20 text-orange-300 border-orange-500/40';
 
   if (subTabMensajes === 'fuera_horario') {
     previewTitle = '🌙 Tienda Cerrada';
-    previewText = form.mensaje_fuera_horario || 'Nuestra tienda física se encuentra cerrada...';
+    previewText = form.mensaje_fuera_horario || 'La tienda está cerrada ahora. Te atendemos en nuestro horario habitual.';
     badgeColor = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40';
   } else if (subTabMensajes === 'seguimiento') {
     previewTitle = '⏱️ Recordatorio';
@@ -21,6 +21,14 @@ export default function WhatsAppSimulator({ form, subTabMensajes }) {
       .replace('{producto}', 'Pastillas de Freno SBR');
     badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/40';
   }
+
+  const previewChars = String(previewText || '').length;
+  const previewLines = previewText ? String(previewText).split('\n').length : 0;
+  const lengthTone = previewChars > 600 || previewLines > 8
+    ? 'text-red-400'
+    : previewChars > 400 || previewLines > 5
+      ? 'text-amber-400'
+      : 'text-emerald-400';
 
   return (
       <div className="bg-[#0b141a] border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
@@ -75,9 +83,12 @@ export default function WhatsAppSimulator({ form, subTabMensajes }) {
         </div>
 
         {/* Barra inferior de WhatsApp */}
-        <div className="bg-[#1f2c34] p-2.5 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between shrink-0">
-          <span>Vista en vivo del cliente</span>
-          <span className="font-mono text-emerald-400 text-[10px] font-bold">● Simulación en tiempo real</span>
+        <div className="bg-[#1f2c34] p-2.5 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between gap-2 shrink-0">
+          <span className="font-mono text-[10px] font-bold">
+            <span className={lengthTone}>{previewChars} caracteres · {previewLines} líneas</span>
+            <span className="text-slate-500"> · ideal: 5 líneas</span>
+          </span>
+          <span className="font-mono text-emerald-400 text-[10px] font-bold">● En vivo</span>
         </div>
       </div>
   );

@@ -31,9 +31,9 @@ Por eso, para una atención sin interrupciones:
 ## 🧰 Requisitos de la computadora
 
 - **Windows 10 u 11 de 64 bits** (también funciona en macOS/Linux por consola).
-- **Node.js 22 LTS** — mínimo **20.19+** (o 22.12+).  
-  La librería de WhatsApp (Baileys 7) necesita Node 20+ y el panel visual (Vite 8) necesita 20.19+/22.12+.
-  Descárgalo en **https://nodejs.org**. Con Node 18 el bot no conecta correctamente.
+- **Node.js 24 LTS** — mínimo **22.12+**.
+  La librería de WhatsApp (Baileys 7) y el panel visual (Vite 8) necesitan Node 22.12+.
+  Descárgalo en **https://nodejs.org**. Con Node 20 o anterior el bot no conecta correctamente.
 - **Internet durante la primera instalación** (para descargar las dependencias). Después puede funcionar sin internet, salvo la sincronización de la tasa BCV.
 - La carpeta de Crastur debe estar en una ubicación **con permisos de escritura** (por ejemplo, `C:\Crastur` o tu carpeta de usuario). Evita `C:\Program Files`.
 - Para la PC del bot se recomienda **desactivar el suspenso automático** y, si quieres que vuelva solo tras un corte de luz, activar **“Inicio automático al encender la PC”** en el instalador.
@@ -260,7 +260,18 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
   con la hora de la última respuesta humana. Si aparece, la PC está recibiendo correctamente los
   mensajes que el vendedor envía desde el teléfono de la tienda.
 
-### 10. ✂️ Mensajes cortos y sin insistencia (la gente no lee párrafos)
+### 10. ✂️ Mensajes cortos, claros y sin insistencia (la gente no lee párrafos)
+- **Bienvenida transparente:** el bot se presenta como **“asistente virtual de Crastur”** y ofrece
+  pasar con una persona (opción 6 o la palabra *ASESOR*).
+- **Regla de copy:** la primera línea responde, los mensajes simples no pasan de **5 líneas**, las
+  listas y fichas se mantienen por debajo de **10 líneas** y cada respuesta deja **una sola acción**.
+  Las listas muestran **máximo 5 productos**.
+- **Precio primero:** en las listas se muestra el precio en dólares; los bolívares aparecen en la ficha
+  y en el ticket.
+- **Ticket corto:** el ticket de apartado ya no incluye el párrafo legal largo. Conserva una nota breve
+  de datos y el resto de la información está en este manual.
+- **Detalle a pedido:** si el cliente escribe *DETALLE* (o *FICHA*), recibe la ficha completa del último
+  producto sin tener que repetir el nombre.
 - **Fallbacks breves:** si el bot no entiende un mensaje, pide **una sola cosa** ("dime el nombre de la
   pieza") con ejemplos en una línea. La segunda vez ofrece pasar con una persona del mostrador.
 - **No insiste:** al tercer mensaje seguido sin entender, el bot **se queda callado** y deja un aviso en
@@ -272,6 +283,8 @@ El bot responde tanto a preguntas en lenguaje natural como a selecciones numéri
   después. Si un asesor ya contestó ese mensaje, el bot no se mete.
 - **Anti-duplicado:** si la respuesta es idéntica a la que acaba de enviar (menos de 90 segundos), se
   omite el envío repetido.
+- **Control en el panel:** el simulador de WhatsApp muestra los caracteres y las líneas del mensaje con
+  semáforo verde, amarillo y rojo.
 
 ### 11. 🔌 Conexión estable: ni reconexiones ni QR a cada rato
 - Una vez que vinculas WhatsApp **una sola vez**, el sistema se reconecta **solo e ilimitadamente** si

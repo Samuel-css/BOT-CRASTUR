@@ -5,7 +5,7 @@
  * Incluye la cola de arranque.
  */
 
-import { db, getSettings, isBotGloballyPaused, isBotPaused } from '../../database';
+import { db, isBotGloballyPaused, isBotPaused } from '../../database';
 import { processIncomingMessage } from '../../bot';
 import { sock, connectionStatus, currentUser } from '../socketState';
 import { sendTextMessage, sendProductMessage, sendDocumentMessage, trackSentMessageId } from '../sending';

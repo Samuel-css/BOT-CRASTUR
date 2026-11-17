@@ -29,7 +29,7 @@ export const WELCOME_TONE_PRESETS = [
     Icon: Flame,
     iconColor: 'text-orange-400',
     color: 'border-orange-500/50 bg-orange-500/10 text-orange-300',
-    texto: '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.'
+    texto: 'Te ayudo con precios y disponibilidad al instante. ¿Qué buscas para tu moto o cauchera?'
   },
   {
     id: 'profesional',
@@ -39,7 +39,7 @@ export const WELCOME_TONE_PRESETS = [
     Icon: Building2,
     iconColor: 'text-sky-400',
     color: 'border-sky-500/50 bg-sky-500/10 text-sky-300',
-    texto: '¡Saludos cordiales! Bienvenido a *Crastur Caracas* 🏢✨\nEspecialistas en repuestos para motos, insumos para cauchera y lubricantes con garantía de tienda.\n\nContamos con financiamiento Cashea 💛, retiro en mostrador y delivery directo. Indícanos el repuesto que requieres para asistirte.'
+    texto: 'Con gusto te ayudo con precios y disponibilidad. ¿Qué repuesto necesitas?'
   },
   {
     id: 'rapido',
@@ -49,7 +49,7 @@ export const WELCOME_TONE_PRESETS = [
     Icon: Zap,
     iconColor: 'text-emerald-400',
     color: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300',
-    texto: '¡Hola! Bienvenido a *Crastur* 🛞🏍️\nConsulta de precios y stock en segundos.\n\nEscribe el repuesto que buscas (ej: *pastillas*, *bujía*, *parches*, *aceite*) o escribe *MENU* para ver el catálogo completo.'
+    texto: 'Precios y stock al instante. Dime qué repuesto buscas (ej: pastillas, bujía, aceite).'
   },
   {
     id: 'cashea',
@@ -71,7 +71,7 @@ export const OUT_OF_HOURS_PRESETS = [
     Icon: Moon,
     iconColor: 'text-indigo-400',
     desc: 'Avisa que la tienda está cerrada de noche y atiende al abrir',
-    texto: '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨'
+    texto: '⏰ La tienda está cerrada ahora. Te atendemos en nuestro horario habitual.\nPuedo darte precios y disponibilidad mientras tanto. Dime qué repuesto buscas.'
   },
   {
     id: 'almuerzo',
@@ -79,7 +79,7 @@ export const OUT_OF_HOURS_PRESETS = [
     Icon: Coffee,
     iconColor: 'text-amber-400',
     desc: 'Pausa breve de almuerzo en el mostrador',
-    texto: '¡Hola! 🥪 En este momento nuestro equipo está en pausa de almuerzo. Dejamos tu consulta anotada y en breve retomamos atención personalizada en mostrador.'
+    texto: '🥪 Estamos en pausa de almuerzo. Te respondemos apenas volvamos al mostrador.'
   },
   {
     id: 'domingo',
@@ -87,7 +87,7 @@ export const OUT_OF_HOURS_PRESETS = [
     Icon: Sun,
     iconColor: 'text-yellow-400',
     desc: 'Para domingos no laborables o feriados',
-    texto: '¡Hola! ☀️ Los domingos nuestra tienda física descansa. ¡El asistente virtual te puede dar precios de una vez! El lunes a las 8:00 AM abrimos para entregas y apartados en San Agustín.'
+    texto: '☀️ Los domingos la tienda física descansa. El asistente virtual te da precios de una vez. El lunes abrimos a las 8:00 AM.'
   }
 ];
 
@@ -98,21 +98,21 @@ export const FOLLOWUP_PRESETS = [
     titulo: 'Sutil & Amable',
     Icon: Sparkles,
     iconColor: 'text-emerald-400',
-    texto: '¿Cómo va todo, {nombre}? 👋 Quedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda. Escribe *VENDEDOR* si prefieres una persona.'
+    texto: '¿Cómo va todo, {nombre}? 👋\nQuedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda.\nSi prefieres una persona, escribe *VENDEDOR*.'
   },
   {
     id: 'urgencia',
     titulo: 'Disponibilidad Limitada',
     Icon: Flame,
     iconColor: 'text-red-400',
-    texto: '¡Hola, {nombre}! ⏱️ Nos quedan pocas unidades disponibles de *{producto}*. ¿Deseas que te lo apartemos sin costo por 24 horas para retirarlo en tienda física?'
+    texto: '¡Hola, {nombre}! ⏱️ Quedan pocas unidades de *{producto}*. ¿Te lo aparto 24 h sin costo?'
   },
   {
     id: 'cashea',
     titulo: 'Financiamiento Cashea',
     Icon: ShoppingBagIcon,
     iconColor: 'text-yellow-400',
-    texto: '¡Hola, {nombre}! 💛 Recuerda que en *{producto}* puedes llevártelo hoy pagando solo la inicial en tienda física con tu app Cashea. ¿Te preparamos el pedido?'
+    texto: '¡Hola, {nombre}! 💛 Con Cashea llevas *{producto}* pagando solo la inicial. ¿Te preparo el pedido?'
   }
 ];
 

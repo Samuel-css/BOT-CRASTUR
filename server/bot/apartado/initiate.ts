@@ -3,11 +3,9 @@
  * @description Módulo del flujo de apartados 24h extraído de apartadoFlow.ts.
  */
 
-import { db, createReservation, recordMetric } from '../../database';
+import { db } from '../../database';
 import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../services/searchService';
-import { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } from '../utils/formatters';
-import { normalizeText } from '../utils/textUtils';
-import { detectCaracasZone } from '../utils/caracasDelivery';
+import { formatBs } from '../utils/formatters';
 /**
  * Inicializa el flujo de apartado por 24 horas, identificando productos individuales o combos
  * y verificando stock antes de solicitar datos personales al cliente.
@@ -64,14 +62,14 @@ export function initiateApartadoFlow(
       WHERE jid = ?
     `).run(multiProducts[0].id, comboNombre, JSON.stringify(metadata), jid);
 
-    let msg = `🛒 *Apartado de Combo por 24 Horas:* *${comboNombre}* ⏱️\n\n`;
+    let msg = `🛒 *Apartado de combo 24 h:* ${comboNombre}\n`;
     multiProducts.forEach((p, idx) => {
       const cant = p.cantidad || 1;
-      msg += `${idx + 1}️⃣ *${p.marca} - ${p.modelo}${cant > 1 ? ` (x${cant})` : ''}:* *$${(parseFloat(p.precio_usd) * cant).toFixed(2)} USD* (Bs. ${formatBs(p.precio_usd * cant * tasa)})\n`;
+      msg += `${idx + 1}️⃣ ${p.marca} - ${p.modelo}${cant > 1 ? ` (x${cant})` : ''}: $${(parseFloat(p.precio_usd) * cant).toFixed(2)} USD\n`;
     });
-    msg += `\n💵 *Total Combo:* *$${totalUsd.toFixed(2)} USD* (Bs. ${formatBs(totalUsd * tasa)})\n`;
-    msg += `Te reservamos todos los productos por 24 horas continuas sin costo para retirar en tienda física.\n\n`;
-    msg += `Para generar tu comprobante oficial en caja, por favor indícanos tu *Nombre y Apellido*:\n_(Escribe *cancelar* si deseas salir)_`;
+    msg += `💵 *Total:* $${totalUsd.toFixed(2)} USD (Bs. ${formatBs(totalUsd * tasa)})\n`;
+    msg += 'Te lo guardo sin costo. Para el ticket, dime tu *Nombre y Apellido*.\n';
+    msg += '_(Escribe *cancelar* para salir)_';
     return msg;
   }
 
@@ -123,10 +121,10 @@ export function initiateApartadoFlow(
       WHERE jid = ?
     `).run(matchedProduct.id, prodNombre, JSON.stringify(metadata), jid);
 
-    let msg = `🛞🏍️ *Apartado por 24 Horas:* *${prodNombre}*${cantSingle > 1 ? ` (x${cantSingle})` : ''} ⏱️\n\n`;
-    msg += `💵 *Precio Contado:* *$${totalSingleUsd.toFixed(2)} USD* (Bs. ${formatBs(totalSingleUsd * tasa)})\n\n`;
-    msg += `Te reservamos esta pieza sin costo adicional por 24 horas continuas para retirarla en tienda física o pedirla por delivery en Caracas.\n\n`;
-    msg += `Para generar tu comprobante oficial en caja, por favor indícanos tu *Nombre y Apellido*:\n_(Escribe *cancelar* si deseas salir)_`;
+    let msg = `🛞 *Apartado 24 h:* ${prodNombre}${cantSingle > 1 ? ` (x${cantSingle})` : ''}\n`;
+    msg += `💵 $${totalSingleUsd.toFixed(2)} USD (Bs. ${formatBs(totalSingleUsd * tasa)})\n`;
+    msg += 'Te lo guardo sin costo. Para el ticket, dime tu *Nombre y Apellido*.\n';
+    msg += '_(Escribe *cancelar* para salir)_';
     return msg;
   }
 
@@ -177,13 +175,13 @@ export function initiateApartadoFlow(
       WHERE jid = ?
     `).run(selectedItems[0].id, comboTitle, JSON.stringify(metadata), jid);
 
-    let msg = `🛒 *Apartado de Combo por 24 Horas:* *${comboTitle}* ⏱️\n\n`;
+    let msg = `🛒 *Apartado de combo 24 h:* ${comboTitle}\n`;
     selectedItems.forEach((p, idx) => {
-      msg += `${idx + 1}️⃣ *${p.marca} - ${p.modelo}:* *$${parseFloat(p.precio_usd).toFixed(2)} USD* (Bs. ${formatBs(p.precio_usd * tasa)})\n`;
+      msg += `${idx + 1}️⃣ ${p.marca} - ${p.modelo}: $${parseFloat(p.precio_usd).toFixed(2)} USD\n`;
     });
-    msg += `\n💵 *Total Combo:* *$${comboTotalUsd.toFixed(2)} USD* (Bs. ${formatBs(comboTotalUsd * tasa)})\n`;
-    msg += `Te reservamos todos los repuestos del combo por 24 horas continuas para retirarlos en tienda física.\n\n`;
-    msg += `Para generar tu comprobante oficial en caja, por favor indícanos tu *Nombre y Apellido*:\n_(Escribe *cancelar* si deseas salir)_`;
+    msg += `💵 *Total:* $${comboTotalUsd.toFixed(2)} USD (Bs. ${formatBs(comboTotalUsd * tasa)})\n`;
+    msg += 'Te lo guardo sin costo. Para el ticket, dime tu *Nombre y Apellido*.\n';
+    msg += '_(Escribe *cancelar* para salir)_';
     return msg;
   }
 
@@ -226,9 +224,9 @@ export function initiateApartadoFlow(
     WHERE jid = ?
   `).run(matchedProduct.id, prodNombre, JSON.stringify(metadata), jid);
 
-  let msg = `🛞🏍️ *Apartado por 24 Horas:* *${prodNombre}* ⏱️\n\n`;
-  msg += `💵 *Precio Contado:* *$${prodPrecioUsd.toFixed(2)} USD* (Bs. ${formatBs(prodPrecioUsd * tasa)})\n\n`;
-  msg += `Te reservamos esta pieza sin costo adicional por 24 horas continuas para retirarla en tienda física o pedirla por delivery en Caracas.\n\n`;
-  msg += `Para generar tu comprobante oficial en caja, por favor indícanos tu *Nombre y Apellido*:\n_(Escribe *cancelar* si deseas salir)_`;
+  let msg = `🛞 *Apartado 24 h:* ${prodNombre}\n`;
+  msg += `💵 $${prodPrecioUsd.toFixed(2)} USD (Bs. ${formatBs(prodPrecioUsd * tasa)})\n`;
+  msg += 'Te lo guardo sin costo. Para el ticket, dime tu *Nombre y Apellido*.\n';
+  msg += '_(Escribe *cancelar* para salir)_';
   return msg;
 }

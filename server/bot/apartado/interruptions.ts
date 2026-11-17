@@ -3,10 +3,9 @@
  * @description Módulo del flujo de apartados 24h extraído de apartadoFlow.ts.
  */
 
-import { db, createReservation, recordMetric } from '../../database';
-import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../services/searchService';
-import { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } from '../utils/formatters';
-import { normalizeText } from '../utils/textUtils';
+import { db } from '../../database';
+import { searchProductsFuzzy, searchMultipleProducts } from '../services/searchService';
+import { formatBs, formatRate } from '../utils/formatters';
 import { detectCaracasZone } from '../utils/caracasDelivery';
 /**
  * [SALIDA DE EMERGENCIA] Comandos universales que SIEMPRE deben poder escapar del flujo de
@@ -266,13 +265,11 @@ export function handleInterruptionResponse(
   } else if (norm.includes('total') || norm.includes('cuanto es en total') || norm.includes('cuanto seria todo') || norm.includes('cuanto es') || norm.includes('cuanto seria') || norm.includes('cuanto sale') || norm.includes('precio')) {
     const totalUsd = parseFloat(currentMetadata.precio_usd) || 0;
     const totalBs = totalUsd * tasa;
-    let itemsDesc = '';
-    if (currentMetadata.items && Array.isArray(currentMetadata.items) && currentMetadata.items.length > 1) {
-      itemsDesc = currentMetadata.items.map((it: any, idx: number) => `   ${idx + 1}️⃣ ${it.nombre}: *$${parseFloat(it.precio_usd).toFixed(2)} USD*`).join('\n') + '\n';
-    } else {
-      itemsDesc = `   📦 ${currentMetadata.producto_nombre || 'Repuesto'}: *$${totalUsd.toFixed(2)} USD*\n`;
-    }
-    answer = `📊 *Resumen Actual de tu Pedido:* 🛞🏍️\n${itemsDesc}\n💵 *Total a Pagar:* *$${totalUsd.toFixed(2)} USD* (Bs. ${formatBs(totalBs)} a tasa oficial BCV: ${formatRate(tasa)})\n🔥 _(¡Aprovecha nuestro Precio Promoción en Divisas pagando en Efectivo o Binance Pay!)_`;
+    const items = Array.isArray(currentMetadata.items) ? currentMetadata.items : [];
+    const itemsDesc = items.length > 1
+      ? items.map((it: any, idx: number) => `${idx + 1}. ${it.nombre} — $${parseFloat(it.precio_usd).toFixed(2)} USD`).join('\n')
+      : `📦 ${currentMetadata.producto_nombre || 'Repuesto'} — $${totalUsd.toFixed(2)} USD`;
+    answer = `📊 *Resumen:*\n${itemsDesc}\n💵 *Total:* $${totalUsd.toFixed(2)} USD (Bs. ${formatBs(totalBs)} a tasa BCV)`;
   } else if (norm.includes('pago') || norm.includes('punto') || norm.includes('transferencia') || norm.includes('efectivo') || norm.includes('binance')) {
     answer = `💳 *Formas de Pago:* Precio Promoción en Divisas (Efectivo $ y Binance Pay USDT 🪙), Pago Móvil o transferencia a tasa oficial BCV (Bs. ${formatRate(tasa)}), y Cashea en tienda física.`;
   } else if (norm.includes('donde') || norm.includes('ubicacion') || norm.includes('direccion')) {
@@ -297,5 +294,5 @@ export function handleInterruptionResponse(
     answer = `Con gusto te ayudamos. Si deseas continuar con el apartado, responde el dato solicitado. También puedes escribir *CANCELAR* para salir del apartado y consultar cualquier otra cosa del catálogo.`;
   }
 
-  return `${answer}\n\n━━━━━━━━━━━━━━━━━━━━━\n📌 _Para completar tu apartado por 24 horas:_\n${stepPrompt}`;
+  return `${answer}\n\n${stepPrompt}`;
 }

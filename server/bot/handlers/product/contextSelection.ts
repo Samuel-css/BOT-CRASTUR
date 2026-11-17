@@ -4,11 +4,7 @@
  */
 
 import { db } from '../../../database';
-import { formatBs, formatRate } from '../../utils/formatters';
-import { detectCaracasZone } from '../../utils/caracasDelivery';
 import { normalizeText } from '../../utils/textUtils';
-import { resolveCasheaPlan } from '../../utils/cashea';
-import { stockLabel } from '../../utils/stock';
 import type { BotResponse } from '../../../types/bot';
 import { handleSingleProductDetail } from './detail';
 import { handleMultiProductResults } from './listing';

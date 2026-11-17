@@ -287,10 +287,10 @@ export function applySchemaAndMigrations(): void {
     'horario_atencion': 'Lunes a Sábado de 8:00 AM a 8:00 PM | Domingos de 8:30 AM a 2:00 PM',
     'politica_envios': 'Delivery a toda Caracas y retiro directo en nuestra tienda física en San Agustín Norte.',
     'metodos_pago': 'Efectivo $, Binance Pay (USDT), Pago Móvil BCV, Cashea en Tienda, Punto de Venta, Transferencia Bancaria',
-    'mensaje_insistencia': '¿Cómo va todo, {nombre}? 👋 Quedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda. Escribe *VENDEDOR* si prefieres una persona.',
-    'mensaje_bienvenida': '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.',
+    'mensaje_insistencia': '¿Cómo va todo, {nombre}? 👋\nQuedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda.\nSi prefieres una persona, escribe *VENDEDOR*.',
+    'mensaje_bienvenida': 'Te ayudo con precios y disponibilidad al instante.',
     'fuera_horario_activo': '0',
-    'mensaje_fuera_horario': '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨',
+    'mensaje_fuera_horario': '⏰ La tienda está cerrada ahora. Te atendemos en nuestro horario habitual.\nPuedo darte precios y disponibilidad mientras tanto. Dime qué repuesto buscas.',
     'bot_pausado_global': '0'
   };
 
@@ -301,6 +301,30 @@ export function applySchemaAndMigrations(): void {
     const exists = getStmt.get(key);
     if (!exists) {
       insertStmt.run(key, val);
+    }
+  }
+
+  // [MIGRACIÓN DE COPY] Si la tienda nunca personalizó el mensaje, se actualiza al
+  // texto corto nuevo. Si el dueño escribió su propio texto, se respeta tal cual.
+  const legacyCopy: Record<string, { old: string; next: string }> = {
+    mensaje_bienvenida: {
+      old: '¡Hola! Te damos la bienvenida a *Crastur* 🛞🏍️\nTu tienda de insumos para caucheras, repuestos de moto y lubricantes en Caracas con Cashea 💛.\n\n📍 Tienda física en San Agustín Norte con horario corrido y delivery a toda Caracas.\n¿En qué repuesto te podemos ayudar hoy? Escribe el nombre de la pieza o modelo de moto y te cotizamos de inmediato.',
+      next: defaultSettings.mensaje_bienvenida
+    },
+    mensaje_fuera_horario: {
+      old: '¡Hola! 👋 Gracias por escribirnos. En este momento nuestra tienda física está cerrada. Te atendemos de *Lunes a Sábado de 8:00 AM a 8:00 PM* y *Domingos de 8:30 AM a 2:00 PM*. Puedes dejarnos tu consulta y con gusto te respondemos al abrir. ¡Hasta pronto! 🛞🏍️✨',
+      next: defaultSettings.mensaje_fuera_horario
+    },
+    mensaje_insistencia: {
+      old: '¿Cómo va todo, {nombre}? 👋 Quedó pendiente el *{producto}*. Si aún lo necesitas, te lo dejo listo en tienda. Escribe *VENDEDOR* si prefieres una persona.',
+      next: defaultSettings.mensaje_insistencia
+    }
+  };
+
+  for (const [key, migration] of Object.entries(legacyCopy)) {
+    const row = getStmt.get(key) as any;
+    if (row && String(row.value) === migration.old) {
+      insertStmt.run(key, migration.next);
     }
   }
 }

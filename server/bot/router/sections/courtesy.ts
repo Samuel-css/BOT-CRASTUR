@@ -27,7 +27,6 @@ export function runCourtesySections(ctx: RouterContext): any | null {
     norm === 'adios' ||
     norm === 'hasta luego' ||
     norm === 'nos vemos' ||
-    norm === 'buen dia' ||
     norm === 'feliz dia' ||
     norm === 'feliz tarde' ||
     norm === 'feliz noche' ||

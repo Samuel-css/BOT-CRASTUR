@@ -1,33 +1,19 @@
 /**
  * @file casheaHandlers.ts
- * @description Manejadores de respuestas y cálculos de financiamiento comercial mediante Cashea.
- * 
- * [MERCADO VENEZUELA]
- * Cashea es una plataforma de crédito al consumo muy extendida en Venezuela que opera
- * bajo el modelo "Compra ahora, paga después" (BNPL):
- * - Compra mínima: $25.00 USD en tienda física.
- * - Nivel 1: 40% inicial al retirar en caja + 3 cuotas quincenales (0% interés).
- * - Nivel 2: 30% inicial al retirar en caja + 3 cuotas quincenales (0% interés).
- * - Nivel 3+: 20% inicial al retirar en caja + 3 cuotas quincenales (0% interés).
- * - El canje se realiza escaneando el código QR de caja directamente con la app móvil de Cashea.
+ * @description Calculadora y respuestas de financiamiento Cashea.
+ *
+ * [COPY BREVE] La ficha de Cashea muestra inicial, cuotas y el paso a seguir en
+ * pocas líneas. La explicación de niveles queda en una sola línea.
  */
 
-import { formatBs } from '../utils/formatters';
+import { db } from '../../database';
 import { searchProductsFuzzy } from '../services/searchService';
 import { resolveCasheaPlan } from '../utils/cashea';
-import { db } from '../../database';
 import type { BotResponse } from '../../types/bot';
+import { buildCasheaGeneral, buildCasheaProduct } from '../copy/messages';
 
 /**
- * Procesa consultas combinadas de financiamiento y producto (ej. "cuánto es la inicial de la bujía en Cashea nivel 2").
- * Calcula montos exactos de cuotas e inicial según el precio del repuesto y el nivel del usuario.
- * 
- * @param text - Consulta original del usuario
- * @param norm - Texto normalizado
- * @param settings - Configuración general de la tienda
- * @param tasa - Tasa BCV oficial del día
- * @param session - Registro de la sesión de chat activa
- * @returns Ficha descriptiva de cuotas o mensaje orientador general
+ * Procesa consultas de Cashea con un producto concreto o la explicación general.
  */
 export function handleCasheaSmart(
   text: string,
@@ -46,14 +32,9 @@ export function handleCasheaSmart(
     nivel = 3;
   }
 
-  // Plan resuelto de forma centralizada (nivel explícito > nivel de sesión > config del panel)
   const plan = resolveCasheaPlan(settings, session, nivel);
-  const inicialPct = plan.inicialPct;
-  const cuotas = plan.cuotas;
-  const nivelNum = plan.nivel;
 
-  // [MEMORIA DEL CLIENTE] Si el cliente indicó su nivel, se guarda en su sesión para no
-  // volver a preguntarlo y para que las fichas de producto usen el mismo cálculo.
+  // Guardar el nivel para las siguientes fichas del mismo cliente.
   if (nivel && session && session.jid) {
     try {
       db.prepare('UPDATE chat_sessions SET nivel_cashea = ? WHERE jid = ?').run(nivel, session.jid);
@@ -61,31 +42,16 @@ export function handleCasheaSmart(
     } catch {}
   }
 
-  // Identificar si la consulta incluye un repuesto específico del inventario
   const products = searchProductsFuzzy(text);
   if (products.length > 0) {
     const prod = products[0];
-    const precioUsd = parseFloat(String(prod.precio_usd)) || 0;
-    const inicialUsd = precioUsd * inicialPct;
-    const cuotaUsd = (precioUsd - inicialUsd) / cuotas;
-
-    let msg = `💛 *Financiamiento con CASHEA en Tienda Física* 🛞🏍️\n`;
-    msg += `Repuesto: *${prod.marca} - ${prod.modelo}*\n`;
-    msg += `💵 *Precio Contado:* *$${precioUsd.toFixed(2)} USD* (Bs. ${formatBs(precioUsd * tasa)})\n\n`;
-
-    if (precioUsd < 25) {
-      msg += `📌 *Condiciones de Financiamiento Cashea:*\n`;
-      msg += `El financiamiento con Cashea aplica exclusivamente para compras a partir de *$25.00 USD* en nuestra tienda física.\n\n`;
-    } else {
-      msg += `📌 *Cálculo para tu Nivel ${nivelNum} (Inicial ${(inicialPct * 100).toFixed(0)}%):*\n`;
-      msg += `• *Inicial a pagar en tienda:* *$${inicialUsd.toFixed(2)} USD* (Bs. ${formatBs(inicialUsd * tasa)})\n`;
-      msg += `• *Restante:* *${cuotas} cuotas quincenales* de *$${cuotaUsd.toFixed(2)} USD* (Bs. ${formatBs(cuotaUsd * tasa)})\n\n`;
-      msg += `⚠️ *Recuerda:* El financiamiento con Cashea se procesa directamente en nuestra tienda física escaneando el código QR en caja con tu app Cashea al momento del retiro.\n\n`;
-    }
-
-    msg += `📦 Te llevas tu repuesto de inmediato retirando en tienda.\n\n`;
-    msg += `👉 Escribe *APARTAR* para reservarlo por 24 horas.\n`;
-    msg += `👉 O escribe *VENDEDOR* para comunicarte con un asesor.`;
+    const msg = buildCasheaProduct({
+      product: prod,
+      tasa,
+      settings,
+      session,
+      nivel: plan.nivel
+    });
 
     if (prod.imagen_url && typeof prod.imagen_url === 'string' && prod.imagen_url.trim().length > 5) {
       return { text: msg, image: prod.imagen_url.trim() } as any;
@@ -97,13 +63,7 @@ export function handleCasheaSmart(
 }
 
 /**
- * Genera la información institucional y tabla de niveles del sistema Cashea.
- * 
- * @param settings - Configuración de la tienda
- * @param tasa - Tasa BCV oficial
- * @param session - Sesión de chat
- * @param nivelExplicit - Nivel opcional detectado en la conversación
- * @returns Mensaje informativo de políticas de Cashea
+ * Explicación general de Cashea.
  */
 export function handleCasheaResponse(
   settings: Record<string, string>,
@@ -111,20 +71,7 @@ export function handleCasheaResponse(
   session?: any,
   nivelExplicit: number | null = null
 ): string {
-  const cuotas = settings?.cashea_cuotas || '3';
-  let msg = `💛 *Financiamiento con CASHEA en Crastur (Tienda Física)* 🛞🏍️✨\n\n`;
-  msg += `¡Llévate hoy tus repuestos y accesorios pagando solo una inicial y el resto en cuotas quincenales sin interés!\n\n`;
-  msg += `📌 *Condiciones y Niveles de Cashea:*\n`;
-  msg += `• 🏷️ *Monto Mínimo:* Aplica para compras a partir de *$25.00 USD* en tienda física.\n`;
-  msg += `• *Nivel 1:* Pagas el *40%* de inicial en tienda física.\n`;
-  msg += `• *Nivel 2:* Pagas el *30%* de inicial en tienda física.\n`;
-  msg += `• *Nivel 3 o superior:* Pagas únicamente el *20%* de inicial en tienda física.\n`;
-  msg += `• El resto lo pagas en *${cuotas} cuotas quincenales* a tasa 0% interés a través de tu app Cashea.\n\n`;
-  msg += `⚠️ *Importante:* El pago con Cashea se realiza **directamente en nuestra tienda física** escaneando el código QR en caja con tu teléfono al momento de retirar tus repuestos.\n\n`;
-  msg += `👉 Escribe el repuesto que deseas cotizar (ej: *"pastillas"*, *"aceite"*, *"batería"*).\n`;
-  msg += `👉 O escribe *VENDEDOR* para que te asista un asesor en tu compra.`;
-
-  return msg;
+  return buildCasheaGeneral(settings);
 }
 
 export default {

@@ -10,6 +10,7 @@ import {
   handleHostilityOrComplaintResponse,
   handleElderlyOrConfusedResponse
 } from '../handlers/infoHandlers';
+import { buildBotIdentity } from '../copy/messages';
 
 /**
  * Evalúa comandos de cancelación, opt-out, hostilidad y atención especial.
@@ -17,6 +18,23 @@ import {
  * @returns string (respuesta), null (no aplica) o SILENCE (sentinela de silencio)
  */
 export function runFlowCommands(jid: string, text: string, norm: string, pushName: string, session: any): string | null {
+  // [TRANSPARENCIA] Si el cliente pregunta si es un bot o una persona, se responde
+  // claro y corto, sin entrar en el modo de "atención paciente".
+  const asksIfBot =
+    norm.includes('eres un robot') ||
+    norm.includes('eres un bot') ||
+    norm.includes('es un robot') ||
+    norm.includes('es un bot') ||
+    norm.includes('eres una persona') ||
+    norm.includes('eres humano') ||
+    norm.includes('eres real') ||
+    norm.includes('hablo con una persona') ||
+    norm.includes('hablo con un bot');
+  if (asksIfBot) {
+    recordMetric('consulta_identidad_bot', text, jid);
+    return buildBotIdentity();
+  }
+
   // [ATENCIÓN PERSONA MAYOR / TRATO FORMAL] Saludos con tratamiento de respeto
   // (ej: "buenos días señor", "disculpe señora") reciben atención paciente.
   const esTratoFormal =

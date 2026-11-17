@@ -18,6 +18,7 @@ import { db, getSettings, recordMetric, isBotGloballyPaused } from '../../databa
 import { resolveChatJids } from '../../db/aliases';
 import { notifyLiveMessage, notifyChatState } from '../../whatsapp/socketState';
 import { isWithinBusinessHours } from './businessRules';
+import { buildHandoffClient, buildHandoffOutside, buildHandoffExpiry } from '../copy/messages';
 
 export interface HandoffRegistration {
   created: boolean;
@@ -70,21 +71,12 @@ function formatClientPhone(jid: string, session: any): string {
 }
 
 function buildClientMessage(pushName: string, minutes: number, venceAt: number): string {
-  return (
-    `¡Listo, *${pushName}*! 🙌 Ya avisé al equipo de ventas.\n\n` +
-    `Un *asesor* te escribirá por este mismo chat en un máximo de *${minutesLabel(minutes)}*.\n` +
-    `⏰ Hora límite: *${formatCaracasTime(venceAt)}*\n\n` +
-    `Si prefieres no esperar, escribe *MENU* y te atiendo al instante.`
-  );
+  return buildHandoffClient(pushName, minutesLabel(minutes));
 }
 
 function buildOutsideHoursMessage(pushName: string, settings: Record<string, string>): string {
   const horario = (settings.horario_atencion || 'Lunes a Sábado de 8:00 AM a 8:00 PM').replace(/\s*\|\s*/g, ' · ');
-  return (
-    `¡Gracias por escribirnos, *${pushName}*! 🙌 Nuestro equipo de ventas está fuera de horario en este momento.\n\n` +
-    `Un asesor te escribirá al abrir: *${horario}*.\n\n` +
-    `Mientras tanto, puedo ayudarte con precios y disponibilidad. Dime qué repuesto buscas o escribe *MENU*.`
-  );
+  return buildHandoffOutside(pushName, horario);
 }
 
 function buildSellerNotice(
@@ -118,11 +110,7 @@ function buildOutsideHoursNotice(jid: string, pushName: string, session: any, at
 }
 
 function buildExpiryMessage(pushName: string): string {
-  return (
-    `Hola, *${pushName}*. Pasó el tiempo de espera y un asesor aún no se ha conectado.\n\n` +
-    `Para no dejarte esperando, retomo la conversación 🙌\n\n` +
-    `Dime qué repuesto buscas o escribe *MENU* para ver las opciones.`
-  );
+  return buildHandoffExpiry(pushName);
 }
 
 /**
@@ -149,9 +137,9 @@ export function registerHandoff(params: {
     return {
       created: false,
       message:
-        `Ya tienes una solicitud de asesor activa, *${pushName}*. ` +
-        `Un asesor te escribirá antes de las *${formatCaracasTime(Number(session.handoff_vence_at))}*.\n\n` +
-        `Si prefieres no esperar, escribe *MENU* y te atiendo al instante.`
+        `Ya tienes una solicitud activa, ${pushName}. ` +
+        `Un asesor te escribe antes de las *${formatCaracasTime(Number(session.handoff_vence_at))}*.\n` +
+        `Si no quieres esperar, escribe *MENU*.`
     };
   }
 

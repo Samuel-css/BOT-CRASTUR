@@ -3,11 +3,8 @@
  * @description Paso del flujo de apartados 24h extraído de apartadoFlow.ts.
  */
 
-import { db, createReservation, recordMetric } from '../../../database';
-import { searchProductsFuzzy, searchMultipleProducts, extractLeadingQuantity } from '../../services/searchService';
-import { formatBs, formatRate, formatVenezuelanPhone, extractVenezuelanPhones } from '../../utils/formatters';
+import { db } from '../../../database';
 import { normalizeText } from '../../utils/textUtils';
-import { detectCaracasZone } from '../../utils/caracasDelivery';
 import { detectInterruption, handleInterruptionResponse } from '../interruptions';
 /**
  * Valida el Nombre y Apellido del cliente para registrar en el comprobante oficial.
@@ -36,7 +33,7 @@ export function handleApartadoNombre(
     metadata = {};
   }
 
-  const promptMsg = `Por favor, indícanos tu *Nombre y Apellido* completo para emitir el comprobante (ejemplo: *Carlos Pérez*):\n_(Escribe *cancelar* para salir)_`;
+  const promptMsg = `Dime tu *Nombre y Apellido* (ej: *Carlos Pérez*).\n_(Escribe *cancelar* para salir)_`;
 
   const interruption = detectInterruption(text, norm);
   if (interruption) {

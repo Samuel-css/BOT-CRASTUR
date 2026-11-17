@@ -21,6 +21,7 @@ import {
 } from '../../database';
 import { isWithinBusinessHours } from '../services/businessRules';
 import { normalizeText } from '../utils/textUtils';
+import { buildFollowUp } from '../copy/messages';
 
 /**
  * Evalúa las sesiones de chat inactivas que consultaron un repuesto sin concretar apartado
@@ -159,7 +160,7 @@ async function checkPendingFollowUps(
 
     let followUpText = settings.mensaje_insistencia || '';
     if (!followUpText) {
-      followUpText = `¿Cómo va todo, *${pushName}*? 👋 Quedó pendiente el *${prodName}*. Si aún lo necesitas, con gusto te lo dejo listo en tienda. Cualquier cosa, escribe *VENDEDOR*.`;
+      followUpText = buildFollowUp(pushName, prodName);
     } else {
       // Reemplazo dinámico de variables de plantilla ({nombre}, {producto})
       followUpText = followUpText
@@ -167,7 +168,7 @@ async function checkPendingFollowUps(
         .replace(/\{producto\}/gi, prodName);
 
       if (followUpText.includes('{')) {
-        followUpText = `¿Cómo va todo, *${pushName}*? 👋 Quedó pendiente el *${prodName}*. Si aún lo necesitas, escribe *VENDEDOR*.`;
+        followUpText = buildFollowUp(pushName, prodName);
       }
     }
 

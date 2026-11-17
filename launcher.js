@@ -3,16 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
-// [REQUISITO DE NODE] Baileys 7 necesita Node 20+ y el panel (Vite 8) 20.19+/22.12+.
+// [REQUISITO DE NODE] Baileys 7 y el panel (Vite 8) necesitan Node 22.12+.
 // Se valida también aquí para proteger a quienes ejecutan `node launcher.js` o `npm start`.
 const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
 const nodeCompatible =
   nodeMajor > 22 ||
-  (nodeMajor === 22 && nodeMinor >= 12) ||
-  (nodeMajor === 20 && nodeMinor >= 19);
+  (nodeMajor === 22 && nodeMinor >= 12);
 if (!nodeCompatible) {
   console.error(`\x1b[31m[Lanzador] Node.js ${process.versions.node} es incompatible.\x1b[0m`);
-  console.error('Crastur necesita Node.js 20.19+ o 22.12+. Recomendado: Node.js 22 LTS.');
+  console.error('Crastur necesita Node.js 22.12+. Recomendado: Node.js 24 LTS.');
   console.error('Descárgalo en https://nodejs.org y vuelve a intentarlo.');
   process.exit(1);
 }
@@ -80,11 +79,11 @@ function openBrowser() {
   const url = `http://localhost:${PORT}`;
   try {
     if (process.platform === 'win32') {
-      spawn('cmd.exe', ['/c', 'start', '""', url], { stdio: 'ignore' });
+      spawn('cmd.exe', ['/c', 'start', '""', url], { stdio: 'ignore', windowsHide: true });
     } else if (process.platform === 'darwin') {
-      spawn('open', [url], { stdio: 'ignore' });
+      spawn('open', [url], { stdio: 'ignore', windowsHide: true });
     } else {
-      spawn('xdg-open', [url], { stdio: 'ignore' });
+      spawn('xdg-open', [url], { stdio: 'ignore', windowsHide: true });
     }
   } catch (e) {}
 }
@@ -202,7 +201,8 @@ async function main() {
   // directamente con argumentos ya separados.
   const serverProc = spawn(process.execPath, ['--import', 'tsx', 'server/server.ts'], {
     cwd: __dirname,
-    stdio: 'inherit'
+    stdio: 'inherit',
+    windowsHide: true
   });
 
   serverProc.on('exit', (code) => { serverExitedEarly = true; serverExitCode = code; });
